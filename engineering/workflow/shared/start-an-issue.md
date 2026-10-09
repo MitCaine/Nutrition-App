@@ -16,7 +16,8 @@ map or guess.
 
 ## Intake
 
-Start each new issue with a fresh controller context. A replacement during an
+Start each new issue with a fresh controller context. For an owner-supplied queue,
+apply the [queue rules](new-project-setup.md#issue-queues). A replacement during an
 active issue recovers its authenticated checkpoint and existing assignment;
 replacement is not a new attempt or permission to duplicate dispatch.
 
@@ -30,6 +31,33 @@ replacement is not a new attempt or permission to duplicate dispatch.
   Check a suspected prerequisite against actual current callers, reachable behavior
   and its controlling requirement before expanding scope or starting a repair.
   Only a concrete changed setup input or failed capability needs setup diagnosis.
+
+## Optional maintenance route
+
+During intake, the controller may select maintenance for a well-understood
+mechanical change with no unresolved design decision and no change to product
+behavior, dependencies, runtime, role permissions or acceptance requirements.
+Eligibility depends on the change, not file or line counts. Inspect upstream
+changes before treating an RI instruction update as eligible; updating a pin
+alone is insufficient. Policy, role-boundary, acceptance or substantive execution
+changes use the normal capsule route. Preserve active attempts' instruction revisions.
+
+For eligible work, record a brief controller handoff in the existing task record:
+objective, exact base, allowed changes, required checks and concrete return
+destination. It replaces the capsule builder, full capsule and planning-only
+publication; no new template or tracking system is needed. The sequence is
+controller → implementor → independent reviewer → controller closeout, with the
+existing routing, exact-candidate review, authorized integration and verified
+closeout. Scale checks and review to impact: documentation-only work uses applicable
+identity, link, documentation and affected tooling checks; product suites run only
+when required by the project or affected by the change.
+
+If investigation or implementation reveals wider impact, pause the affected work
+and move to the normal capsule route, retaining valid work and evidence. A failed
+focused check alone does not force replanning. Consumer adoption must explicitly
+resolve any local capsule-only validator before selecting maintenance; this route
+does not bypass project controls. A kickoff may request maintenance, but the
+controller confirms eligibility before dispatch.
 
 ## Capsule format
 
@@ -69,7 +97,8 @@ Controller -> capsule builder -> controller checks plan
 The controller owns assignment dispatch, including the bounded Codex dispatch
 delegation below. Run assignments one at a time, using fresh
 contexts by default. The normal path uses one capsule builder, one implementor
-and one independent reviewer; already-satisfied work may use the no-change route
+and one independent reviewer; the [maintenance route](#optional-maintenance-route)
+omits the builder. Already-satisfied work may use the no-change route
 below. Workers do not recruit other workers.
 
 Each assignment names its immediate return destination by concrete identifier and
@@ -80,17 +109,13 @@ when direct messaging is unavailable.
 
 ### Execution routing, models and efforts
 
-| Role | Execution environment | Model | Reasoning effort | Selector label |
-| --- | --- | --- | --- | --- |
-| Controller | Work | `gpt-6.1-sol` | `low` | Sol 6.1 Light |
-| Capsule builder | Work | `gpt-6.1-sol` | `low` | Sol 6.1 Light |
-| Implementor | Codex | `gpt-6-luna` | `max` | Luna 6 Max |
-| Independent reviewer | Work | `gpt-6.1-sol` | `low` | Sol 6.1 Light |
-
-Environment, model and effort are separate settings. Use the map's supported
-route and these defaults unless the owner/map authorizes an override; no new
-launcher or service is required. Configure each worker explicitly before dispatch
-and match the full model ID: Sol 5.6/6 and Luna 5.6 do not satisfy these defaults.
+Environment, model and effort are separate settings. Resolve them from the
+selected project configuration and explicit owner inputs under the
+[kickoff-input contract](new-project-setup.md#kickoff-inputs-and-selected-configuration).
+Use the map's supported route; no new launcher or service is required. Configure
+each worker explicitly before dispatch, matching the full selected model ID and
+effort rather than inheriting the controller's pair. Kickoff does not switch an
+already-running chat's model.
 Record requested settings separately from host-confirmed settings. A selected
 host mode or authoritative configuration/session record confirming the setting
 is sufficient evidence; dispatch options establish only what was requested.
@@ -131,7 +156,7 @@ rules, without polling loops or another transport framework.
 
 Use one reusable Codex dispatcher chat per project with the selected
 [dispatcher section](worker-instructions.md#codex-dispatcher). For each issue, give it the
-implementation handoff location: exact task/attempt, published capsule/branch/SHA,
+implementation handoff location: exact task/attempt, accepted capsule or maintenance handoff, branch/SHA,
 selected role instructions and bounded implementation inputs, read/edit scopes, checks,
 evidence locations, Git ownership and return destination. The dispatcher launches
 the implementor under the selected
@@ -163,7 +188,7 @@ agents. Give each worker its selected [worker instructions](worker-instructions.
 task inputs appropriate to its role, applicable standards, authorized source-read
 locations, commands, edit limits and actual evidence. Original issues and required
 decision history go to the builder and reviewer; the implementor receives a
-complete accepted capsule and bounded implementation inputs, and the dispatcher
+complete accepted capsule or maintenance handoff and bounded implementation inputs, and the dispatcher
 only authenticates and relays the handoff. Follow the role-specific reading rules. Supply the relevant
 project-map requirements and their original locations; workers do not repeat
 controller intake or workflow selection. Do not supply the whole controller
@@ -172,7 +197,7 @@ adopted RI revision; record their locations in the existing handoff.
 
 For example: “Your role is Implementor. At the selected RI revision, read
 `docs/worker-instructions.md` sections Shared worker rules and Implementor in full.
-Then read the accepted published capsule, authorized implementation source and
+Then read the accepted capsule or maintenance handoff, authorized implementation source and
 applicable implementation standards linked in this handoff. Do not retrieve the
 original issue or decision history.” Name stable headings, not line numbers;
 use a section-bounded read where supported, since an anchor alone does not limit
@@ -186,12 +211,14 @@ a reported gap, not permission to guess.
 
 ### Publish the task branch and handoffs
 
-Before builder dispatch, the controller creates and publishes the dedicated
-non-main task branch on GitHub from the authenticated base. The builder returns
-the capsule; the map assigns its capsule-only commit/push to the builder or
-controller. Publish the planning commit before implementor dispatch. Implementation
-uses the same branch; its assigned actor publishes the exact candidate before
-independent review. The controller publishes for roles without Git authority.
+Before worker dispatch, the controller creates and publishes the dedicated
+non-main task branch on GitHub from the authenticated base. On the normal route,
+the builder returns the capsule; the map assigns its capsule-only commit/push to
+the builder or controller. Publish that planning commit before implementor dispatch.
+Maintenance instead uses the accepted brief handoff in the existing task record,
+without a planning-only commit/publication. Implementation uses the task branch;
+its assigned actor publishes the exact candidate before independent review. The
+controller publishes for roles without Git authority.
 Use clear commit messages describing the changes. Verify remote refs at each
 handoff. Task-branch publication is separate from approval
 or main integration; main changes remain behind acceptance. If a project control
@@ -224,6 +251,9 @@ costly qualification. On failure, report before further expensive checks unless
 the assignment requires collecting independent results. This grants no frozen
 candidate edits or omission of required checks.
 
+For maintenance, the controller verifies the brief handoff against intake and
+project controls, then follows steps 3–6. Steps 1–2 apply to the normal route.
+
 1. **Capsule builder:** use the supplied branch and [shared format](#capsule-format).
    Require affected stale docs/examples/maps/links to be corrected, or justify why
    documentation is unaffected. Name genuine post-installation checks and their
@@ -245,7 +275,8 @@ candidate edits or omission of required checks.
 4. **Controller:** inspect the full diff, scope, documentation and criterion evidence;
    capture/publish the exact candidate when assigned that responsibility and verify
    the remote branch matches it. Supply the reviewer with that source, the full
-   diff, capsule, standards and actual test/log evidence. Use the project's existing
+   diff, accepted capsule or maintenance handoff, original requirements, standards
+   and actual test/log evidence. Use the project's existing
    source-capture and evidence route; this instruction does not itself require
    a new export, manifest, upload or local copy.
    Checks must use a stable, identifiable source snapshot. Verify the tested source
@@ -292,7 +323,8 @@ suffice; RI gaps do not prove absence. No special runner, exporter, per-declarat
 verdict or new mandatory record is required. Already-satisfied work can receive
 independent no-change review and authorized closeout without an artificial commit.
 For a planning-only or no-change outcome, record why implementation and integration
-are unnecessary. Preserve the published capsule as the project requires, then use
+are unnecessary. Preserve the task record (and published capsule where applicable) as the project
+requires, then use
 its authorized disposition for the unmerged planning branch. Do not describe that
 branch as merged or invent a product change merely to clean it up.
 

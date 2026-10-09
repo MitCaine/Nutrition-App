@@ -628,8 +628,13 @@ shared or production object store.
 
 ## Test selection by change
 
+Use the public task-record validator and focused controller-tooling tests when a change affects
+normal or maintenance handoff routing. The route validator checks local record shape; it does not
+replace authenticated owner authorization, exact-candidate qualification, verification, or review.
+
 | Change | Minimum affected validation |
 | --- | --- |
+| Task record route | Public `./scripts/task validate-record` cases for normal and explicit maintenance inputs; affected controller-tooling tests, docs checks, and session closeout. This format check is not owner authorization, qualification, or independent review. |
 | Pure calculation/parser | Focused unit tests, full backend baseline, Ruff |
 | Nutrient catalog/qualified units | Nutrient catalog + resolution + Food validation + affected mobile nutrition tests |
 | DRI/Target/reference logic | Backend DRI/Target/tracking suites + local target/DRI parity + affected UI tests |

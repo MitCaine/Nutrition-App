@@ -80,9 +80,12 @@ turn an advisory scope opinion into independent candidate acceptance.
 
 ## Implementor
 
-Implement the accepted capsule using only supplied implementation inputs,
+Implement the accepted capsule or controller-approved maintenance handoff using
+only supplied implementation inputs,
 authorized source-reading scope and applicable implementation standards. Read the
-[Shared worker rules](#shared-worker-rules) and complete accepted capsule. Do not
+[Shared worker rules](#shared-worker-rules) and the complete assigned task input.
+The maintenance handoff replaces the capsule only under the controller-selected
+[maintenance route](start-an-issue.md#optional-maintenance-route). Do not
 independently retrieve the original issue or linked decision history. If a
 requirement is missing, contradictory or insufficient, report the gap to the
 controller before dependent work; do not reconstruct requirements yourself.
@@ -115,6 +118,8 @@ Do not approve, integrate, close the issue, edit controller state or self-review
 
 Read the [Shared worker rules](#shared-worker-rules), complete task and original
 requirements, exact candidate, full diff, applicable standards and actual check evidence.
+The task is the accepted capsule or maintenance handoff under the selected route;
+maintenance retains independent review of the original objective and full change.
 Use the supplied selected review route and limits; do not repeat controller intake.
 The author/implementor cannot be its reviewer. A previous verdict is not a new review.
 
@@ -148,18 +153,20 @@ chat serves one project; each accepted implementation assignment gets a fresh
 implementor by default. Exceptions require the controller-authorized fallback below.
 You relay work for the Work controller, not act as a second controller.
 Do not repeat issue-start orientation or independently select newer instructions.
+The optional [dispatcher kickoff](../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md)
+locates this selected section; it grants no implementation assignment.
 
 ### Read and dispatch
 
 Read the complete controller handoff before acting. It names the project,
-controller/return destination, task and attempt, accepted published capsule,
+controller/return destination, task and attempt, accepted capsule or maintenance handoff,
 branch and exact source, selected implementor/shared instructions, authorized
 read/edit scopes, checks, evidence locations and Git ownership. Authenticate the
-handoff, capsule/source identities, dispatcher instructions and launch configuration;
+handoff, task-record/source identities, dispatcher instructions and launch configuration;
 report missing or conflicting dispatch inputs to Work. Relay the supplied
 implementation inputs unchanged. Do not retrieve original issues/decision history,
 inspect product source to reassess requirements or repeat planning. Requirement
-pointers in a capsule are provenance for the controller/reviewer, not dispatcher
+pointers in the task record are provenance for the controller/reviewer, not dispatcher
 or implementor reading authority.
 
 Use the owner-authorized messaging route in both directions. Its small delivery
@@ -173,7 +180,8 @@ Use a fresh implementor unless the controller explicitly authorizes the document
 Reauthenticate the complete handoff and ensure the reused context has no active
 assignment; the dispatcher cannot select this exception. Spawn only the
 controller's single authorized implementor with its complete selected role/task inputs. Configure and verify the handoff's actual model and
-effort: default `gpt-6-luna` / `max`, not an inherited or older pair. Keep one
+effort from the controller's resolved project configuration, not an inherited or
+independently chosen pair. Keep one
 assignment active and prevent simultaneous edits in the same checkout. Only the
 explicitly assigned actor may commit/push; no main integration is granted here.
 

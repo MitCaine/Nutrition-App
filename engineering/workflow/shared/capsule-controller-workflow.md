@@ -58,13 +58,18 @@ Controller: authorized integration --> verify result --> close issue
 ```
 
 Follow the [daily published-branch sequence](start-an-issue.md#execute-serially):
-the controller creates the GitHub task branch and the assigned actor publishes the capsule,
+the controller creates the GitHub task branch; on the normal route the assigned
+actor publishes the capsule,
 and the assigned actor publishes implementation on that same branch before
 independent review. Bind handoffs to verified remote commits. Task publication
 is not main acceptance; no subagent pushes to main. Resolve conflicting project
 controls before dispatch rather than silently keeping the task local.
 
-Initial implementation starts from validated planning state. A correction starts
+The optional [maintenance route](start-an-issue.md#optional-maintenance-route)
+replaces builder/planning publication with a controller-approved brief handoff
+in the existing task record; explicitly reconcile local capsule-only validators
+before adopting it. Initial implementation starts from that accepted handoff or
+validated normal-route planning state. A correction starts
 from the authenticated recovery source/parent and retained finding, not from an
 artificial requirement that the branch still heads the original planning commit.
 Keep the original objective and scope; preserve any project-required lineage and
@@ -100,7 +105,7 @@ requirement needs it; do not add a second review just for changing ordinary file
 
 ## Required task completion
 
-Each capsule must include these requirements in its existing task record; no
+Each task must cover these requirements in its capsule or maintenance handoff; no
 additional report or gate file is needed:
 
 - Resolve objective/specification gaps before implementation. Do not invent
@@ -135,7 +140,7 @@ additional report or gate file is needed:
   Prefer task-neutral maps with a pointer to the active checkpoint.
 
 Record each post-installation obligation's stage and satisfaction method in the
-capsule. Review its implementation and check plan before integration; perform
+task record. Review its implementation and check plan before integration; perform
 installed checks afterward and before closure. Do not demand proof that depends
 on prior approval, or defer prerequisites already due. Installed failure leaves
 the issue open for bounded recovery.

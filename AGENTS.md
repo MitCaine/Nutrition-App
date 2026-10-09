@@ -155,14 +155,23 @@ byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.m
 reads `Shared worker rules` and its assigned unique level-two section of the pinned
 [worker instructions](engineering/workflow/shared/worker-instructions.md#role-index), through the next
 level-two heading or end of file; links are navigation, not bounded reads. Builders receive
-original objective/base/specifications without a future capsule; implementors and reviewers
-receive the accepted capsule.
+original objective/base/specifications without a future capsule. Normal-route
+implementors and reviewers receive the accepted capsule; implementors and reviewers on
+controller-approved maintenance receive the complete recorded maintenance handoff in the existing
+task record.
 The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional
-on setup or replacement. New tasks use bounded Markdown records and the current standard
-controller. The Work controller directly dispatches the capsule builder and distinct independent
-reviewer. For implementation, the owner-designated Codex dispatcher authenticates the complete
-accepted-capsule handoff and launches one implementor; the implementor returns there for relay to
-Work. Apply the [local map's per-worker launch settings and confirmation policy](docs/local_project_map.md#nutrition-permissions-and-routing)
+on setup or replacement. New tasks normally use six-heading Markdown capsules and the standard controller. For a
+well-understood mechanical change, the controller may select optional maintenance after confirming
+eligibility and recording the brief handoff in the existing task record. Before dispatch, run
+`./scripts/task validate-record --task-record PATH --route normal` or explicitly select
+`--route maintenance`. This read-only validator checks record fields; it does not authenticate
+owner authority, semantic eligibility, qualification, or acceptance. The normal route retains its
+capsule builder and planning publication; maintenance omits those planning steps while retaining
+exact-candidate review, required qualification, verification, owner approval, protected integration
+and closeout. The Work controller dispatches the capsule builder on the normal route and the distinct
+independent reviewer on either route. For implementation, the owner-designated Codex dispatcher
+authenticates the complete assigned task handoff and launches one implementor; the implementor
+returns there for relay to Work. Apply the [local map's per-worker launch settings and confirmation policy](docs/local_project_map.md#nutrition-permissions-and-routing)
 separately to each role; do not infer configuration from tool names, backing metadata or another
 worker's confirmation. Workers do not recruit. Use blocking completion while an assignment is
 active unless its exact idle-wake route is verified; consume a terminal result already delivered

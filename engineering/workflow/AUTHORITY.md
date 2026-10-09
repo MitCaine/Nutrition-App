@@ -8,6 +8,7 @@ fabricate that authenticated comment or a passed check.
 
 ## Current interfaces
 
+- `./scripts/task validate-record --task-record PATH` is a read-only public format check for current normal task records; `./scripts/task validate-record --task-record PATH --route maintenance` selects a brief handoff. Normal requires the six-heading format; maintenance requires the five handoff inputs and a recorded `Decision: eligible`. It does not authenticate the controller decision, owner authority, semantic eligibility, qualification, or acceptance, and it is not added to historical qualification or recovery gates.
 - `scripts/task.py` prepares and authenticates the owner-bound `standard` workflow selection.
   This is the normal source/diff/subagent review route, not a compatibility exception.
 - `scripts/lib/task_authorization.py` retains authorization versions, path semantics, current

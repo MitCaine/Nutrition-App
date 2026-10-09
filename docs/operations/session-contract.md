@@ -7,11 +7,14 @@ agent interpretation. These tools do not replace architectural review. They esta
 state, identify mechanical boundary violations, inventory the Phase 5C4 control plane, and compare
 PostgreSQL privilege manifests.
 
-For standard Markdown task intake, the controller authenticates the current remote
-main and live issue, reads the accepted task, and reconciles them with authenticated
-external controller state through the [workflow entrypoint](../local_project_map.md).
-Read historical TOML capsules and HISTORY only when the current attempt or a directed
-recovery dependency uses them.
+For Markdown task intake, the controller authenticates the current remote main and live issue,
+reads the selected normal capsule or maintenance handoff, and reconciles them with authenticated
+external controller state through the [workflow entrypoint](../local_project_map.md). Before dispatch,
+the controller runs `./scripts/task validate-record --task-record PATH` for normal or
+`./scripts/task validate-record --task-record PATH --route maintenance` for a brief handoff.
+This read-only command validates record structure and
+recorded fields, not owner authorization or semantic eligibility. Read historical TOML capsules and
+HISTORY only when the current attempt or a directed recovery dependency uses them.
 Repository history-integrity validation remains required. The
 [combined pilot record](../../engineering/workflow/PILOT_2026-09-26.md) describes
 observed recovery cases; its old SHAs are evidence, not reusable authority.

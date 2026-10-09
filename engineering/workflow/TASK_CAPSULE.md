@@ -6,11 +6,17 @@ forbidden scope, checkable criteria, actual commands, results and gaps. Deliver 
 [local project map](../../docs/local_project_map.md), the controller's complete shared procedure,
 and each worker's complete Shared worker rules plus assigned unique level-two section from the
 pinned [`worker-instructions.md`](shared/worker-instructions.md#role-index), with applicable AGENTS
-inputs. Initial builders receive original objective/base/requirements without a future capsule;
-implementors and reviewers receive the accepted capsule. Links navigate; read through the next
+inputs. Initial builders receive original objective/base/requirements without a future capsule.
+Normal-route implementors and reviewers receive the accepted capsule; implementors and reviewers on
+controller-approved maintenance receive the complete recorded maintenance handoff in the existing
+task record. Links navigate; read through the next
 level-two heading or end of file.
 No RI JSON schema, qualification of a capsule-only planning overlay or frozen launcher
-is required for these new records.
+is required for these new records. A controller-confirmed eligible mechanical change may use
+the same task record for the optional maintenance handoff; the public `task validate-record`
+interface checks its required fields but does not replace external authorization or determine
+semantic eligibility. Historical TOML capsule schemas, records, and recovery transitions remain
+unchanged.
 
 ## Historical capsule contracts
 

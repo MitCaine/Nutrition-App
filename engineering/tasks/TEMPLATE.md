@@ -1,8 +1,15 @@
 # TASK-ID — Outcome
 
 Use the [shared six-heading format](../workflow/shared/start-an-issue.md#capsule-format)
-with the [local map](../../docs/local_project_map.md). Store new records under
-`engineering/tasks/`; preserve historical formats and stopped attempts unchanged.
+with the [local map](../../docs/local_project_map.md) for the normal route. A controller-confirmed
+eligible mechanical change may use the same `engineering/tasks/TASK-ID.md` record for a brief
+maintenance handoff with `## Objective`, `## Exact base`, `## Allowed changes`, `## Required checks`,
+`## Return destination`, and `## Controller eligibility` sections. Record one full 40- or
+64-character hexadecimal commit ID, a concrete stable return locator, and the exact line
+`Decision: eligible` under Controller eligibility. Before dispatch, run the public
+`./scripts/task validate-record` command with the selected route; its field checks do not decide
+semantic eligibility. Store new records under `engineering/tasks/`;
+preserve historical formats and stopped attempts unchanged.
 
 ## Objective
 

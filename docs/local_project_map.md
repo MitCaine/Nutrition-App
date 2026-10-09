@@ -2,20 +2,20 @@
 
 ## Selected instructions
 
-This is the sole project-root local execution map. The adopted Repository Intelligence (RI)
-instructions are pinned at `f6e1064d3f43aee61796f8558a7cef8181426883`: controllers use the
-complete [daily issue procedure](../engineering/workflow/shared/start-an-issue.md), and workers
-use the selected [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index)
-and their assigned section. The [Shared worker rules](../engineering/workflow/shared/worker-instructions.md#shared-worker-rules)
-and role sections govern worker inputs, scope and return duties. Controllers read the live issue,
-required linked specifications and applicable project standards; a handoff summary does not
-replace an unread source. The adopted procedure governs controller intake and directed reading.
+This is the sole project-root local execution map. The selected and adopted RI instruction set for
+new task intake is pinned at `5ff7f306df6080648e2cc5fbbfc119e55a293754`: controllers use the complete
+[daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
+[setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
+[worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
+section. The [Shared worker rules](../engineering/workflow/shared/worker-instructions.md#shared-worker-rules)
+and role sections govern worker inputs, scope and return duties. Preserve each active attempt's
+selected instruction inputs through acceptance; project-wide adoption for new intake does not repin
+active work.
 
-The adopted [SOURCE record](../engineering/workflow/shared/SOURCE.md) is authoritative for the
-selected instruction bytes and their provenance. It separates the controller procedure,
-worker instructions, conditional adoption guide and compatible runtime. Pins identify selected
-inputs; they do not grant permission or create a receipt or approval mechanism. The
-[adoption/replacement guide](../engineering/workflow/shared/capsule-controller-workflow.md#replace-an-entangled-adoption)
+The adopted [SOURCE record](../engineering/workflow/shared/SOURCE.md) is authoritative for upstream
+bytes, local transformations/relocations, kickoff-folder identities and compatible runtime. Pins
+identify selected inputs; they do not grant permission or create a receipt or approval mechanism.
+The [adoption/replacement guide](../engineering/workflow/shared/capsule-controller-workflow.md#replace-an-entangled-adoption)
 applies only to owner-authorized setup or replacement, not ordinary issue intake.
 
 ## Runtime
@@ -57,11 +57,19 @@ edits and historical attempt state. A task
 branch or other action requires its current explicit grant; this map is not blanket Git, issue
 or settings permission.
 
-The Work controller directly dispatches the capsule builder and the distinct independent
-reviewer. For implementation, the owner-designated Codex dispatcher authenticates the complete
-accepted-capsule handoff and launches exactly one implementor. The implementor returns there for
-relay to the Work controller. Tool or agent-spawn capability alone does not authorize an
-implementation route; workers do not recruit.
+The normal route has the Work controller dispatch a capsule builder and a distinct independent
+reviewer. The optional maintenance route omits the builder and planning-only publication only after
+the controller confirms eligibility and records the brief handoff in the existing task record; it
+retains exact-candidate review and all applicable qualification, verification, approval, integration
+and closeout controls. For implementation on either route, the owner-designated Codex dispatcher
+authenticates the complete accepted task handoff and launches exactly one implementor. The
+implementor returns there for relay to the Work controller. Tool or agent-spawn capability alone
+does not authorize an implementation route; workers do not recruit.
+
+The project-scoped Codex kickoff folders are `.agents/skills/ri-work-kickoff/` and
+`.agents/skills/ri-codex-dispatcher-kickoff/`. Their presence does not prove fresh Codex discovery
+or register a Work skill. Verify each host through its supported selector/import route; use direct
+document-based kickoff when Work registration is unavailable or unverified.
 
 The selected role settings are owner-authorized requests:
 
@@ -138,8 +146,13 @@ the [testing guide](operations/testing.md#main-qualification-profiles), and Nutr
 project owners govern domain/security standards, session closeout, selected tests, task interfaces,
 profile floors and protected acceptance.
 
-The controller uses the actual `./scripts/task` interfaces: `prepare ISSUE` with the explicit
-task ID, base, paths and profiles; `authorize ISSUE`; `qualify ISSUE --candidate-root PATH`;
+Before dispatch, the controller runs the read-only public record check:
+`./scripts/task validate-record --task-record engineering/tasks/TASK-ID.md --route normal`
+for the six-heading capsule, or explicitly `--route maintenance` for a brief maintenance handoff.
+The command checks recorded fields only; the controller separately authenticates authority and
+confirms semantic eligibility. The controller then uses the actual `./scripts/task` interfaces:
+`prepare ISSUE` with the explicit task ID, base, paths and profiles; `authorize ISSUE`;
+`qualify ISSUE --candidate-root PATH`;
 `verify ISSUE` with candidate SHA, actor, decision and evidence; `review ISSUE` with candidate
 SHA, actor, decision and summary; and
 `rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2` after a
@@ -178,10 +191,14 @@ evidence workspace.
 
 ## Storage and recovery
 
-New bounded Markdown tasks live at `engineering/tasks/TASK-ID.md`, using the
-[shared task format](../engineering/workflow/shared/start-an-issue.md#capsule-format) and
-[task template](../engineering/tasks/TEMPLATE.md#check-attempts). Existing full TOML
-capsules under `engineering/capsules/active/` remain historical recovery records through
+New task records live at `engineering/tasks/TASK-ID.md`. The normal route uses the
+[shared six-heading format](../engineering/workflow/shared/start-an-issue.md#capsule-format) and
+[task template](../engineering/tasks/TEMPLATE.md#check-attempts). Under explicit controller-selected
+maintenance, the same task record carries objective, exact base, allowed changes, required checks,
+concrete return destination and a recorded `Decision: eligible`; there is no separate maintenance
+file or history store. The public validator checks the selected route and required fields but does
+not determine eligibility or replace the normal task controller. Existing full TOML capsules under
+`engineering/capsules/active/` remain historical recovery records through
 `REVIEWED` or their last nonterminal state; preserve their bytes and legal transitions. The
 [capsule record contract](../engineering/workflow/TASK_CAPSULE.md#historical-capsule-contracts),
 [state machine](../engineering/workflow/STATES.md#terminal-recording), and immutable

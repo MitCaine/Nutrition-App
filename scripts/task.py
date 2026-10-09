@@ -5149,6 +5149,191 @@ def command_finalize_cancel(args: argparse.Namespace) -> int:
           "recovery": recovery, "issue_closed": True})
     return 0
 
+TASK_RECORD_NORMAL_HEADINGS = (
+    "Objective",
+    "Source and scope",
+    "Acceptance",
+    "Checks",
+    "Prerequisites",
+    "Handoff and closeout",
+)
+TASK_RECORD_MAINTENANCE_HEADINGS = (
+    "Objective",
+    "Exact base",
+    "Allowed changes",
+    "Required checks",
+    "Return destination",
+    "Controller eligibility",
+)
+TASK_RECORD_HEADING_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+TASK_RECORD_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+TASK_RECORD_FULL_COMMIT_RE = re.compile(
+    r"(?<![0-9a-fA-F])(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})(?![0-9a-fA-F])"
+)
+TASK_RECORD_RETURN_LOCATOR_RE = re.compile(
+    r"https?://[^\s)>]+"
+    r"|(?<![\w])/[A-Za-z0-9_.~-]+(?:/[A-Za-z0-9_.~-]+)*(?!\w)"
+    r"|(?<![\w])(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]+(?![\w])"
+    r"|(?<![A-Za-z0-9])(?:[0-9a-fA-F]{8,})(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+TASK_RECORD_RETURN_PLACEHOLDER_RE = re.compile(
+    r"\b(?:tbd|todo|unknown|pending|unspecified|unassigned|none|n/?a|"
+    r"to be (?:decided|determined|assigned)|choose later)\b|<[^>]+>",
+    re.IGNORECASE,
+)
+
+
+def _task_record_visible(text: str) -> str:
+    without_comments = TASK_RECORD_COMMENT_RE.sub("", text)
+    visible_lines: list[str] = []
+    fence_character: str | None = None
+    fence_length = 0
+    for line in without_comments.splitlines(keepends=True):
+        fence = re.match(r"^[ \t]*(`{3,}|~{3,})(.*)$", line)
+        if fence_character is None:
+            if fence is not None:
+                marker = fence.group(1)
+                fence_character = marker[0]
+                fence_length = len(marker)
+            else:
+                visible_lines.append(line)
+            continue
+        closing = re.match(r"^[ \t]*([`~]+)[ \t]*$", line)
+        if (
+            closing is not None
+            and closing.group(1)[0] == fence_character
+            and len(closing.group(1)) >= fence_length
+        ):
+            fence_character = None
+            fence_length = 0
+    return "".join(visible_lines)
+
+
+def _task_record_sections(text: str) -> list[tuple[str, str]]:
+    visible = _task_record_visible(text)
+    headings = list(TASK_RECORD_HEADING_RE.finditer(visible))
+    sections: list[tuple[str, str]] = []
+    for index, heading in enumerate(headings):
+        next_start = headings[index + 1].start() if index + 1 < len(headings) else len(visible)
+        sections.append((heading.group(1).strip(), visible[heading.end():next_start]))
+    return sections
+
+
+def _task_record_content(body: str) -> str:
+    return _task_record_visible(body).strip()
+
+
+def _validate_normal_task_record(sections: list[tuple[str, str]]) -> list[str]:
+    issues: list[str] = []
+    headings = [heading for heading, _ in sections]
+    if headings != list(TASK_RECORD_NORMAL_HEADINGS):
+        for required in TASK_RECORD_NORMAL_HEADINGS:
+            count = headings.count(required)
+            if count == 0:
+                issues.append(f"missing heading `## {required}`")
+            elif count > 1:
+                issues.append(f"repeated heading `## {required}`")
+        unexpected = [heading for heading in headings if heading not in TASK_RECORD_NORMAL_HEADINGS]
+        for heading in unexpected:
+            issues.append(f"unexpected top-level heading `## {heading}`")
+        if not issues:
+            issues.append("the six headings must appear once in template order")
+
+    for heading, body in sections:
+        if heading in TASK_RECORD_NORMAL_HEADINGS and not _task_record_content(body):
+            issues.append(f"blank section `## {heading}`")
+    return issues
+
+
+def _validate_maintenance_task_record(sections: list[tuple[str, str]]) -> list[str]:
+    issues: list[str] = []
+    grouped: dict[str, list[str]] = {}
+    for heading, body in sections:
+        grouped.setdefault(heading, []).append(body)
+
+    for heading in TASK_RECORD_MAINTENANCE_HEADINGS:
+        bodies = grouped.get(heading, [])
+        if not bodies:
+            issues.append(f"missing maintenance input `## {heading}`")
+        elif len(bodies) > 1:
+            issues.append(f"repeated maintenance input `## {heading}`")
+        elif not _task_record_content(bodies[0]):
+            issues.append(f"blank maintenance input `## {heading}`")
+
+    exact_base = grouped.get("Exact base", [])
+    if len(exact_base) == 1 and _task_record_content(exact_base[0]):
+        matches = TASK_RECORD_FULL_COMMIT_RE.findall(_task_record_content(exact_base[0]))
+        if len(matches) != 1:
+            issues.append("Exact base must contain one full 40- or 64-character hexadecimal commit ID")
+
+    eligibility = grouped.get("Controller eligibility", [])
+    if len(eligibility) == 1 and _task_record_content(eligibility[0]):
+        decisions = re.findall(
+            r"^[ \t]*Decision: eligible[ \t]*$",
+            _task_record_content(eligibility[0]),
+            re.MULTILINE,
+        )
+        if len(decisions) != 1:
+            issues.append("Controller eligibility must record exactly `Decision: eligible`")
+
+    destinations = grouped.get("Return destination", [])
+    if len(destinations) == 1 and _task_record_content(destinations[0]):
+        destination = _task_record_content(destinations[0])
+        locators = list(TASK_RECORD_RETURN_LOCATOR_RE.finditer(destination))
+        if TASK_RECORD_RETURN_PLACEHOLDER_RE.search(destination) or len(locators) != 1:
+            issues.append(
+                "Return destination needs a concrete stable ID, URL, or path; a role or display title alone is ambiguous"
+            )
+    return issues
+
+
+def command_validate_record(args: argparse.Namespace) -> int:
+    task_record = Path(args.task_record).expanduser()
+    route = args.route
+    if route not in {"normal", "maintenance"}:
+        raise TaskControllerError("TASK_RECORD_ROUTE_INVALID")
+    if task_record.is_symlink() or not task_record.is_file():
+        raise TaskControllerError(
+            f"TASK_RECORD_INVALID route={route}: task record must be an ordinary readable file"
+        )
+    try:
+        text = task_record.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise TaskControllerError(
+            f"TASK_RECORD_READ_FAILED route={route}: {exc}"
+        ) from exc
+    if "\x00" in text:
+        raise TaskControllerError(
+            f"TASK_RECORD_INVALID route={route}: task record contains a NUL byte"
+        )
+
+    sections = _task_record_sections(text)
+    if route == "normal":
+        issues = _validate_normal_task_record(sections)
+        fields = list(TASK_RECORD_NORMAL_HEADINGS)
+    else:
+        issues = _validate_maintenance_task_record(sections)
+        fields = list(TASK_RECORD_MAINTENANCE_HEADINGS)
+    if issues:
+        raise TaskControllerError(
+            f"TASK_RECORD_INVALID route={route}: " + "; ".join(issues)
+        )
+
+    emit(
+        {
+            "result": "PASS",
+            "route": route,
+            "task_record": str(task_record),
+            "validated_fields": fields,
+            "limitation": (
+                "format and recorded-field checks only; commit existence, live destination, controller eligibility and authority remain external"
+            ),
+        }
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -5172,6 +5357,30 @@ def build_parser() -> argparse.ArgumentParser:
         dest="command",
         required=True,
     )
+
+    validate_record = subparsers.add_parser(
+        "validate-record",
+        help="Read-only validation for a current task record before dispatch.",
+        description=(
+            "Read only the supplied ordinary task record. The default normal route "
+            "checks the current six-heading format; maintenance checks the brief "
+            "handoff fields and recorded controller eligibility. This command does "
+            "not authenticate semantic eligibility or mutate workflow state."
+        ),
+    )
+    validate_record.add_argument(
+        "--task-record",
+        type=Path,
+        required=True,
+        help="Path to the current Markdown task record.",
+    )
+    validate_record.add_argument(
+        "--route",
+        choices=("normal", "maintenance"),
+        default="normal",
+        help="Selected route (default: normal); maintenance must be explicit.",
+    )
+    validate_record.set_defaults(handler=command_validate_record)
 
     prepare = subparsers.add_parser(
         "prepare"

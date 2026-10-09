@@ -46,14 +46,21 @@ pinned [daily issue procedure](workflow/shared/start-an-issue.md) for controller
 Shared worker rules and their assigned unique level-two section of the pinned
 [worker instructions](workflow/shared/worker-instructions.md#role-index) through the next level-two
 heading or end of file. Initial builders receive original objective/base and requirements without
-a future capsule; implementors and reviewers receive the accepted capsule.
+a future capsule; implementors and reviewers receive the accepted task input.
 The [adoption guide](workflow/shared/capsule-controller-workflow.md) is conditional. New work
-uses bounded Markdown tasks under `engineering/tasks/`, ordinary source/diff/log review and the
-trusted standard controller. The Work controller dispatches the builder and distinct independent
-reviewer; the owner-designated Codex dispatcher authenticates the accepted implementation handoff,
-launches one implementor and relays its terminal result to Work. RI-only SDK/report/structural
-gates are retired. Protected main, authenticated owner authority, required profile checks,
-domain/security contracts and independent review remain.
+uses bounded Markdown tasks under `engineering/tasks/`. Normal tasks use the six-heading capsule;
+a controller-confirmed eligible mechanical change may use the optional maintenance route in the
+same task record. Before dispatch, the controller runs the public read-only
+`./scripts/task validate-record --task-record engineering/tasks/TASK-ID.md` for normal tasks, or
+`./scripts/task validate-record --task-record engineering/tasks/TASK-ID.md --route maintenance`
+for a brief handoff. This checks the record shape and recorded fields only; the controller still
+confirms eligibility and authenticates owner authority separately. Normal tasks retain the capsule
+builder and planning publication; maintenance omits those steps. The Work controller dispatches
+the builder on the normal route and a distinct independent reviewer on either route. The
+owner-designated Codex dispatcher authenticates the accepted implementation handoff, launches one
+implementor and relays its terminal result to Work. RI-only SDK/report/structural gates are retired.
+Protected main, authenticated owner authority, required profile checks, domain/security contracts,
+exact-candidate review and independent review remain.
 
 [AUTHORITY](workflow/AUTHORITY.md) owns project acceptance; [RI tooling](tooling/RI.md)
 retains the compatible source-navigation runtime. The original #246/#256 capsule attempts remain

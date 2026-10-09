@@ -313,7 +313,7 @@ mixing between the two runtimes.
 
 ## Engineering workflow
 
-Contributors should start with [Contributing](CONTRIBUTING.md) and the [Engineering Workflow](engineering/README.md). Feature delivery uses approved planning artifacts and GitHub Epics/issues for implementation sequencing. Epics and issues are engineering-planning units; product release versions describe complete application states and are not derived from Epic or issue numbers.
+Contributors should start with [Contributing](CONTRIBUTING.md), the [Engineering Workflow](engineering/README.md), and the [local project map](docs/local_project_map.md). New tasks normally follow the standard capsule route. A controller may select optional maintenance for a well-understood mechanical change after confirming eligibility; that request does not establish eligibility or bypass owner authorization, exact-candidate review, required qualification, verification, approval, or integration. Epics and issues are engineering-planning units; product release versions describe complete application states and are not derived from Epic or issue numbers.
 
 ## Documentation
 

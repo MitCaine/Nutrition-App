@@ -6,7 +6,11 @@ Workers use Shared worker rules and their assigned unique level-two section of t
 [worker instructions](shared/worker-instructions.md#role-index) through the next level-two heading
 or end of file, as identified in the controller handoff.
 Initial builders receive original objective/base and requirements without a future capsule;
-implementors and reviewers receive the accepted capsule.
+implementors and reviewers receive the accepted task input. The normal route uses the six-heading
+capsule; a controller-confirmed eligible mechanical change may use the optional maintenance handoff
+in the same task record, after the public read-only `task validate-record` command validates its
+selected route. Maintenance omits builder/planning publication and retains the existing candidate
+review, qualification, verification, approval, integration and closeout controls.
 The [adoption guide](shared/capsule-controller-workflow.md) is conditional on setup or replacement.
 Project controls: [AUTHORITY](AUTHORITY.md), [EXECUTION](EXECUTION.md) and
 [CANDIDATE_EVIDENCE](CANDIDATE_EVIDENCE.md). Paused capsule recovery:
