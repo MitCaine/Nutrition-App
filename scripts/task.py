@@ -5174,6 +5174,9 @@ TASK_RECORD_RETURN_LOCATOR_RE = re.compile(
     r"https?://[^\s)>]+"
     r"|(?<![\w])/[A-Za-z0-9_.~-]+(?:/[A-Za-z0-9_.~-]+)*(?!\w)"
     r"|(?<![\w])(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]+(?![\w])"
+    r"|(?<![A-Za-z0-9_-])"
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![A-Za-z0-9_-])"
     r"|(?<![A-Za-z0-9])(?:[0-9a-fA-F]{8,})(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
@@ -5269,13 +5272,21 @@ def _validate_maintenance_task_record(sections: list[tuple[str, str]]) -> list[s
 
     eligibility = grouped.get("Controller eligibility", [])
     if len(eligibility) == 1 and _task_record_content(eligibility[0]):
+        eligibility_content = _task_record_content(eligibility[0])
         decisions = re.findall(
+            r"^[ \t]*(?:[-*+][ \t]+)?Decision[ \t]*:.*$",
+            eligibility_content,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        exact_eligible = re.findall(
             r"^[ \t]*Decision: eligible[ \t]*$",
-            _task_record_content(eligibility[0]),
+            eligibility_content,
             re.MULTILINE,
         )
-        if len(decisions) != 1:
-            issues.append("Controller eligibility must record exactly `Decision: eligible`")
+        if len(decisions) != 1 or len(exact_eligible) != 1:
+            issues.append(
+                "Controller eligibility must contain exactly one `Decision: eligible` entry and no other Decision entries"
+            )
 
     destinations = grouped.get("Return destination", [])
     if len(destinations) == 1 and _task_record_content(destinations[0]):

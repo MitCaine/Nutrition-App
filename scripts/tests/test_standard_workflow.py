@@ -519,6 +519,19 @@ def test_public_validate_record_accepts_complete_maintenance_handoff(tmp_path):
     assert "live destination, controller eligibility and authority remain external" in output["limitation"]
 
 
+def test_public_validate_record_accepts_complete_uuid_return_destination(tmp_path):
+    record = tmp_path / "maintenance-uuid-return.md"
+    destination = "Assigned Codex dispatcher thread 01a11c75-c180-70b3-80c9-3372de1d8d83."
+    record.write_text(_maintenance_task_record({"Return destination": destination}), encoding="utf-8")
+
+    result = _run_public_record_validator(record, "maintenance")
+    assert result.returncode == 0, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "PASS"
+    assert output["route"] == "maintenance"
+    assert output["validated_fields"] == list(MAINTENANCE_FIELDS)
+
+
 @pytest.mark.parametrize(
     ("heading", "kind"),
     [(heading, kind) for heading in MAINTENANCE_FIELDS for kind in ("missing", "blank")],
@@ -558,9 +571,25 @@ def test_public_maintenance_validator_rejects_invalid_base_eligibility_and_desti
             "Controller eligibility": "Decision: eligible\nDecision: eligible"
         }, "Decision: eligible"),
         ("ineligible", {"Controller eligibility": "Decision: not eligible"}, "Decision: eligible"),
+        ("case-variant-value", {"Controller eligibility": "Decision: Eligible"}, "Decision: eligible"),
+        ("conflicting-negative", {
+            "Controller eligibility": (
+                "Decision: eligible\nDecision: not eligible\n"
+                "Investigation found a permission-boundary effect; affected work is paused."
+            )
+        }, "Decision: eligible"),
+        ("conflicting-other", {
+            "Controller eligibility": "Decision: eligible\nDecision: pending"
+        }, "Decision: eligible"),
         ("ambiguous-return", {"Return destination": "The Work controller."}, "Return destination"),
         ("multiple-returns", {
             "Return destination": "Return to thread 8f2d4c6a or 9f0c1e3d."
+        }, "Return destination"),
+        ("multiple-uuid-returns", {
+            "Return destination": (
+                "Return to thread 01a11c75-c180-70b3-80c9-3372de1d8d83 or "
+                "5b4e3f21-9876-4abc-8def-0123456789ab."
+            )
         }, "Return destination"),
     )
     for name, values, expected in cases:
