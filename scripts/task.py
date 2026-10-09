@@ -5180,9 +5180,13 @@ TASK_RECORD_RETURN_LOCATOR_RE = re.compile(
     r"|(?<![A-Za-z0-9])(?:[0-9a-fA-F]{8,})(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
+TASK_RECORD_RETURN_AUTOLINK_RE = re.compile(
+    r"<https?://[^\s<>]+>",
+    re.IGNORECASE,
+)
 TASK_RECORD_RETURN_PLACEHOLDER_RE = re.compile(
     r"\b(?:tbd|todo|unknown|pending|unspecified|unassigned|none|n/?a|"
-    r"to be (?:decided|determined|assigned)|choose later)\b|<[^>]+>",
+    r"to be (?:decided|determined|assigned)|choose later)\b|<[^>]*>|[<>]",
     re.IGNORECASE,
 )
 
@@ -5316,7 +5320,11 @@ def _validate_maintenance_task_record(sections: list[tuple[str, str]]) -> list[s
     if len(destinations) == 1 and _task_record_content(destinations[0]):
         destination = _task_record_content(destinations[0])
         locators = list(TASK_RECORD_RETURN_LOCATOR_RE.finditer(destination))
-        if TASK_RECORD_RETURN_PLACEHOLDER_RE.search(destination) or len(locators) != 1:
+        without_autolinks = TASK_RECORD_RETURN_AUTOLINK_RE.sub("", destination)
+        if (
+            TASK_RECORD_RETURN_PLACEHOLDER_RE.search(without_autolinks)
+            or len(locators) != 1
+        ):
             issues.append(
                 "Return destination needs a concrete stable ID, URL, or path; a role or display title alone is ambiguous"
             )

@@ -658,6 +658,64 @@ def test_public_validate_record_accepts_complete_uuid_return_destination(tmp_pat
 
 
 @pytest.mark.parametrize(
+    "destination",
+    (
+        "https://example.com/return",
+        "[return destination](https://example.com/return)",
+        "<https://example.com/return>",
+        "<http://example.com/return>",
+    ),
+)
+def test_public_maintenance_validator_accepts_return_url_forms(tmp_path, destination):
+    record = tmp_path / "maintenance-return-url-form.md"
+    record.write_text(
+        _maintenance_task_record({"Return destination": destination}),
+        encoding="utf-8",
+    )
+
+    result = _run_public_record_validator(record, "maintenance")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "PASS"
+    assert output["route"] == "maintenance"
+    assert output["validated_fields"] == list(MAINTENANCE_FIELDS)
+
+
+@pytest.mark.parametrize(
+    ("destination", "expected_error"),
+    (
+        ("<return destination>", "Return destination needs a concrete stable ID"),
+        ("<https://example.com/return", "Return destination needs a concrete stable ID"),
+        ("<https://>", "Return destination needs a concrete stable ID"),
+        ("<https://example.com/return>>", "Return destination needs a concrete stable ID"),
+        ("<<https://example.com/return>>", "Return destination needs a concrete stable ID"),
+        ("", "blank maintenance input `## Return destination`"),
+        (
+            "Return to <https://one.example> or <https://two.example>.",
+            "Return destination needs a concrete stable ID",
+        ),
+    ),
+)
+def test_public_maintenance_validator_rejects_invalid_return_url_forms(
+    tmp_path, destination, expected_error
+):
+    record = tmp_path / "maintenance-invalid-return-url-form.md"
+    record.write_text(
+        _maintenance_task_record({"Return destination": destination}),
+        encoding="utf-8",
+    )
+
+    result = _run_public_record_validator(record, "maintenance")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "FAIL"
+    assert "route=maintenance" in output["error"]
+    assert expected_error in output["error"]
+
+
+@pytest.mark.parametrize(
     ("heading", "kind"),
     [(heading, kind) for heading in MAINTENANCE_FIELDS for kind in ("missing", "blank")],
 )
