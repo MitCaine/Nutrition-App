@@ -313,7 +313,18 @@ mixing between the two runtimes.
 
 ## Engineering workflow
 
-Contributors should start with [Contributing](CONTRIBUTING.md), the [Engineering Workflow](engineering/README.md), and the [local project map](docs/local_project_map.md). New tasks normally follow the standard capsule route. A controller may select optional maintenance for a well-understood mechanical change after confirming eligibility; that request does not establish eligibility or bypass owner authorization, exact-candidate review, required qualification, verification, approval, or integration. Epics and issues are engineering-planning units; product release versions describe complete application states and are not derived from Epic or issue numbers.
+Contributors should start with [Contributing](CONTRIBUTING.md), the [Engineering Workflow](engineering/README.md), and the [local project map](docs/local_project_map.md). New tasks normally follow the standard capsule route. For a bounded mechanical change such as correcting identified broken documentation links, an owner can request direct Work controller maintenance with the adopted kickoff fields:
+
+```text
+@ri-work-kickoff
+Repository: MitCaine/Nutrition-App
+Issue(s): #<maintenance issue>
+Requested route: maintenance
+Implementation execution: direct Work controller
+Controller selection: Work; gpt-6.1-sol / low, owner-confirmed
+```
+
+The controller confirms eligibility, authenticates the active assignment, and records the literal route and execution fields plus the actual author in the existing brief task record or operational record. Direct Work implementation is available only while the local map explicitly permits it. The controller performs the implementor duties under its existing selected Work settings, then obtains fresh independent review from a nonauthor; a Codex dispatcher and separate implementor are not assigned for this selection. Delegated maintenance continues through the owner-designated Codex dispatcher and one implementor. All routes retain owner authorization, exact-candidate review, required qualification, verification, approval, and integration. Epics and issues are engineering-planning units; product release versions describe complete application states and are not derived from Epic or issue numbers.
 
 ## Documentation
 

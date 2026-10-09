@@ -5167,6 +5167,18 @@ TASK_RECORD_MAINTENANCE_HEADINGS = (
 )
 TASK_RECORD_HEADING_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 TASK_RECORD_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+TASK_RECORD_SELECTION_FIELD_RE = re.compile(
+    r"^[ \t]*(Requested route|Implementation execution)[ \t]*:(.*)$",
+    re.IGNORECASE,
+)
+DIRECT_WORK_REQUESTED_ROUTE = "Requested route: maintenance"
+DIRECT_WORK_IMPLEMENTATION = "Implementation execution: direct Work controller"
+DIRECT_WORK_MAP_PERMISSION = "Direct Work controller maintenance: permitted"
+DIRECT_WORK_MAP_SECTION = "Nutrition permissions and routing"
+DIRECT_WORK_MAP_BINDING_RE = re.compile(
+    r"^[ \t]*(?:[-*+][ \t]+)?Direct[ \t]+Work[ \t]+controller[ \t]+maintenance[ \t]*:",
+    re.IGNORECASE,
+)
 TASK_RECORD_FULL_COMMIT_RE = re.compile(
     r"(?<![0-9a-fA-F])(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})(?![0-9a-fA-F])"
 )
@@ -5253,6 +5265,98 @@ def _task_record_content(body: str) -> str:
         if not is_fence_marker
     )
     return content.strip()
+
+
+def _task_record_visible_lines(text: str) -> list[str]:
+    visible = _task_record_without_comments(text)
+    return [
+        line.rstrip("\r\n")
+        for line, in_fence, is_fence_marker in _task_record_fence_lines(visible)
+        if not in_fence and not is_fence_marker
+    ]
+
+
+def _direct_work_selection(text: str) -> dict[str, str] | None:
+    bindings: dict[str, list[str]] = {
+        "requested_route": [],
+        "implementation_execution": [],
+    }
+    direct_intent = False
+    for line in _task_record_visible_lines(text):
+        match = TASK_RECORD_SELECTION_FIELD_RE.match(line)
+        if match is None:
+            continue
+        field = match.group(1).casefold()
+        if field == "requested route":
+            bindings["requested_route"].append(line)
+        else:
+            bindings["implementation_execution"].append(line)
+            if match.group(2).strip().casefold().startswith("direct"):
+                direct_intent = True
+
+    if not direct_intent:
+        return None
+    if (
+        bindings["requested_route"] != [DIRECT_WORK_REQUESTED_ROUTE]
+        or bindings["implementation_execution"] != [DIRECT_WORK_IMPLEMENTATION]
+    ):
+        raise TaskControllerError(
+            "DIRECT_WORK_SELECTION_INVALID: direct maintenance requires exactly one literal "
+            f"`{DIRECT_WORK_REQUESTED_ROUTE}` and one literal `{DIRECT_WORK_IMPLEMENTATION}`"
+        )
+    return {
+        "requested_route": "maintenance",
+        "implementation_execution": "direct Work controller",
+    }
+
+
+def _validate_direct_work_map(repo_root: Path) -> tuple[Path, str]:
+    resolved_root = repo_root.resolve()
+    map_path = resolved_root / "docs/local_project_map.md"
+    if map_path.parent.is_symlink() or map_path.is_symlink() or not map_path.is_file():
+        raise TaskControllerError(
+            "DIRECT_WORK_PERMISSION_MAP_INVALID: docs/local_project_map.md must be an ordinary readable file"
+        )
+    try:
+        text = map_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise TaskControllerError(
+            f"DIRECT_WORK_PERMISSION_MAP_READ_FAILED: {exc}"
+        ) from exc
+    if "\x00" in text:
+        raise TaskControllerError(
+            "DIRECT_WORK_PERMISSION_MAP_INVALID: local map contains a NUL byte"
+        )
+
+    section_count = 0
+    current_section: str | None = None
+    bindings: list[tuple[str, str | None]] = []
+    for line in _task_record_visible_lines(text):
+        heading = TASK_RECORD_HEADING_RE.fullmatch(line)
+        if heading is not None:
+            current_section = heading.group(1).strip()
+            if current_section == DIRECT_WORK_MAP_SECTION:
+                section_count += 1
+            continue
+        if DIRECT_WORK_MAP_BINDING_RE.match(line):
+            bindings.append((line, current_section))
+
+    matching_permissions = [
+        line
+        for line, section in bindings
+        if section == DIRECT_WORK_MAP_SECTION and line == DIRECT_WORK_MAP_PERMISSION
+    ]
+    if (
+        section_count != 1
+        or len(bindings) != 1
+        or matching_permissions != [DIRECT_WORK_MAP_PERMISSION]
+    ):
+        raise TaskControllerError(
+            "DIRECT_WORK_PERMISSION_MAP_INVALID: selected project map must contain exactly one "
+            f"visible `{DIRECT_WORK_MAP_PERMISSION}` line in `## {DIRECT_WORK_MAP_SECTION}` "
+            "and no missing, denied, duplicate, or conflicting direct-maintenance binding"
+        )
+    return map_path, DIRECT_WORK_MAP_PERMISSION
 
 
 def _validate_normal_task_record(sections: list[tuple[str, str]]) -> list[str]:
@@ -5363,17 +5467,42 @@ def command_validate_record(args: argparse.Namespace) -> int:
             f"TASK_RECORD_INVALID route={route}: " + "; ".join(issues)
         )
 
-    emit(
-        {
-            "result": "PASS",
-            "route": route,
-            "task_record": str(task_record),
-            "validated_fields": fields,
-            "limitation": (
-                "format and recorded-field checks only; commit existence, live destination, controller eligibility and authority remain external"
-            ),
+    direct_selection = _direct_work_selection(text)
+    if direct_selection is not None and route != "maintenance":
+        raise TaskControllerError(
+            "DIRECT_WORK_SELECTION_INVALID: direct Work controller implementation "
+            "requires the maintenance route"
+        )
+    direct_map: tuple[Path, str] | None = None
+    if direct_selection is not None:
+        repo_root = resolve_repo_root(args.repo_root)
+        direct_map = _validate_direct_work_map(repo_root)
+
+    result: dict[str, Any] = {
+        "result": "PASS",
+        "route": route,
+        "task_record": str(task_record),
+        "validated_fields": fields,
+        "limitation": (
+            "format and recorded-field checks only; commit existence, live destination, controller eligibility and authority remain external"
+        ),
+    }
+    if direct_selection is not None and direct_map is not None:
+        map_path, permission = direct_map
+        result["validated_selection_fields"] = direct_selection
+        result["validated_project_map"] = {
+            "path": str(map_path),
+            "permission": permission,
         }
-    )
+        result["live_authority"] = (
+            "not checked: semantic eligibility, actual direct-author identity, reviewer independence, "
+            "live assignments, and owner authority remain controller-authenticated"
+        )
+        result["limitation"] = (
+            "record shape, direct selection, and selected project-map permission only; a PASS does not "
+            "authorize execution or establish live eligibility, author/reviewer independence, assignments, or owner authority"
+        )
+    emit(result)
     return 0
 
 
@@ -5407,8 +5536,10 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Read only the supplied ordinary task record. The default normal route "
             "checks the current six-heading format; maintenance checks the brief "
-            "handoff fields and recorded controller eligibility. This command does "
-            "not authenticate semantic eligibility or mutate workflow state."
+            "handoff fields and recorded controller eligibility. An explicit direct "
+            "Work controller selection also requires the selected project's exact "
+            "local-map permission. This command does not authenticate semantic "
+            "eligibility or mutate workflow state."
         ),
     )
     validate_record.add_argument(

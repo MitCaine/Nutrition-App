@@ -112,7 +112,13 @@ Preserve useful work for bounded corrections; confirm scope changes with the con
 
 Return the full change, criterion evidence and unresolved obligations for controller
 verification and independent review. Commit/push only under an explicit grant.
-Do not approve, integrate, close the issue, edit controller state or self-review.
+A worker implementor must not approve, integrate, close the issue, edit controller
+state or self-review. Under the project-permitted
+[direct Work controller maintenance exception](start-an-issue.md#optional-maintenance-route),
+the controller assumes these implementation duties without a worker dispatch;
+it retains controller authority for later approval/integration/closeout, but must
+obtain a fresh nonauthor independent review. The dispatcher is not used for that
+selection and cannot choose it.
 
 ## Independent reviewer
 

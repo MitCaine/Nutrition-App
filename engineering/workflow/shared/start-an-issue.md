@@ -46,9 +46,17 @@ For eligible work, record a brief controller handoff in the existing task record
 objective, exact base, allowed changes, required checks and concrete return
 destination. It replaces the capsule builder, full capsule and planning-only
 publication; no new template or tracking system is needed. The sequence is
-controller → implementor → independent reviewer → controller closeout, with the
-existing routing, exact-candidate review, authorized integration and verified
-closeout. Scale checks and review to impact: documentation-only work uses applicable
+controller → implementor → independent reviewer → controller closeout by default.
+Where the selected project map permits **direct Work controller** implementation,
+the controller may instead make the bounded changes and run the assigned checks
+itself, assuming the implementor's responsibilities and scope limits for that
+assignment. This skips the builder, Codex dispatcher and separate implementor;
+only a fresh independent reviewer is assigned. Use the controller's existing
+selected model/effort, not the implementor default. Record this execution selection
+in the same task record. The author cannot review its own implementation;
+controller approval, authorized integration and verified closeout remain required.
+This exception does not expand task scope or permit changes to role policy within
+an eligible maintenance task. Scale checks and review to impact: documentation-only work uses applicable
 identity, link, documentation and affected tooling checks; product suites run only
 when required by the project or affected by the change.
 
@@ -98,7 +106,8 @@ The controller owns assignment dispatch, including the bounded Codex dispatch
 delegation below. Run assignments one at a time, using fresh
 contexts by default. The normal path uses one capsule builder, one implementor
 and one independent reviewer; the [maintenance route](#optional-maintenance-route)
-omits the builder. Already-satisfied work may use the no-change route
+omits the builder and may use the permitted direct-controller exception instead
+of an implementor assignment. Already-satisfied work may use the no-change route
 below. Workers do not recruit other workers.
 
 Each assignment names its immediate return destination by concrete identifier and
@@ -212,7 +221,8 @@ a reported gap, not permission to guess.
 ### Publish the task branch and handoffs
 
 Before worker dispatch, the controller creates and publishes the dedicated
-non-main task branch on GitHub from the authenticated base. On the normal route,
+non-main task branch on GitHub from the authenticated base. For direct-controller
+maintenance, do this before implementation rather than worker dispatch. On the normal route,
 the builder returns the capsule; the map assigns its capsule-only commit/push to
 the builder or controller. Publish that planning commit before implementor dispatch.
 Maintenance instead uses the accepted brief handoff in the existing task record,
@@ -252,7 +262,9 @@ the assignment requires collecting independent results. This grants no frozen
 candidate edits or omission of required checks.
 
 For maintenance, the controller verifies the brief handoff against intake and
-project controls, then follows steps 3–6. Steps 1–2 apply to the normal route.
+project controls, then follows steps 3–6; under the permitted direct-controller
+exception it performs step 3 itself and still obtains fresh review in step 5.
+Steps 1–2 apply to the normal route.
 
 1. **Capsule builder:** use the supplied branch and [shared format](#capsule-format).
    Require affected stale docs/examples/maps/links to be corrected, or justify why
@@ -286,7 +298,8 @@ project controls, then follows steps 3–6. Steps 1–2 apply to the normal rout
    dispositions for every criterion and applicable standard. Check docs too.
    Missing evidence already due cannot pass. For post-installation obligations,
    assess the implementation/check plan now; installed proof remains due at closeout.
-6. **Controller:** return in-scope findings to an implementor, then obtain affected
+6. **Controller:** have the selected implementation actor address in-scope findings,
+   then obtain affected
    checks and independent review. Approval must cover the actual integrated result.
    Use authorized integration, verify it and any pending installed checks, record
    necessary evidence and the final accepted source. Resolve each retained finding

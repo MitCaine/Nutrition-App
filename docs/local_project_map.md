@@ -3,14 +3,14 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-new task intake is pinned at `686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f`: controllers use the complete
+future task intake is pinned at `5749d2b411f0f12e1de6403c2ab9470cc3547b01`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
 section. The [Shared worker rules](../engineering/workflow/shared/worker-instructions.md#shared-worker-rules)
 and role sections govern worker inputs, scope and return duties. Preserve each active attempt's
-selected instruction inputs through acceptance; project-wide adoption for new intake does not repin
-active work.
+selected instruction inputs through acceptance. A future-intake pin does not repin an active or
+historical attempt.
 
 The adopted [SOURCE record](../engineering/workflow/shared/SOURCE.md) is authoritative for upstream
 bytes, local transformations/relocations, kickoff-folder identities and compatible runtime. Pins
@@ -57,14 +57,41 @@ edits and historical attempt state. A task
 branch or other action requires its current explicit grant; this map is not blanket Git, issue
 or settings permission.
 
+Direct Work controller maintenance: permitted
+
 The normal route has the Work controller dispatch a capsule builder and a distinct independent
 reviewer. The optional maintenance route omits the builder and planning-only publication only after
-the controller confirms eligibility and records the brief handoff in the existing task record; it
-retains exact-candidate review and all applicable qualification, verification, approval, integration
-and closeout controls. For implementation on either route, the owner-designated Codex dispatcher
-authenticates the complete accepted task handoff and launches exactly one implementor. The
-implementor returns there for relay to the Work controller. Tool or agent-spawn capability alone
-does not authorize an implementation route; workers do not recruit.
+the controller confirms eligibility and records the brief handoff in the existing task record. The
+default maintenance route delegates implementation through the owner-designated Codex dispatcher
+to exactly one implementor. Direct Work controller implementation is permitted only for that
+controller-confirmed eligible maintenance selection and when the permission line above remains
+present exactly once in this section. Record `Requested route: maintenance` and
+`Implementation execution: direct Work controller` in the same existing task record, and record the
+actual direct author in that handoff or existing operational record. The controller assumes the
+implementor's duties, scope limits and checks, uses its already selected Work settings and
+confirmation, and does not apply the implementor's Codex defaults. This selection has no capsule
+builder, Codex dispatcher or separate implementor assignment; it requires a fresh nonauthor
+independent review of the exact candidate, plus qualification, verification, approval, integration
+and closeout. The author cannot review its own work. If implementation is delegated, the owner-designated Codex dispatcher
+authenticates the complete accepted task handoff, launches one implementor and relays its terminal
+result. Tool or agent-spawn capability alone does not authorize an implementation route; workers do
+not recruit. The delegated dispatcher launches exactly one implementor.
+
+Direct maintenance is limited to well-understood mechanical work with no unresolved design decision
+or change to product behavior, dependencies, runtime, role permissions or acceptance requirements.
+Substantive changes use the normal capsule route. If implementation reveals wider impact, pause the
+affected work and return to normal planning while retaining valid work and evidence. A failed
+focused check alone permits bounded diagnosis and correction within the authorized scope.
+
+Before direct edits, authenticate the current checkpoint, selected Work actor and live assignments.
+Refuse direct execution when a builder, dispatcher or implementor assignment is active or unresolved;
+preserve that assignment and return for bounded reconciliation instead of taking it over. Missing or
+unresolved assignment evidence is a hold, not evidence that the task is idle. Before review, use the
+existing controller authentication route to identify the actual author and reviewer. Refuse review
+when those authenticated actors are the same or the reviewer identity is unresolved, and preserve
+state; actor text in the task record does not establish independence. If review requests changes, return bounded correction to the selected direct
+author under the unchanged scope, retain C1 findings/proof, run affected C2 checks and require fresh
+nonauthor C2 review. Do not recruit an implementor solely for this correction.
 
 The project-scoped Codex kickoff folders are `.agents/skills/ri-work-kickoff/` and
 `.agents/skills/ri-codex-dispatcher-kickoff/`. Their presence does not prove fresh Codex discovery
@@ -78,7 +105,9 @@ The selected role settings are owner-authorized requests:
 | Controller, capsule builder and independent reviewer | Work | `gpt-6.1-sol` / `low` |
 | Implementor | Codex | `gpt-6-luna` / `max` |
 
-The table records the owner-selected requested settings. Dispatch options establish only the
+The table records the owner-selected requested settings. Direct Work controller implementation
+continues with the already selected controller settings and their existing confirmation; it does
+not create an implementor launch or transfer the implementor's settings to the controller. Dispatch options establish only the
 request; they do not establish a worker's launch or effective settings. Retain the existing
 owner-confirmed selection of the identified Work controller chat without asking for that selection
 again. That owner confirmation establishes the selected Work chat settings; it does not replace
@@ -149,8 +178,14 @@ profile floors and protected acceptance.
 Before dispatch, the controller runs the read-only public record check:
 `./scripts/task validate-record --task-record engineering/tasks/TASK-ID.md --route normal`
 for the six-heading capsule, or explicitly `--route maintenance` for a brief maintenance handoff.
-The command checks recorded fields only; the controller separately authenticates authority and
-confirms semantic eligibility. The controller then uses the actual `./scripts/task` interfaces:
+For direct Work controller maintenance, include the selected repository root with the existing
+global option, for example `./scripts/task --repo-root "$PWD" validate-record --task-record
+engineering/tasks/TASK-ID.md --route maintenance`. A direct selection must contain the two literal
+selection fields above and the selected project's map must contain the exact affirmative permission
+line in this section. Normal and delegated-maintenance checks retain their shape-only behavior. The
+command reports record and map fields separately; the controller still authenticates live authority,
+semantic eligibility, actual author, reviewer independence and active assignments. A passing record
+does not authorize execution. The controller then uses the actual `./scripts/task` interfaces:
 `prepare ISSUE` with the explicit task ID, base, paths and profiles; `authorize ISSUE`;
 `qualify ISSUE --candidate-root PATH`;
 `verify ISSUE` with candidate SHA, actor, decision and evidence; `review ISSUE` with candidate
@@ -195,9 +230,12 @@ New task records live at `engineering/tasks/TASK-ID.md`. The normal route uses t
 [shared six-heading format](../engineering/workflow/shared/start-an-issue.md#capsule-format) and
 [task template](../engineering/tasks/TEMPLATE.md#check-attempts). Under explicit controller-selected
 maintenance, the same task record carries objective, exact base, allowed changes, required checks,
-concrete return destination and a recorded `Decision: eligible`; there is no separate maintenance
-file or history store. The public validator checks the selected route and required fields but does
-not determine eligibility or replace the normal task controller. Existing full TOML capsules under
+concrete return destination and a recorded `Decision: eligible`; direct selection also records its
+literal route and execution fields plus the actual author in that handoff or existing operational
+record. There is no separate maintenance file or history store. The public validator checks the
+selected record fields and, for direct selection only, the exact local-map permission; it does not
+determine eligibility, author identity, reviewer independence, live assignment state or owner
+authority. Existing full TOML capsules under
 `engineering/capsules/active/` remain historical recovery records through
 `REVIEWED` or their last nonterminal state; preserve their bytes and legal transitions. The
 [capsule record contract](../engineering/workflow/TASK_CAPSULE.md#historical-capsule-contracts),

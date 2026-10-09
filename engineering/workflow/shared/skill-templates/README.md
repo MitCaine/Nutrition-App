@@ -1,16 +1,11 @@
 # Optional capsule workflow skill templates
 
-Controllers use the [daily issue procedure](../start-an-issue.md); workers use their
+Controllers use [Start an issue](../start-an-issue.md); workers use their
 [selected worker instructions](../worker-instructions.md#role-index).
 These current skill templates are optional resources, not mandatory installations
 or a reason to add packet/export/protected-launcher gates. Adopt only instructions
 needed by the selected consumer route; an ordinary role handoff can carry the
 lightweight instructions directly.
-Each worker handoff includes Shared worker rules and the assigned unique
-level-two section of the worker instructions. Initial builders receive original
-objective/base and requirements without a future capsule; implementors and
-reviewers receive the accepted capsule or maintenance handoff. Only the controller
-reads the complete daily procedure.
 
 Kickoff fields and queue/configuration rules have one owner in
 [new-project setup](../new-project-setup.md#kickoff-inputs-and-selected-configuration).
@@ -38,10 +33,10 @@ roles separate; no subagent publishes directly to main.
 | --- | --- | --- |
 | [ri-work-kickoff](../../../../.agents/skills/ri-work-kickoff/SKILL.md) | Owner-selected Work controller | Explicit owner kickoff for an issue or bounded queue through adopted project instructions. |
 | [ri-codex-dispatcher-kickoff](../../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md) | Owner-designated Codex dispatcher | Bounded orientation and waiting for a controller implementation handoff. |
-| [capsule-preflight](https://github.com/MitCaine/repository-intelligence/blob/686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f/docs/skill-templates/capsule-preflight/SKILL.md) | Controller, planner, or implementor | The project has an active capsule workflow with exact base/scope checks. |
-| [capsule-scope-review](https://github.com/MitCaine/repository-intelligence/blob/686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f/docs/skill-templates/capsule-scope-review/SKILL.md) | Fresh read-only scope challenger | The impact inventory needs independent challenge before implementation authorization. |
-| [ri-evidence-handoff](https://github.com/MitCaine/repository-intelligence/blob/686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f/docs/skill-templates/ri-evidence-handoff/SKILL.md) | Controller, implementor, or reviewer | RI locations or comparisons will enter a handoff. |
-| [capsule-independent-review](https://github.com/MitCaine/repository-intelligence/blob/686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f/docs/skill-templates/capsule-independent-review/SKILL.md) | Fresh inspection-only reviewer | The selected candidate-bound review route permits inspection-only review using controller-supplied evidence; this skill does not execute tests. |
+| [capsule-preflight](https://github.com/MitCaine/repository-intelligence/blob/5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/skill-templates/capsule-preflight/SKILL.md) | Controller, planner, or implementor | The project has an active capsule workflow with exact base/scope checks. |
+| [capsule-scope-review](https://github.com/MitCaine/repository-intelligence/blob/5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/skill-templates/capsule-scope-review/SKILL.md) | Fresh read-only scope challenger | The impact inventory needs independent challenge before implementation authorization. |
+| [ri-evidence-handoff](https://github.com/MitCaine/repository-intelligence/blob/5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/skill-templates/ri-evidence-handoff/SKILL.md) | Controller, implementor, or reviewer | RI locations or comparisons will enter a handoff. |
+| [capsule-independent-review](https://github.com/MitCaine/repository-intelligence/blob/5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/skill-templates/capsule-independent-review/SKILL.md) | Fresh inspection-only reviewer | The selected candidate-bound review route permits inspection-only review using controller-supplied evidence; this skill does not execute tests. |
 | [capsule-queue](capsule-queue/SKILL.md) | External gate watcher | A long non-subagent job has no native completion and its exact Codex controller destination is verified. Use a tested Work bridge or bounded wait for a Work controller. Native subagent handoffs use their completion events. |
 
 For a project-scoped Codex installation, copy the chosen **whole skill folders**
@@ -73,8 +68,8 @@ workspace route, then verify availability. Native subagents return to their pare
 lacks native completion and has a verified destination; it is unnecessary for
 these subagents.
 
-The preflight folder includes a read-only [evidence checker and adapter contract](https://github.com/MitCaine/repository-intelligence/blob/686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f/docs/skill-templates/capsule-preflight/references/evidence-contract.md).
-Its [closeout checks](https://github.com/MitCaine/repository-intelligence/blob/686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes)
+The preflight folder includes a read-only [evidence checker and adapter contract](https://github.com/MitCaine/repository-intelligence/blob/5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/skill-templates/capsule-preflight/references/evidence-contract.md).
+Its [closeout checks](https://github.com/MitCaine/repository-intelligence/blob/5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes)
 cover consumer-exported history metadata and required installed-workflow probes.
 Copy its supporting resources with the skill and connect it to the consumer's
 trusted records before treating it as a blocking gate. The scope-review skill

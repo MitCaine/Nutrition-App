@@ -1,7 +1,7 @@
 # Set up RI in a project
 
 Use the [controller workflow](capsule-controller-workflow.md) for RI-assisted
-capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f/docs/consumer-guide.md) for ordinary navigation.
+capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/consumer-guide.md) for ordinary navigation.
 RI does not require an execution framework or every optional skill to be installed.
 
 ## Minimal setup
@@ -50,7 +50,8 @@ an inclusive numerical range. Optional fields are **Capsule builder**,
 **Independent reviewer**, **Implementor** (model/effort), **Controller selection**
 (owner-confirmed existing selection), **Codex dispatcher**, task-specific
 **Authority/constraints**, **Stopping conditions** and **Requested route**
-(normal or maintenance). A maintenance request follows the controller
+(normal or maintenance), plus **Implementation execution** (`direct Work controller`
+when permitted by the map). A maintenance request follows the controller
 [eligibility decision](start-an-issue.md#optional-maintenance-route), not an automatic
 waiver of planning or project controls. Resolve concrete chat IDs
 through the supported route; a display title is not an authenticated destination.
@@ -172,7 +173,9 @@ Use `docs/local_project_map.md` in every consumer project. Keep it short:
   daily procedure, plus the project's task-file storage location and necessary
   additional fields. If adopting the optional maintenance route, use that existing
   task record for its brief handoff and resolve capsule-only local validators
-  explicitly. Do not maintain a competing local format.
+  explicitly. Record whether direct Work controller implementation is permitted;
+  reconcile any local enforcement before using that exception. Do not maintain
+  a competing local format.
 - Project standards and required test commands or their authoritative locations;
   use focused selection-section links rather than unrelated historical reading.
 - Role permissions, including the branch-creation actor and any explicit builder

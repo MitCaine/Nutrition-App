@@ -124,7 +124,9 @@ additional report or gate file is needed:
   its selected [worker instructions](worker-instructions.md#role-index), task inputs and relevant project
   requirements; workers do not repeat controller orientation. Controller
   checks returned scope and evidence before dispatching the next role; it does
-  not implement or self-review the assigned source changes.
+  not implement or self-review the assigned source changes on the normal route.
+  The selected maintenance exception permits direct controller implementation,
+  never self-review.
 - Review the affected documentation alongside code and tests. Approval and
   relevant test evidence must cover the candidate actually integrated. If that
   candidate changes, reconcile the diff and obtain affected checks/review before

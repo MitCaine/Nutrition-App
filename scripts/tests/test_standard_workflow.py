@@ -81,34 +81,39 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (28179, "9897bbf45f4a4c698e14b9a693dc7fb94694ec392aa49939648dde742f87dd6e"),
-        "worker-instructions.md": (13905, "7d36722b9a855b7a7483ffd976322bdf8577c7522d27af0c46495b0eb943af81"),
-        "capsule-controller-workflow.md": (14656, "1292b9ee70de02db49efd14bd1d15f5c9f4501e98733e75fb81bd7fd5c1ead5f"),
-        "new-project-setup.md": (11229, "a3b45abbe281476d8fb894a6aa99c37cf824f78241c29aed8a6d192bb2a24964"),
-        "skill-templates/README.md": (9377, "9eb8351f5627d86c69b990966812b19ebe1e358c66d4a10e4703fb9ba41d4e9e"),
-        "skill-templates/capsule-queue/SKILL.md": (2029, "ad4441425b1c6be2058ecbd32016daebafccbd8956ccfebc7f1e328c5a852fad"),
+        "start-an-issue.md": (29168, "d7697cddfb20195d2153719362b25233fb61c4c2b9b413af6eb21a275b1f7e8e"),
+        "worker-instructions.md": (14323, "0061961a7b6989411e3546cc80878decdb2465a76b7a23bc429801ec139385ca"),
+        "capsule-controller-workflow.md": (14776, "47c828a73a2072b3b52727650dc3f0f1653d5758b19cc624b8f61b0ac86dac71"),
+        "new-project-setup.md": (11449, "a339de0754f2bb00abadb310e049ccbae4c068661d6979d7366d60b645bac564"),
+        "skill-templates/README.md": (9019, "ac1a76801086edd97bae633224726ae51a5d986571d5f8a053b561c2ece77276"),
+        "skill-templates/capsule-queue/SKILL.md": (2029, "05068dbc4a3150f4fe4f2aeff9d5ff0f8c21bc67c25f4854bb05113d55eb21b8"),
     }
     provenance = (shared / "SOURCE.md").read_text()
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
-    assert "new task intake is pinned at 686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" in normalized_map
-    assert "new task intake is pinned at 5ff7f306df6080648e2cc5fbbfc119e55a293754" not in normalized_map
+    assert "future task intake is pinned at 5749d2b411f0f12e1de6403c2ab9470cc3547b01" in normalized_map
+    assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
+    assert "GH-311 implementation retains its active worker instruction selection" not in normalized_map
+    assert "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" not in normalized_map
+    assert "future task intake is pinned at 5ff7f306df6080648e2cc5fbbfc119e55a293754" not in normalized_map
     assert "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" in provenance
     assert "GH-307 and GH-309" in provenance
     assert "5ff7f306df6080648e2cc5fbbfc119e55a293754" in provenance
-    assert "completed GH-305 implementor assignment" in provenance
+    assert "GH-311 attempt's historical worker-instruction selection" in provenance
+    assert "This is attempt provenance and does not assert that the attempt or assignment remains active." in provenance
+    assert "completed GH-305 implementor assignment" in " ".join(provenance.split())
     assert "f6e1064d3f43aee61796f8558a7cef8181426883" in provenance
     assert "live GH-305" not in provenance
     normalized_provenance = " ".join(provenance.split())
-    assert "all four files in the complete two-file folders match upstream bytes" in normalized_provenance
-    assert "remain unchanged" in normalized_provenance
+    assert "all four installed files match the selected revision 5749 resources byte-for-byte" in normalized_provenance.lower()
+    assert "dispatcher skill and both references remain unchanged" in normalized_provenance.lower()
     for upstream_identity in (
-        "090c34dc2e6371e514edb5d8e849c11c10bab708",
-        "28179",
-        "9897bbf45f4a4c698e14b9a693dc7fb94694ec392aa49939648dde742f87dd6e",
-        "4f8f3667561150a17868da9c2101d69297d769a5",
-        "13897",
-        "7dc48817966d77456f3ee294393fd0d987b9ae06227535e2f152ef8da83384f7",
+        "f6cc34784022ecd96c952acae6c8951f9131ebc6",
+        "29168",
+        "d7697cddfb20195d2153719362b25233fb61c4c2b9b413af6eb21a275b1f7e8e",
+        "6df8aef19e9540b07804284f6b4d399f8e9d6bfd",
+        "14315",
+        "094ac702eaca007e67fcb7a386be5693f2da459b4d30919ef4a51825948c2e0d",
     ):
         assert upstream_identity in provenance
     assert "20a5039e7731eaa1303443b782caa81a383a0af1" in provenance
@@ -123,6 +128,51 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
         assert len(data) == size
         assert hashlib.sha256(data).hexdigest() == digest
         assert name in provenance and str(size) in provenance and digest in provenance
+    local_installed = {
+        "engineering/workflow/shared/start-an-issue.md": (
+            "f6cc34784022ecd96c952acae6c8951f9131ebc6", 29168,
+            "d7697cddfb20195d2153719362b25233fb61c4c2b9b413af6eb21a275b1f7e8e",
+        ),
+        "engineering/workflow/shared/worker-instructions.md": (
+            "01c7a7ccba8d3d6e6783c7ac21eb6f98f9793040", 14323,
+            "0061961a7b6989411e3546cc80878decdb2465a76b7a23bc429801ec139385ca",
+        ),
+        "engineering/workflow/shared/capsule-controller-workflow.md": (
+            "a4847392af036aa57cac3d623597305b983e7d18", 14776,
+            "47c828a73a2072b3b52727650dc3f0f1653d5758b19cc624b8f61b0ac86dac71",
+        ),
+        "engineering/workflow/shared/new-project-setup.md": (
+            "690aac49d1ec785764bbdca08344886605d086a0", 11449,
+            "a339de0754f2bb00abadb310e049ccbae4c068661d6979d7366d60b645bac564",
+        ),
+        "engineering/workflow/shared/skill-templates/README.md": (
+            "b8108f29b6a41c755cca72b640bba8f00cce265e", 9019,
+            "ac1a76801086edd97bae633224726ae51a5d986571d5f8a053b561c2ece77276",
+        ),
+        "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md": (
+            "edfec80e013d444c0b7851e00ef8d91cb9743210", 2029,
+            "05068dbc4a3150f4fe4f2aeff9d5ff0f8c21bc67c25f4854bb05113d55eb21b8",
+        ),
+        ".agents/skills/ri-work-kickoff/SKILL.md": (
+            "d7891d4825337e6f8f2de979a6b4498978d55114", 1417,
+            "22982297019547a3c050a4224c071ba7c419831fe9b2f1f6dd65be15b3444b5f",
+        ),
+        ".agents/skills/ri-work-kickoff/references/project-procedure.md": (
+            "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
+            "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
+        ),
+        ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md": (
+            "055e1048858c89c0346c810a6a03242fc9ce26b8", 1502,
+            "79de7229dfa3bbe12a8c85e89c5020969ebb80f2b5223f1a8d66c366a2d627a8",
+        ),
+        ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md": (
+            "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
+            "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
+        ),
+    }
+    for name, (blob, size, digest) in local_installed.items():
+        assert name in provenance and blob in provenance
+        assert str(size) in provenance and digest in provenance
     for retired in ("README.md", "capsule-builder.md", "implementor.md", "reviewer.md", "shared-rules.md"):
         assert not (shared / "roles" / retired).exists()
     queue_identities = (
@@ -138,15 +188,31 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "54db08ecb4f44ddb1df7d4aa22988daef1e89f47" in provenance
     assert "3b119ff01a9e22c090d3f2f27be4acd6ac4da0279ac5a4faf0da32adc54db6b1" in provenance
     installed = {
-        ".agents/skills/ri-work-kickoff/SKILL.md": (1392, "cbb0762af66cb39dc52abd9400e41f8e49abfa35109576ee4dee05fca028a169"),
-        ".agents/skills/ri-work-kickoff/references/project-procedure.md": (1118, "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11"),
-        ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md": (1502, "79de7229dfa3bbe12a8c85e89c5020969ebb80f2b5223f1a8d66c366a2d627a8"),
-        ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md": (1118, "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11"),
+        ".agents/skills/ri-work-kickoff/SKILL.md": (
+            "d7891d4825337e6f8f2de979a6b4498978d55114", 1417,
+            "22982297019547a3c050a4224c071ba7c419831fe9b2f1f6dd65be15b3444b5f",
+        ),
+        ".agents/skills/ri-work-kickoff/references/project-procedure.md": (
+            "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
+            "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
+        ),
+        ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md": (
+            "055e1048858c89c0346c810a6a03242fc9ce26b8", 1502,
+            "79de7229dfa3bbe12a8c85e89c5020969ebb80f2b5223f1a8d66c366a2d627a8",
+        ),
+        ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md": (
+            "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
+            "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
+        ),
     }
-    for name, (size, digest) in installed.items():
+    for name, (blob, size, digest) in installed.items():
         data = (ROOT / name).read_bytes()
         assert len(data) == size
         assert hashlib.sha256(data).hexdigest() == digest
+        git_blob = hashlib.sha1(
+            b"blob " + str(len(data)).encode() + b"\0" + data
+        ).hexdigest()
+        assert git_blob == blob
         assert digest in provenance
     lock = json.loads((ROOT / "engineering/tooling/ri-lock.json").read_text())
     assert lock["revision"] == "20a5039e7731eaa1303443b782caa81a383a0af1"
@@ -179,6 +245,75 @@ def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intak
     assert "complete assigned task input" in " ".join(implementor.split())
     assert "complete task and original" in reviewer
     assert "both directions" in dispatcher
+    assert "direct Work controller maintenance exception" in implementor
+    assert "fresh nonauthor independent review" in implementor
+    assert "author/implementor cannot be its reviewer" in reviewer
+
+
+def test_direct_work_route_scenarios_keep_scope_and_review_controller_owned():
+    import re
+
+    procedure = (ROOT / "engineering/workflow/shared/start-an-issue.md").read_text()
+    maintenance = procedure.split("## Optional maintenance route\n", 1)[1].split(
+        "## Capsule format\n", 1
+    )[0]
+    map_text = (ROOT / "docs/local_project_map.md").read_text()
+    normalized_map = " ".join(map_text.split())
+    work_skill = (ROOT / ".agents/skills/ri-work-kickoff/SKILL.md").read_text()
+    readme = (ROOT / "README.md").read_text()
+    authority = (ROOT / "engineering/workflow/AUTHORITY.md").read_text()
+
+    scenarios = (
+        "well-understood mechanical change",
+        "no unresolved design decision",
+        "no change to product behavior, dependencies, runtime, role permissions or acceptance requirements",
+        "correcting identified broken documentation links",
+        "pause the affected work and move to the normal capsule route, retaining valid work and evidence",
+        "A failed focused check alone does not force replanning",
+        "The author cannot review its own implementation",
+    )
+    maintenance_normalized = " ".join(maintenance.split())
+    readme_normalized = " ".join(readme.split())
+    for scenario in scenarios:
+        assert scenario in maintenance_normalized or scenario in readme_normalized, scenario
+    for excluded_scope in (
+        "product behavior",
+        "dependencies",
+        "runtime",
+        "role permissions",
+        "acceptance requirements",
+        "no unresolved design decision",
+    ):
+        assert excluded_scope in maintenance_normalized
+
+    for direct_rule in (
+        "skips the builder, Codex dispatcher and separate implementor",
+        "Use the controller's existing selected model/effort, not the implementor default",
+        "Record this execution selection in the same task record",
+    ):
+        assert direct_rule in " ".join(maintenance.split())
+    assert "selected implementation actor address in-scope findings" in " ".join(procedure.split())
+    assert "fresh nonauthor independent review" in normalized_map
+    assert "authenticate the current checkpoint, selected Work actor and live assignments" in normalized_map
+    assert "active or unresolved" in normalized_map
+    assert "actor text in the task record does not establish independence" in normalized_map
+    assert "retain C1 findings/proof" in normalized_map
+    assert "affected C2 checks" in normalized_map
+    assert "nonauthor C2 review" in normalized_map
+    assert "Do not recruit an implementor solely for this correction" in normalized_map
+    assert "preserve that assignment and return for bounded reconciliation" in normalized_map
+    assert "Missing or unresolved assignment evidence is a hold, not evidence that the task is idle" in normalized_map
+    assert "actual direct author" in authority
+    assert "reviewer independence" in authority
+    assert "Decision: eligible" in _direct_work_maintenance_record()
+    assert "Actual direct author: selected Work controller chat fixture-author-a64c22" in _direct_work_maintenance_record()
+
+    route_example = re.search(r"```text\n(.*?)\n```", readme, re.DOTALL)
+    assert route_example is not None
+    assert "Requested route: maintenance" in route_example.group(1)
+    assert "Implementation execution: direct Work controller" in route_example.group(1)
+    assert "Codex dispatcher:" not in route_example.group(1)
+    assert "implementation execution" in work_skill.lower()
 
 
 def test_current_handoffs_route_controller_and_assigned_worker_sections():
@@ -191,7 +326,9 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
         "engineering/workflow/AUTHORITY.md": ("Shared worker rules", "level-two section"),
         "engineering/workflow/README.md": ("Shared worker rules", "Initial builders"),
         "engineering/README.md": ("Shared worker rules", "Initial builders"),
-        "engineering/workflow/shared/skill-templates/README.md": ("Shared worker rules", "Only the controller"),
+        "engineering/workflow/shared/skill-templates/README.md": (
+            "daily publication sequence", "Workers read only their role/task inputs"
+        ),
     }
     old_pin = "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd"
     for name, required in current.items():
@@ -201,7 +338,7 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
         assert old_pin not in text, name
         assert " ".join(required[0].split()).lower() in normalized_lower, name
         assert " ".join(required[1].split()).lower() in normalized_lower, name
-        if name != "docs/local_project_map.md":
+        if name not in {"docs/local_project_map.md", "engineering/workflow/shared/skill-templates/README.md"}:
             assert "assigned unique level-two section" in normalized_lower, name
         assert ("worker instructions" in normalized_lower or "worker-instructions.md" in normalized_lower), name
     for name in ("WORKFLOW.md", "ROUTING.md", "EVIDENCE.md", "FAILURE_TAXONOMY.md"):
@@ -495,16 +632,65 @@ def _normal_task_record(fields=None, omitted=()):
     ) + "\n"
 
 
-def _run_public_record_validator(record_path, route=None):
-    command = [
-        str(ROOT / "scripts/task"),
+def _run_public_record_validator(record_path, route=None, repo_root=None):
+    command = [str(ROOT / "scripts/task")]
+    if repo_root is not None:
+        command.extend(("--repo-root", str(repo_root)))
+    command.extend((
         "validate-record",
         "--task-record",
         str(record_path),
-    ]
+    ))
     if route is not None:
         command.extend(("--route", route))
     return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
+
+
+def _direct_work_project_root(tmp_path, map_text=None):
+    repo_root = tmp_path / "selected-project"
+    repo_root.mkdir()
+    initialized = subprocess.run(
+        ["git", "init", "--quiet", str(repo_root)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+    if map_text is not None:
+        map_path = repo_root / "docs/local_project_map.md"
+        map_path.parent.mkdir(parents=True, exist_ok=True)
+        map_path.write_text(map_text, encoding="utf-8")
+    return repo_root
+
+
+def _direct_work_map(permission_line="Direct Work controller maintenance: permitted"):
+    return (
+        "# Nutrition local project map\n\n"
+        "## Nutrition permissions and routing\n\n"
+        f"{permission_line}\n"
+    )
+
+
+def _direct_work_maintenance_record(fields=None):
+    base_fields = {
+        "Objective": "Correct identified broken documentation links in the selected project docs.",
+        "Allowed changes": "Update the specifically identified documentation links only.",
+        "Return destination": "Fresh independent reviewer thread 01a11c75-c180-70b3-80c9-3372de1d8d83.",
+    }
+    eligibility = (
+        "Decision: eligible\n"
+        "Requested route: maintenance\n"
+        "Implementation execution: direct Work controller\n"
+        "Actual direct author: selected Work controller chat fixture-author-a64c22\n"
+        "Controller settings: Work; gpt-6.1-sol / low; owner-confirmed"
+    )
+    if fields:
+        eligibility = fields.get("Controller eligibility", eligibility)
+        fields = {**base_fields, **fields, "Controller eligibility": eligibility}
+    else:
+        fields = {**base_fields, "Controller eligibility": eligibility}
+    return _maintenance_task_record(fields)
 
 
 def test_public_validate_record_help_and_default_normal_acceptance(capsys):
@@ -587,6 +773,209 @@ def test_public_validate_record_accepts_complete_maintenance_handoff(tmp_path):
     assert output["route"] == "maintenance"
     assert output["validated_fields"] == list(MAINTENANCE_FIELDS)
     assert "live destination, controller eligibility and authority remain external" in output["limitation"]
+
+
+def test_public_validate_record_accepts_direct_work_with_selected_project_permission(tmp_path):
+    repo_root = _direct_work_project_root(tmp_path, _direct_work_map())
+    record = tmp_path / "direct-maintenance.md"
+    record.write_text(_direct_work_maintenance_record(), encoding="utf-8")
+    before_record = record.read_bytes()
+    before_map = (repo_root / "docs/local_project_map.md").read_bytes()
+
+    result = _run_public_record_validator(record, "maintenance", repo_root=repo_root)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    record_text = record.read_text(encoding="utf-8")
+    assert "Requested route: maintenance" in record_text
+    assert "Implementation execution: direct Work controller" in record_text
+    assert "Actual direct author: selected Work controller chat fixture-author-a64c22" in record_text
+    assert "Controller settings: Work; gpt-6.1-sol / low; owner-confirmed" in record_text
+    output = json.loads(result.stdout)
+    assert output["result"] == "PASS"
+    assert output["route"] == "maintenance"
+    assert output["validated_selection_fields"] == {
+        "requested_route": "maintenance",
+        "implementation_execution": "direct Work controller",
+    }
+    assert output["validated_project_map"] == {
+        "path": str(repo_root / "docs/local_project_map.md"),
+        "permission": "Direct Work controller maintenance: permitted",
+    }
+    assert "not checked" in output["live_authority"]
+    assert "actual direct-author identity" in output["live_authority"]
+    assert "does not authorize execution" in output["limitation"]
+    assert record.read_bytes() == before_record
+    assert (repo_root / "docs/local_project_map.md").read_bytes() == before_map
+
+
+def test_public_normal_validator_refuses_direct_work_selection(tmp_path):
+    record = tmp_path / "direct-in-normal-record.md"
+    record.write_text(
+        _normal_task_record({
+            "Source and scope": (
+                "Use the exact task base.\nRequested route: maintenance\n"
+                "Implementation execution: direct Work controller"
+            )
+        }),
+        encoding="utf-8",
+    )
+
+    result = _run_public_record_validator(record, "normal")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "FAIL"
+    assert "DIRECT_WORK_SELECTION_INVALID" in output["error"]
+    assert "requires the maintenance route" in output["error"]
+
+
+def test_public_direct_work_validator_refuses_symlinked_selected_map(tmp_path):
+    repo_root = _direct_work_project_root(tmp_path)
+    external_docs = tmp_path / "external-docs"
+    external_docs.mkdir()
+    (external_docs / "local_project_map.md").write_text(
+        _direct_work_map(),
+        encoding="utf-8",
+    )
+    (repo_root / "docs").symlink_to(external_docs, target_is_directory=True)
+    record = tmp_path / "direct-maintenance.md"
+    record.write_text(_direct_work_maintenance_record(), encoding="utf-8")
+
+    result = _run_public_record_validator(record, "maintenance", repo_root=repo_root)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "FAIL"
+    assert "DIRECT_WORK_PERMISSION_MAP_INVALID" in output["error"]
+    assert "ordinary readable file" in output["error"]
+
+
+@pytest.mark.parametrize(
+    "map_text",
+    (
+        None,
+        "# Map\n\n## Nutrition permissions and routing\n\n",
+        _direct_work_map("Direct Work controller maintenance: denied"),
+        _direct_work_map(
+            "<!-- Direct Work controller maintenance: permitted -->"
+        ),
+        _direct_work_map(
+            "```text\nDirect Work controller maintenance: permitted\n```"
+        ),
+        (
+            "# Map\n\n## Other\n\nDirect Work controller maintenance: permitted\n"
+        ),
+        (
+            "# Map\n\n## Nutrition permissions and routing\n\n"
+            "A Direct Work controller maintenance: permitted exception\n"
+        ),
+        (
+            "# Map\n\n## Nutrition permissions and routing\n\n"
+            "Direct Work controller maintenance: permitted\n"
+            "Direct Work controller maintenance: denied\n"
+        ),
+        (
+            "# Map\n\n## Nutrition permissions and routing\n\n"
+            "Direct Work controller maintenance: permitted\n"
+            "- Direct Work controller maintenance: denied\n"
+        ),
+        (
+            "# Map\n\n## Nutrition permissions and routing\n\n"
+            "direct Work controller maintenance: permitted\n"
+        ),
+        (
+            "# Map\n\n## Nutrition permissions and routing\n\n"
+            "Direct Work controller maintenance is permitted\n"
+        ),
+    ),
+    ids=(
+        "missing-map",
+        "missing-permission",
+        "denied",
+        "comment-only",
+        "fenced-example-only",
+        "wrong-section",
+        "substring",
+        "duplicate-conflict",
+        "list-conflict",
+        "case-variant",
+        "nonbinding-prose",
+    ),
+)
+def test_public_direct_work_validator_refuses_missing_or_ambiguous_map_permission(
+    tmp_path, map_text
+):
+    repo_root = _direct_work_project_root(tmp_path, map_text)
+    record = tmp_path / "direct-maintenance.md"
+    record.write_text(_direct_work_maintenance_record(), encoding="utf-8")
+
+    result = _run_public_record_validator(record, "maintenance", repo_root=repo_root)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "FAIL"
+    assert "DIRECT_WORK_PERMISSION_MAP_INVALID" in output["error"]
+    if map_text is None:
+        assert "ordinary readable file" in output["error"]
+    else:
+        assert "exactly one visible" in output["error"]
+
+
+@pytest.mark.parametrize(
+    "eligibility",
+    (
+        "Decision: eligible\nImplementation execution: direct Work controller",
+        "Decision: eligible\nRequested route: normal\n"
+        "Implementation execution: direct Work controller",
+        "Decision: eligible\nRequested route: maintenance\n"
+        "Implementation execution: direct Work controller\n"
+        "Implementation execution: direct Work controller",
+        "Decision: eligible\nRequested route: maintenance\n"
+        "Implementation execution: Direct Work controller",
+    ),
+    ids=("missing-route", "conflicting-route", "duplicate-execution", "case-variant"),
+)
+def test_public_direct_work_validator_requires_unambiguous_literal_selection(
+    tmp_path, eligibility
+):
+    repo_root = _direct_work_project_root(tmp_path, _direct_work_map())
+    record = tmp_path / "ambiguous-direct-maintenance.md"
+    record.write_text(
+        _direct_work_maintenance_record({"Controller eligibility": eligibility}),
+        encoding="utf-8",
+    )
+
+    result = _run_public_record_validator(record, "maintenance", repo_root=repo_root)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "FAIL"
+    assert "DIRECT_WORK_SELECTION_INVALID" in output["error"]
+
+
+def test_public_record_validator_keeps_fenced_direct_selection_nonbinding(tmp_path):
+    repo_root = _direct_work_project_root(tmp_path)
+    record = tmp_path / "delegated-maintenance-example.md"
+    record.write_text(
+        _maintenance_task_record(
+            {
+                "Controller eligibility": (
+                    "Decision: eligible\n```text\n"
+                    "Requested route: maintenance\n"
+                    "Implementation execution: direct Work controller\n````"
+                )
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_public_record_validator(record, "maintenance", repo_root=repo_root)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["route"] == "maintenance"
+    assert "validated_selection_fields" not in output
+    assert "validated_project_map" not in output
 
 
 @pytest.mark.parametrize("fence_character", ("`", "~"))
@@ -881,7 +1270,10 @@ def test_daily_entrypoints_and_six_heading_task_format():
                  "engineering/workflow/README.md",
                  "engineering/workflow/shared/skill-templates/README.md"):
         text = (ROOT / name).read_text()
-        assert re.search(r"\[[^\]]*daily[^\]]*\]\([^)]*start-an-issue\.md\)", text)
+        if name == "engineering/workflow/shared/skill-templates/README.md":
+            assert re.search(r"\[Start an issue\]\([^)]*start-an-issue\.md\)", text)
+        else:
+            assert re.search(r"\[[^\]]*daily[^\]]*\]\([^)]*start-an-issue\.md\)", text)
     expected = ["Objective", "Source and scope", "Acceptance", "Checks", "Prerequisites",
                 "Handoff and closeout"]
     for name in ("TEMPLATE.md", "GH-261.md", "GH-290.md"):
@@ -938,7 +1330,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f/docs/skill-templates/capsule-queue/")
+              "5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -952,7 +1344,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f"
+    revision = "5749d2b411f0f12e1de6403c2ab9470cc3547b01"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     provenance = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text()
@@ -983,8 +1375,8 @@ def test_selected_optional_upstream_relocations_are_pinned_and_declared():
          "3d4da861fdfa9eeb90bd22e1731f9a061015ac92b14ec4870bbb188765b7f73e"),
     ):
         assert blob in provenance and str(size) in provenance and digest in provenance
-    assert "6d2d666b91adb867857ffc3830904badec7b7c09" in provenance
-    assert "386b4a07ad573ed256c9b45f514c333c7282c8c3b57656c35912f912b893d4f3" in provenance
+    assert "fd892a382d07607847e4b22a2d59f293ef6ad8cf" in provenance
+    assert "9339cb7bed66cad755b769a01161a632b7ff3c302e5b97003d02e4d130a56a78" in provenance
 
 
 def test_controller_permissions_waiting_and_external_closeout_contract():
