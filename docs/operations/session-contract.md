@@ -31,20 +31,84 @@ run the standalone read-only session report from the checkout root:
 Dependency startup follows the [scope rule below](#startup-update-scope), not a
 blanket whole-project refresh. Successful updates still require task qualification.
 
-Before claiming completion, run:
+Before controller acceptance of a candidate and final installed task completion,
+the controller runs:
 
 ```bash
 ./scripts/session-end.sh
 ```
 
-A nonzero session-end exit is blocking: the implementation must not be
-described as complete. `WARN` findings are non-blocking unless configuration explicitly elevates
+A nonzero session-end exit blocks repository acceptance/task completion. A worker
+result may still report completed assigned work, actual failures and outstanding
+controller checks without claiming task acceptance. `WARN` findings are non-blocking unless configuration explicitly elevates
 them; `ERROR` findings are blocking. Reports must include the final session-end result and accurately
 identify opt-in infrastructure suites as passed, failed, or not run.
 
 Agents must not bypass a failure by weakening a validator, adding a broad exclusion, or deleting an
 incomplete test. Future prompts may invoke these requirements with: **“Follow the repository session
 contract.”**
+
+## Actor and timing
+
+This is the canonical Nutrition rule for local session/check responsibility. It
+binds project acceptance obligations to actors; the selected RI worker sections
+continue to own role inputs, read scopes, result delivery and independence.
+A returned worker result is not a declaration of repository task completion.
+
+| Actor/stage | Assigned responsibility | Acceptance still due |
+| --- | --- | --- |
+| Dispatcher orientation/relay | Authenticate only supplied handoff/source and selected role inputs; return terminal results/questions. No session-end or pre-commit. | Controller authenticates results, selects required checks and owns acceptance. |
+| Builder inspection/planning handoff | Read original directed requirements/source; return the draft/gaps. Run only expressly assigned planning checks when authorized to write the task file. No session-end or repository acceptance claim. | Controller validates record/plan, preserves historical prerequisites actually selected and assigns implementation checks. |
+| Inspection-only independent review | Inspect exact candidate/full diff and actual evidence; request missing proof from controller. No tests, inventory regeneration, session-end or pre-commit. | Controller supplies missing checks, records review, separately approves and integrates. |
+| Authorized implementor or direct controller author | Run source session report and all checks assigned by accepted task, using eligible tools and stable source; retain commands/results/failures/skips. Session-end only if expressly assigned with authority for its effects. | Controller runs full repository acceptance before candidate freeze and repeats required installed checks before closeout. |
+| Controller candidate acceptance/final closeout | Run session-end, whitespace/status and task-selected checks; inspect generated changes, require qualification/review/approval/protected integration, then installed obligations and verified closure/cleanup. | Nonzero or missing required proof blocks that gate; do not claim terminal completion. |
+
+`session-end.sh` invokes pre-commit, which can regenerate the tracked control
+inventory and then fail. It also needs the selected matching Python and pytest,
+and invokes capsule/history validation. It is not an inspection-only command.
+No read-only session-end route is required or introduced. Read-only actors do not
+invoke it merely to return a result, and cannot use portable recovery or another
+flag to manufacture such a route. If a genuinely assigned check needs mutation
+outside an actor's authority, return the gap to the controller; do not run it.
+
+Every required repository integrity check retains controller ownership:
+
+- Before candidate acceptance/freeze: migration/boundary and inventory checks,
+  whitespace, capsule/history integrity and focused audit tests through session-end;
+  task-specific focused tests/docs/profile floors are selected and run by the
+  controller or authorized implementor, with evidence authenticated by controller.
+- Before protected integration: exact-candidate dedicated-App qualification,
+  explicit verification, fresh independent review and separate controller approval.
+- After installation, before closure/owned-ref cleanup: required installed checks
+  and session-end/whitespace/clean-status confirmation by controller.
+- Strict historical recovery objects, C/R/T lineage and command prerequisites
+  remain required whenever selected by an actual task/recovery dependency. A
+  read-only handoff exception does not waive them or transfer history authority;
+  controller must obtain eligible proof at its required gate. Linux CI's explicit
+  portable structure check remains distinct from strict local recovery proof.
+
+### Worked handoff cases
+
+1. **Dispatcher orientation:** given a supplied branch/SHA and dispatcher section,
+   authenticate only those sources and return readiness or a missing input. Do not
+   run session-end to report orientation; controller retains candidate acceptance.
+2. **Builder handoff:** given original issue/base and assigned source, return a
+   drafted task plus unresolved decisions. An authorized task-file writer runs the
+   assigned record check; an inspection-only builder reports proposed content. Neither
+   regenerates the inventory to return planning. Controller validates the plan and
+   keeps required integrity checks on the later candidate acceptance schedule.
+3. **Inspection-only review:** inspect exact C, all criteria/full diff and retained
+   logs. If required tests are missing, request controller evidence and withhold PASS;
+   do not run pre-commit. A review PASS still grants no controller approval/integration.
+4. **Implementation completion:** return bounded changes, eligible focused results,
+   failures/skips and full diff. If session-end was not assigned, identify it as due
+   from controller before acceptance; do not claim task completion. If expressly
+   assigned, retain its actual result and generated diff, including any failure.
+5. **Final controller closeout:** after qualified/reviewed/approved integration,
+   authenticate installed C and run assigned installed checks plus session-end,
+   whitespace/status. An inventory rewrite or nonzero check blocks closure; review
+   authorized generated changes, correct within scope and repeat affected gates.
+   Only after all original outcomes pass, verify issue closure and safe owned refs.
 
 ## Startup update scope
 
@@ -146,7 +210,9 @@ mismatch or unavailable command.
 ./scripts/session-end.sh
 ```
 
-Session end delegates to the authoritative pre-commit workflow:
+Session end is controller-owned acceptance under [actor and timing](#actor-and-timing),
+or an expressly assigned implementation check with authority for its effects.
+It delegates to the authoritative pre-commit workflow:
 
 ```bash
 ./scripts/project-audit.sh pre-commit

@@ -185,6 +185,10 @@ map keeps only Nutrition's actor, permission, model and route bindings.
 
 ## Standards and checks
 
+Worker handoffs apply the canonical [local actor and timing rule](operations/session-contract.md#actor-and-timing)
+within their selected role read scopes. Read-only result delivery is not task completion;
+controller-owned acceptance checks remain required at their proper gates.
+
 Use [AGENTS.md](../AGENTS.md), the [session contract](operations/session-contract.md#repository-session-contract),
 the [testing guide](operations/testing.md#main-qualification-profiles), and Nutrition's
 [authority contract](../engineering/workflow/AUTHORITY.md#current-interfaces). These current

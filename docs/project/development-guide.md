@@ -78,7 +78,10 @@ line declared by `.python-version`, and sets the matching Ruff target. `requirem
 dependency lock.
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
-Python development and CI environment. For source or documentation maintenance
+Python development and CI environment. Follow the canonical [actor and timing rule](../operations/session-contract.md#actor-and-timing):
+read-only worker delivery does not invoke repository acceptance commands; the
+controller owns candidate acceptance and installed closeout, while implementors
+run assigned checks. No task-level integrity obligation is waived. For source or documentation maintenance
 that leaves dependency inputs unchanged, run the standalone session report from the
 repository root:
 

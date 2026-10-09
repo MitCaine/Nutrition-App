@@ -6,11 +6,17 @@ This file is the repository-level operating contract for coding agents working i
 
 Use it as the entry point. Deeper operational authority remains in the linked repository guides, scripts, migrations, tests, task capsules, and phase documents. Do not duplicate or override those authorities here.
 
-## Start and end every repository session
+## Session responsibilities
 
-Run all commands from the repository root.
+Run all commands from the repository root. The canonical
+[actor and timing rule](docs/operations/session-contract.md#actor-and-timing) distinguishes
+assigned worker results from repository task acceptance. Read-only orientation,
+builder inspection and inspection-only review do not run acceptance commands;
+builders authorized to write a capsule run only their assigned planning checks.
+The controller owns the full acceptance and installed closeout checks.
 
-For source or documentation maintenance that leaves dependency inputs unchanged,
+For the controller or an authorized implementation session performing source or
+documentation maintenance that leaves dependency inputs unchanged,
 run the standalone session report from the repository root:
 
 ```bash
@@ -22,7 +28,8 @@ Dependency work must select the bounded authorized route in the canonical
 Do not run whole-project refresh for a single-package assignment. Preserve exact
 partial-failure evidence; an update is not passing qualification.
 
-Before presenting work as complete or asking for commit approval:
+Before controller acceptance of a candidate or final installed task completion
+(and before asking for commit approval), the controller runs:
 
 ```bash
 ./scripts/session-end.sh
@@ -30,7 +37,10 @@ git diff --check
 git status --short
 ```
 
-Treat failures from these scripts as blocking unless the task explicitly concerns repairing the failing check.
+These acceptance failures block the task gate unless the task explicitly repairs
+the failing check. A worker may return a bounded result with failures or checks
+still due; that handoff is not task completion and grants no exemption from
+controller acceptance. Implementors run their assigned checks and preserve results.
 
 ## Repository authority
 

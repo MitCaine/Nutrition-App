@@ -22,7 +22,7 @@
    invariants. Avoid opportunistic cleanup that expands review scope.
 4. **Validate in layers.** Run focused checks while working, then the affected baseline and any
    specialized qualification selected by the [Testing Guide](../docs/operations/testing.md).
-5. **Close the session.** Run `./scripts/session-end.sh`. A failure blocks completion; report
+5. **Controller acceptance and closeout.** Apply the canonical [actor and timing rule](../docs/operations/session-contract.md#actor-and-timing). The controller runs `./scripts/session-end.sh` before candidate acceptance and installed closeout; read-only worker results do not invoke it. A failure blocks task completion; report
    opt-in suites as passed, failed, or not run.
 6. **Review and integrate.** Present the exact committed candidate, required
    qualification and independent review through the trusted controller. For fresh lightweight
