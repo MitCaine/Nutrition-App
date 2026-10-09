@@ -457,6 +457,24 @@ def _maintenance_task_record(fields=None):
     ) + "\n"
 
 
+def _normal_task_record(fields=None, omitted=()):
+    values = {
+        "Objective": "Correct an existing README typo.",
+        "Source and scope": "Use the exact task base and change README.md only.",
+        "Acceptance": "The typo is corrected without changing the documented meaning.",
+        "Checks": "Run the focused workflow checks.",
+        "Prerequisites": "No unresolved design decision; use the selected toolchain.",
+        "Handoff and closeout": "Return the exact candidate and evidence to the assigned controller.",
+    }
+    if fields:
+        values.update(fields)
+    return "# GH-999 mechanical task\n\n" + "\n\n".join(
+        f"## {heading}\n\n{values[heading]}"
+        for heading in task.TASK_RECORD_NORMAL_HEADINGS
+        if heading not in omitted
+    ) + "\n"
+
+
 def _run_public_record_validator(record_path, route=None):
     command = [
         str(ROOT / "scripts/task"),
@@ -507,6 +525,34 @@ def test_public_validate_record_rejects_malformed_normal_format(tmp_path):
     assert "blank section `## Checks`" in output["error"]
 
 
+def test_public_validate_record_accepts_fenced_checks_and_ignores_example_headings(tmp_path):
+    record = tmp_path / "normal-fenced-checks.md"
+    checks = "```markdown\n## Handoff and closeout\n./scripts/session-end.sh\n```"
+    record.write_text(_normal_task_record({"Checks": checks}), encoding="utf-8")
+
+    result = _run_public_record_validator(record, "normal")
+    assert result.returncode == 0, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "PASS"
+    assert output["route"] == "normal"
+    assert output["validated_fields"] == list(task.TASK_RECORD_NORMAL_HEADINGS)
+
+
+def test_public_normal_validator_does_not_count_headings_only_inside_fences(tmp_path):
+    record = tmp_path / "normal-fenced-heading-only.md"
+    checks = "```markdown\n## Prerequisites\nexample text\n```"
+    record.write_text(
+        _normal_task_record({"Checks": checks}, omitted=("Prerequisites",)),
+        encoding="utf-8",
+    )
+
+    result = _run_public_record_validator(record, "normal")
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["result"] == "FAIL"
+    assert "missing heading `## Prerequisites`" in output["error"]
+
+
 def test_public_validate_record_accepts_complete_maintenance_handoff(tmp_path):
     record = tmp_path / "maintenance.md"
     record.write_text(_maintenance_task_record(), encoding="utf-8")
@@ -517,6 +563,32 @@ def test_public_validate_record_accepts_complete_maintenance_handoff(tmp_path):
     assert output["route"] == "maintenance"
     assert output["validated_fields"] == list(MAINTENANCE_FIELDS)
     assert "live destination, controller eligibility and authority remain external" in output["limitation"]
+
+
+@pytest.mark.parametrize(
+    ("heading", "body"),
+    (
+        (
+            "Exact base",
+            "```text\n0123456789abcdef0123456789abcdef01234567\n```",
+        ),
+        (
+            "Allowed changes",
+            "```markdown\n## Required checks\nUpdate the existing task validator.\n```",
+        ),
+        ("Required checks", "```bash\n./scripts/session-end.sh\n```"),
+    ),
+)
+def test_public_maintenance_validator_accepts_fenced_field_content(tmp_path, heading, body):
+    record = tmp_path / f"maintenance-fenced-{heading.lower().replace(' ', '-')}.md"
+    record.write_text(_maintenance_task_record({heading: body}), encoding="utf-8")
+
+    result = _run_public_record_validator(record, "maintenance")
+    assert result.returncode == 0, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "PASS"
+    assert output["route"] == "maintenance"
+    assert output["validated_fields"] == list(MAINTENANCE_FIELDS)
 
 
 def test_public_validate_record_accepts_complete_uuid_return_destination(tmp_path):
@@ -554,6 +626,44 @@ def test_public_maintenance_validator_refuses_each_missing_or_blank_handoff_inpu
     assert output["result"] == "FAIL"
     assert "route=maintenance" in output["error"]
     assert heading in output["error"]
+
+
+def test_public_record_validator_refuses_comment_only_and_duplicate_headings(tmp_path):
+    normal_comment_only = tmp_path / "normal-comment-only.md"
+    normal_comment_only.write_text(
+        _normal_task_record({"Checks": "<!-- no checks supplied -->"}),
+        encoding="utf-8",
+    )
+    result = _run_public_record_validator(normal_comment_only, "normal")
+    assert result.returncode == 1
+    assert "blank section `## Checks`" in json.loads(result.stdout)["error"]
+
+    maintenance_comment_only = tmp_path / "maintenance-comment-only.md"
+    maintenance_comment_only.write_text(
+        _maintenance_task_record({"Required checks": "<!-- no checks supplied -->"}),
+        encoding="utf-8",
+    )
+    result = _run_public_record_validator(maintenance_comment_only, "maintenance")
+    assert result.returncode == 1
+    assert "blank maintenance input `## Required checks`" in json.loads(result.stdout)["error"]
+
+    normal_duplicate = tmp_path / "normal-duplicate-heading.md"
+    normal_duplicate.write_text(
+        _normal_task_record() + "\n## Checks\n\nDuplicate actual section.\n",
+        encoding="utf-8",
+    )
+    result = _run_public_record_validator(normal_duplicate, "normal")
+    assert result.returncode == 1
+    assert "repeated heading `## Checks`" in json.loads(result.stdout)["error"]
+
+    maintenance_duplicate = tmp_path / "maintenance-duplicate-heading.md"
+    maintenance_duplicate.write_text(
+        _maintenance_task_record() + "\n## Exact base\n\n0123456789abcdef0123456789abcdef01234567\n",
+        encoding="utf-8",
+    )
+    result = _run_public_record_validator(maintenance_duplicate, "maintenance")
+    assert result.returncode == 1
+    assert "repeated maintenance input `## Exact base`" in json.loads(result.stdout)["error"]
 
 
 def test_public_maintenance_validator_rejects_invalid_base_eligibility_and_destination(tmp_path):
