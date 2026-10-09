@@ -61,6 +61,22 @@ Jest covers pure feature models, explicit authority routing, local-runtime parit
 mappings, cache/recovery scoping, DRI/Target parity, local backup policy/activation, draft guards,
 shared route chrome, OCR quality policy, and rendered flow behavior.
 
+### Nested Recipe selected amounts
+
+Run `npm test -- --runInBand --runTestsByPath __tests__/nestedRecipeSelectedAmount.test.ts __tests__/localRecipePublicationRuntime.test.ts`
+from `apps/mobile`. The selected-amount regression renders the ordinary ingredient picker and
+Recipe form, submits the generated serving ID to the actual local runtime, and compares generated
+100 g, default serving and gram entries at nontrivial quantities. Nested nutrition resolves the
+selected compatibility serving against immutable publication amount semantics; generated 100 g
+uses its gram basis, while a published default `1 serving` retains its per-serving basis. Ordinary Food
+conversion remains unchanged.
+
+The regression uses native Node SQLite with a temporary file and verifies publication amounts,
+nutrients, Daily Logs and nutrient snapshots across reopen and mutable projection tampering. This
+is real file-backed SQL evidence, with an Expo database interface adapter; it does not establish
+`expo-sqlite` lifecycle or physical-device behavior. Immutable accepted history is never rewritten
+by a recalculation. Existing publication/Log regression suites remain required alongside it.
+
 ### Target weight editing and storage
 
 The GH-272 model and rendered settings regressions exercise canonical kilogram values at 30.000,

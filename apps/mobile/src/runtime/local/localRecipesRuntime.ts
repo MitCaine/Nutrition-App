@@ -142,6 +142,15 @@ type PublicationNutrientRow = Readonly<{
   data_status: NutrientDataStatus;
 }>;
 
+type PublicationAmountRow = Readonly<{
+  display_label: string;
+  semantic_mode: "serving" | "g";
+  display_quantity: string | null;
+  display_unit: string;
+  gram_equivalent: string | null;
+  is_default: number;
+}>;
+
 type PublicationTotal = AggregatedNutrientTotal & Readonly<{
   amountKnown: ExactDecimal;
   amountEstimated: ExactDecimal;
@@ -987,6 +996,7 @@ export class LocalRecipesRuntime implements RecipesRuntime {
         [food.id],
       );
       let nutrients: PublicationNutrientRow[];
+      let nestedAmounts: PublicationAmountRow[] | null = null;
       if (food.source_type === "recipe") {
         if (food.source_id === null || food.recipe_publication_revision_id === null || food.is_recipe !== 1) {
           throw invalidStoredRecipe(context);
@@ -998,6 +1008,11 @@ export class LocalRecipesRuntime implements RecipesRuntime {
           [food.source_id, this.ownerId, food.id, food.recipe_publication_revision_id],
         );
         if (!nestedAuthority) throw invalidStoredRecipe(context);
+        nestedAmounts = await transaction.getAllAsync<PublicationAmountRow>(
+          `SELECT "display_label", "semantic_mode", "display_quantity", "display_unit", "gram_equivalent", "is_default"
+           FROM "recipe_publication_amount_definitions" WHERE "revision_id" = ? ORDER BY "display_order", "id"`,
+          [food.recipe_publication_revision_id],
+        );
         // Nested Recipe nutrition is read from the immutable active revision,
         // never from the mutable compatibility projection rows.
         nutrients = await transaction.getAllAsync<PublicationNutrientRow>(
@@ -1026,16 +1041,43 @@ export class LocalRecipesRuntime implements RecipesRuntime {
           { food_name: food.name },
         );
       }
+      // The submitted ID names a compatibility serving. Resolve its complete
+      // semantics to exactly one immutable amount before choosing a basis.
+      const selectedAmounts = nestedAmounts?.filter((amount) =>
+        amount.semantic_mode === ingredient.amount_unit
+        && (ingredient.amount_unit === "g" || (selectedServing !== null
+          && amount.display_label === selectedServing.label
+          && amount.display_quantity !== null
+          && compareDecimals(amount.display_quantity, selectedServing.quantity, NUMERIC_14_6) === 0
+          && amount.display_unit === selectedServing.unit
+          && amount.is_default === selectedServing.is_default
+          && ((amount.gram_equivalent === null && selectedServing.gram_weight === null)
+            || (amount.gram_equivalent !== null && selectedServing.gram_weight !== null
+              && compareDecimals(amount.gram_equivalent, selectedServing.gram_weight, NUMERIC_14_6) === 0)))));
+      if (selectedAmounts !== undefined && selectedAmounts.length !== 1) throw invalidStoredRecipe(context);
+      const selectedAmount = selectedAmounts?.[0] ?? null;
+      const nestedDefaults = nestedAmounts?.filter((amount) => amount.semantic_mode === "serving" && amount.is_default === 1);
+      if (nestedDefaults !== undefined && nestedDefaults.length !== 1) throw invalidStoredRecipe(context);
+      const nestedDefault = nestedDefaults?.[0] ?? null;
       const directGramBasis = nutrients.some((value) => value.basis === "per_gram" || value.basis === "per_100g");
-      const conversionServing = ingredient.amount_unit === "serving"
+      const conversionServing = nestedDefault !== null
+        ? { label: nestedDefault.display_label, gram_weight: nestedDefault.gram_equivalent }
+        : ingredient.amount_unit === "serving"
         ? selectedServing
         : servings.find((value) => value.is_default === 1) ?? null;
+      const selectedGrams = selectedAmount === null ? selectedServing?.gram_weight : selectedAmount.gram_equivalent;
       const gramAmount = ingredient.amount_unit === "g"
         ? ingredient.amount_quantity
-        : selectedServing?.gram_weight === null || selectedServing?.gram_weight === undefined
+        : selectedGrams === null || selectedGrams === undefined
           ? null
-          : multiplyResponseDecimals(ingredient.amount_quantity, selectedServing.gram_weight);
-      const servingMultiplier = ingredient.amount_unit === "serving"
+          : multiplyResponseDecimals(ingredient.amount_quantity, selectedGrams);
+      const servingMultiplier = nestedDefault !== null
+        ? selectedAmount === nestedDefault
+          ? ingredient.amount_quantity
+          : gramAmount !== null && nestedDefault.gram_equivalent !== null
+            ? divideResponseDecimals(gramAmount, nestedDefault.gram_equivalent)
+            : null
+        : ingredient.amount_unit === "serving"
         ? ingredient.amount_quantity
         : conversionServing?.gram_weight
           ? divideResponseDecimals(ingredient.amount_quantity, conversionServing.gram_weight)
@@ -1054,7 +1096,9 @@ export class LocalRecipesRuntime implements RecipesRuntime {
         grouped.set(nutrient.nutrient_id, rows);
       }
       for (const [nutrientId, rows] of [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-        const preferred = ingredient.amount_unit === "serving"
+        const useServingBasis = ingredient.amount_unit === "serving"
+          && (selectedAmount === null || selectedAmount.display_unit !== "g");
+        const preferred = useServingBasis
           ? rows.filter((value) => value.basis === "per_serving")
           : rows.filter((value) => value.basis === "per_100g" || value.basis === "per_gram");
         const candidates = preferred.length > 0 ? preferred : rows;
