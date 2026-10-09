@@ -42,18 +42,29 @@ project_process_stop_from_record \
   backend \
   "backend"
 
-if [[
-  -f "$SIMULATOR_STARTED_FILE"
-  && -f "$SIMULATOR_UDID_FILE"
-]]
-then
+for simulator_record in "$SIMULATOR_STARTED_FILE" "$SIMULATOR_UDID_FILE"; do
+  if [[ -L "$simulator_record" || ( -e "$simulator_record" && ! -f "$simulator_record" ) ]]; then
+    echo "Incomplete cleanup: ambiguous simulator record; preserving simulator records." >&2
+    exit 1
+  fi
+done
+
+if [[ -f "$SIMULATOR_STARTED_FILE" ]]; then
+  if [[ ! -s "$SIMULATOR_UDID_FILE" ]]; then
+    echo "Incomplete cleanup: simulator identity is missing; preserving simulator records." >&2
+    exit 1
+  fi
   simulator_udid="$(cat "$SIMULATOR_UDID_FILE")"
 
   if command -v xcrun >/dev/null 2>&1; then
     echo "Shutting down project simulator..."
-    xcrun simctl shutdown "$simulator_udid" 2>/dev/null || true
+    if ! xcrun simctl shutdown "$simulator_udid"; then
+      echo "Incomplete cleanup: simulator shutdown failed; preserving simulator records." >&2
+      exit 1
+    fi
   else
-    echo "xcrun is unavailable; simulator could not be shut down."
+    echo "Incomplete cleanup: xcrun is unavailable; preserving simulator records." >&2
+    exit 1
   fi
 else
   echo "Simulator was not started by this project; leaving it running."
@@ -68,9 +79,13 @@ if compose_file="$(find_compose_file)"; then
      docker info >/dev/null 2>&1
   then
     echo "Stopping repository Docker Compose services..."
-    docker compose -f "$compose_file" down
+    if ! docker compose -f "$compose_file" down; then
+      echo "Incomplete cleanup: Docker Compose shutdown failed; preserving runtime state." >&2
+      exit 1
+    fi
   else
-    echo "Docker is unavailable; Compose services could not be stopped."
+    echo "Incomplete cleanup: Docker is unavailable; preserving runtime state for Compose cleanup." >&2
+    exit 1
   fi
 fi
 

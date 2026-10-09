@@ -236,11 +236,12 @@ def test_recycled_pid_start_identity_mismatch_is_never_signaled(
         },
     )
 
-    assert stopped.returncode == 0, stopped.stderr
+    assert stopped.returncode == 1, stopped.stderr
+    assert record.exists()
     assert "Refusing to signal Expo" in stopped.stdout
     assert "different process-start identity" in stopped.stdout
     assert process.poll() is None
-    assert not record.exists()
+    assert record.exists()
 
 
 def test_command_contract_mismatch_is_never_signaled(
@@ -284,7 +285,8 @@ def test_command_contract_mismatch_is_never_signaled(
         },
     )
 
-    assert stopped.returncode == 0, stopped.stderr
+    assert stopped.returncode == 1, stopped.stderr
+    assert record.exists()
     assert "Refusing to signal Expo" in stopped.stdout
     assert "does not match the recorded service command contract" in (
         stopped.stdout
@@ -327,9 +329,9 @@ def test_legacy_and_malformed_records_cannot_authorize_signals(
         },
     )
 
-    assert stopped.returncode == 0, stopped.stderr
+    assert stopped.returncode == 1, stopped.stderr
     assert "untrusted process record" in stopped.stdout
-    assert not record.exists()
+    assert record.read_text() == record_body
 
 
 def test_already_exited_record_is_removed_without_signal(
@@ -397,7 +399,7 @@ fi
     )
 
 
-def test_startup_rejects_owned_record_and_cleans_untrusted_record(
+def test_startup_rejects_owned_and_preserves_untrusted_record(
     tmp_path: Path,
     disposable_processes: list[subprocess.Popen[bytes]],
 ) -> None:
@@ -464,9 +466,9 @@ exit 0
         },
     )
 
-    assert cleaned.returncode == 0, cleaned.stderr
-    assert "without signaling" in cleaned.stdout
-    assert not record.exists()
+    assert cleaned.returncode == 1, cleaned.stderr
+    assert "Refusing startup" in cleaned.stdout
+    assert record.exists()
     assert process.poll() is None
 
 

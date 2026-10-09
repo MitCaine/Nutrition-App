@@ -60,6 +60,41 @@ project_process_is_running() {
   [[ "$process_state" != Z* ]]
 }
 
+# A failed ps observation is not proof that a recorded process exited.
+# Python is already a repository launcher prerequisite; ESRCH is native proof
+# of absence on macOS and Linux. Unavailable/denied inspection stays uncertain.
+project_process_exit_confirmed() {
+  local pid="$1"
+  local process_state
+
+  [[ "$pid" =~ ^[0-9]+$ && "$pid" != 0 ]] || return 1
+  if python3 -c '
+import os, sys
+try:
+    os.kill(int(sys.argv[1]), 0)
+except ProcessLookupError:
+    raise SystemExit(0)
+except (PermissionError, OSError, ValueError):
+    raise SystemExit(1)
+raise SystemExit(1)
+' "$pid" 2>/dev/null
+  then
+    return 0
+  fi
+
+  process_state="$(project_process_ps_field "$pid" stat)" || return 1
+  [[ "$process_state" == Z* ]]
+}
+
+project_process_exit_or_incomplete() {
+  local pid="$1"
+  local service_name="$2"
+
+  project_process_exit_confirmed "$pid" && return 0
+  echo "Incomplete cleanup for $service_name PID $pid: exit could not be confirmed; preserving ownership record." >&2
+  return 1
+}
+
 project_process_capture_identity() {
   local pid="$1"
   local start_before
@@ -355,17 +390,20 @@ project_process_record_status() {
   if ! project_process_is_running \
       "$PROJECT_PROCESS_RECORD_PID"
   then
-    PROJECT_PROCESS_STATUS_REASON=\
-"recorded process is no longer running"
-    return 1
+    if project_process_exit_confirmed "$PROJECT_PROCESS_RECORD_PID"; then
+      PROJECT_PROCESS_STATUS_REASON="recorded process is no longer running"
+      return 1
+    fi
+    PROJECT_PROCESS_STATUS_REASON="recorded process cannot be inspected safely"
+    return 2
   fi
 
   if ! project_process_capture_identity \
       "$PROJECT_PROCESS_RECORD_PID"
   then
     PROJECT_PROCESS_STATUS_REASON=\
-"recorded process exited during identity verification"
-    return 1
+"recorded process identity could not be verified"
+    return 2
   fi
 
   if [[ "$PROJECT_PROCESS_CAPTURE_START_IDENTITY" != "$PROJECT_PROCESS_RECORD_START_IDENTITY" ]]
@@ -417,7 +455,8 @@ project_process_prepare_start_record() {
       ;;
     2)
       echo \
-        "Removing untrusted $service_name process record without signaling: $PROJECT_PROCESS_STATUS_REASON."
+        "Refusing startup from untrusted $service_name process record: $PROJECT_PROCESS_STATUS_REASON."
+      return 1
       ;;
     *)
       echo \
@@ -453,11 +492,10 @@ project_process_identity_matches() {
 
 project_process_child_pids() {
   local parent_pid="$1"
+  local process_list
 
-  ps -ax -o pid= -o ppid= |
-    awk \
-      -v parent="$parent_pid" \
-      '$2 == parent { print $1 }'
+  process_list="$(ps -ax -o pid= -o ppid=)" || return 1
+  awk -v parent="$parent_pid" '$2 == parent { print $1 }' <<< "$process_list"
 }
 
 project_process_signal_if_same_identity() {
@@ -509,6 +547,7 @@ project_process_stop_identity_tree() {
   local expected_parent="${5-}"
 
   local child_pid
+  local child_pids
   local child_start
   local child_parent
   local grace_seconds
@@ -522,7 +561,13 @@ project_process_stop_identity_tree() {
   then
     echo \
       "Refusing to stop $service_name PID $pid: process identity does not match."
-    return 0
+    project_process_exit_or_incomplete "$pid" "$service_name"
+    return $?
+  fi
+
+  if ! child_pids="$(project_process_child_pids "$pid")"; then
+    echo "Incomplete cleanup for $service_name: child inspection failed; preserving ownership record." >&2
+    return 1
   fi
 
   while read -r child_pid; do
@@ -536,27 +581,29 @@ project_process_stop_identity_tree() {
     then
       echo \
         "Stopping $service_name aborted: root identity changed during child discovery."
-      return 0
+      return 1
     fi
 
     if ! project_process_capture_identity "$child_pid"; then
+      project_process_exit_or_incomplete "$child_pid" "$service_name child" || return 1
       continue
     fi
 
     child_parent="$PROJECT_PROCESS_CAPTURE_PPID"
     child_start="$PROJECT_PROCESS_CAPTURE_START_IDENTITY"
 
-    [[ "$child_parent" == "$pid" ]] || continue
+    if [[ "$child_parent" != "$pid" ]]; then
+      echo "Incomplete cleanup for $service_name: child parent changed; preserving ownership record." >&2
+      return 1
+    fi
 
     project_process_stop_identity_tree \
       "$child_pid" \
       "$child_start" \
       "$service_name child" \
       "" \
-      "$pid"
-  done < <(
-    project_process_child_pids "$pid"
-  )
+      "$pid" || return 1
+  done <<< "$child_pids"
 
   if ! project_process_identity_matches \
       "$pid" \
@@ -566,7 +613,8 @@ project_process_stop_identity_tree() {
   then
     echo \
       "$service_name PID $pid exited or changed identity before TERM; no signal sent."
-    return 0
+    project_process_exit_or_incomplete "$pid" "$service_name"
+    return $?
   fi
 
   echo "Stopping $service_name PID $pid..."
@@ -579,7 +627,8 @@ project_process_stop_identity_tree() {
       "$contract" \
       "$expected_parent"
   then
-    return 0
+    project_process_exit_or_incomplete "$pid" "$service_name"
+    return $?
   fi
 
   grace_seconds="$PROJECT_PROCESS_GRACE_SECONDS"
@@ -592,7 +641,8 @@ project_process_stop_identity_tree() {
 
   while (( elapsed < grace_seconds )); do
     if ! project_process_is_running "$pid"; then
-      return 0
+      project_process_exit_or_incomplete "$pid" "$service_name"
+      return $?
     fi
 
     if ! project_process_identity_matches \
@@ -602,8 +652,9 @@ project_process_stop_identity_tree() {
         "$expected_parent"
     then
       echo \
-        "$service_name PID $pid changed identity after TERM; treating the original process as exited."
-      return 0
+        "$service_name PID $pid changed identity after TERM; cleanup remains unconfirmed."
+      project_process_exit_or_incomplete "$pid" "$service_name"
+      return $?
     fi
 
     sleep 1
@@ -611,7 +662,8 @@ project_process_stop_identity_tree() {
   done
 
   if ! project_process_is_running "$pid"; then
-    return 0
+    project_process_exit_or_incomplete "$pid" "$service_name"
+    return $?
   fi
 
   echo \
@@ -626,8 +678,17 @@ project_process_stop_identity_tree() {
   then
     echo \
       "SIGKILL withheld for $service_name PID $pid because ownership could not be revalidated."
-    return 0
+    project_process_exit_or_incomplete "$pid" "$service_name"
+    return $?
   fi
+
+  elapsed=0
+  while (( elapsed < 3 )); do
+    project_process_exit_confirmed "$pid" && return 0
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  project_process_exit_or_incomplete "$pid" "$service_name"
 }
 
 project_process_stop_from_record() {
@@ -640,7 +701,7 @@ project_process_stop_from_record() {
   local start_identity
   local contract
 
-  if [[ ! -f "$record_file" ]]; then
+  if [[ ! -e "$record_file" && ! -L "$record_file" ]]; then
     echo "No recorded $service_name process found."
     return 0
   fi
@@ -657,7 +718,7 @@ project_process_stop_from_record() {
       "$pid" \
       "$start_identity" \
       "$service_name" \
-      "$contract"
+      "$contract" || return 1
 
     rm -f "$record_file"
     return 0
@@ -673,6 +734,8 @@ project_process_stop_from_record() {
     2)
       echo \
         "Refusing to signal $service_name from untrusted process record: $PROJECT_PROCESS_STATUS_REASON."
+      echo "Incomplete cleanup: preserving $record_file for resolution." >&2
+      return 1
       ;;
     *)
       echo \

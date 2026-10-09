@@ -44,6 +44,7 @@ esac
 ''')
     _script(binary / 'open', 'printf called > "$TEST_ROOT/open-called"\n')
     _script(binary / 'npm', 'exit 0\n')
+    _script(binary / 'docker', 'exit 1\n')
     _script(binary / 'npx', 'echo "Build Succeeded"\nsleep 30\n')
     env = {**os.environ, 'PATH': f'{binary}:{os.environ["PATH"]}',
            'TEST_ROOT': str(tmp_path), 'SIMULATOR_NAME': 'Test Phone'}
@@ -194,11 +195,13 @@ def test_actual_stop_caller_stops_only_native_owned_process(entrypoint):
         result = subprocess.run(['bash', 'scripts/stop-project.sh'], cwd=root,
                                 env={**env, 'PROJECT_PROCESS_GRACE_SECONDS': '1'},
                                 capture_output=True, text=True, timeout=10)
-        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.returncode == 1, result.stdout + result.stderr
         process.wait(timeout=5)
         assert process.returncode == -signal.SIGTERM
         assert unrelated.poll() is None
-        assert 'Docker is unavailable' in result.stdout
+        assert 'Docker is unavailable' in result.stderr
+        assert (root / '.project-runtime').is_dir()
+        assert 'project services stopped.' not in result.stdout
     finally:
         try:
             os.killpg(process.pid, signal.SIGTERM)
@@ -208,3 +211,130 @@ def test_actual_stop_caller_stops_only_native_owned_process(entrypoint):
             if child.poll() is None:
                 child.terminate()
             child.wait(timeout=5)
+
+
+@pytest.mark.parametrize('record_kind', ['malformed', 'dangling-link', 'directory'])
+def test_actual_stop_retains_ambiguous_record_without_provider_cleanup(entrypoint, record_kind):
+    root, env = entrypoint
+    shutil.copy2(ROOT / 'scripts/stop-project.sh', root / 'scripts/stop-project.sh')
+    record = root / '.project-runtime/expo.pid'
+    if record_kind == 'dangling-link':
+        record.symlink_to('missing-owned-record')
+    elif record_kind == 'directory':
+        record.mkdir()
+    else:
+        record.write_text('ambiguous ownership\n')
+    (root / '.project-runtime/simulator-started').touch()
+    (root / '.project-runtime/simulator-udid').write_text('fixture-udid\n')
+    before = _snapshot(root)
+    result = subprocess.run(['bash', 'scripts/stop-project.sh'], cwd=root, env=env,
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 1
+    assert 'preserving' in result.stderr
+    assert _snapshot(root) == before
+    assert record.is_dir() if record_kind == 'directory' else record.is_symlink() or record.exists()
+    assert not (root / 'xcrun-called').exists()
+    assert 'project services stopped.' not in result.stdout
+
+
+@pytest.mark.parametrize('provider', ['simulator-failed', 'simulator-unavailable',
+                                     'docker-unavailable', 'compose-failed'])
+def test_actual_stop_preserves_unresolved_provider_state(entrypoint, provider):
+    root, env = entrypoint
+    shutil.copy2(ROOT / 'scripts/stop-project.sh', root / 'scripts/stop-project.sh')
+    runtime = root / '.project-runtime'
+    (runtime / 'backend.log').write_text('preserve prior log\n')
+    if provider.startswith('simulator'):
+        (runtime / 'simulator-started').touch()
+        (runtime / 'simulator-udid').write_text('fixture-udid\n')
+    if provider == 'simulator-failed':
+        env = {**env, 'FAIL_BOOT': '1'}
+    elif provider == 'simulator-unavailable':
+        (root / 'bin/xcrun').unlink()
+        (root / 'bin/cat').symlink_to('/bin/cat')
+        (root / 'bin/dirname').symlink_to('/usr/bin/dirname')
+        env = {**env, 'PATH': str(root / 'bin')}
+    elif provider == 'docker-unavailable':
+        _script(root / 'bin/docker', 'exit 1\n')
+    else:
+        _script(root / 'bin/docker', 'if [[ "$1" == info ]]; then exit 0; fi\nexit 8\n')
+    before = {p.name: p.read_bytes() for p in runtime.iterdir()}
+    result = subprocess.run(['/bin/bash', 'scripts/stop-project.sh'], cwd=root, env=env,
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0
+    assert runtime.is_dir()
+    assert {p.name: p.read_bytes() for p in runtime.iterdir()} == before
+    assert 'project services stopped.' not in result.stdout
+    assert 'Incomplete cleanup' in result.stderr
+
+
+def test_actual_stop_clears_runtime_only_after_provider_success(entrypoint):
+    root, env = entrypoint
+    shutil.copy2(ROOT / 'scripts/stop-project.sh', root / 'scripts/stop-project.sh')
+    _script(root / 'bin/docker', 'printf "%s\\n" "$*" >> "$TEST_ROOT/docker-called"\n')
+    runtime = root / '.project-runtime'
+    (runtime / 'simulator-started').touch()
+    (runtime / 'simulator-udid').write_text('fixture-udid\n')
+    result = subprocess.run(['bash', 'scripts/stop-project.sh'], cwd=root, env=env,
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'simctl shutdown fixture-udid' in (root / 'xcrun-called').read_text()
+    assert 'compose -f' in (root / 'docker-called').read_text()
+    assert not runtime.exists()
+    assert 'project services stopped.' in result.stdout
+
+
+@pytest.mark.parametrize('failure', ['metadata', 'children', 'term-withheld',
+                                   'kill-withheld', 'kill-unconfirmed'])
+def test_actual_stop_retains_native_record_when_inspection_or_signal_is_uncertain(entrypoint, failure):
+    root, env = entrypoint
+    shutil.copy2(ROOT / 'scripts/stop-project.sh', root / 'scripts/stop-project.sh')
+    command = "trap '' TERM; while :; do sleep 1; done" if failure.startswith('kill-') else 'while :; do sleep 1; done'
+    process = subprocess.Popen(['bash', '-c', command, 'expo run:ios'],
+                               start_new_session=True)
+    try:
+        helper = root / 'scripts/lib/project-process.sh'
+        record = root / '.project-runtime/expo.pid'
+        written = subprocess.run(['bash', '-c',
+                                  f'source {shlex.quote(str(helper))}; '
+                                  f'project_process_write_record {shlex.quote(str(record))} expo {process.pid}'],
+                                 capture_output=True, text=True)
+        assert written.returncode == 0, written.stdout + written.stderr
+        if failure == 'metadata':
+            _script(root / 'bin/ps', 'exit 1\n')
+        else:
+            target = ('project_process_child_pids' if failure == 'children'
+                      else 'project_process_force_kill_if_same_identity' if failure.startswith('kill-')
+                      else 'project_process_signal_if_same_identity')
+            code = 0 if failure == 'kill-unconfirmed' else 1
+            helper.write_text(helper.read_text() + f'\n{target}() {{ return {code}; }}\n')
+        before = record.read_bytes()
+        result = subprocess.run(['bash', 'scripts/stop-project.sh'], cwd=root,
+                                env={**env, 'PROJECT_PROCESS_GRACE_SECONDS': '0'},
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert record.read_bytes() == before
+        assert process.poll() is None
+        assert 'project services stopped.' not in result.stdout
+    finally:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=5)
+
+
+@pytest.mark.parametrize('identity', ['missing', 'empty', 'dangling-link'])
+def test_actual_stop_preserves_ambiguous_simulator_identity(entrypoint, identity):
+    root, env = entrypoint
+    shutil.copy2(ROOT / 'scripts/stop-project.sh', root / 'scripts/stop-project.sh')
+    runtime = root / '.project-runtime'
+    (runtime / 'simulator-started').touch()
+    if identity == 'empty':
+        (runtime / 'simulator-udid').touch()
+    elif identity == 'dangling-link':
+        (runtime / 'simulator-udid').symlink_to('missing-owned-identity')
+    before = _snapshot(root)
+    result = subprocess.run(['bash', 'scripts/stop-project.sh'], cwd=root, env=env,
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 1
+    assert 'Incomplete cleanup' in result.stderr
+    assert _snapshot(root) == before
+    assert not (root / 'xcrun-called').exists()
