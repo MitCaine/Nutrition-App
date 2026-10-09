@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-new task intake is pinned at `5ff7f306df6080648e2cc5fbbfc119e55a293754`: controllers use the complete
+new task intake is pinned at `686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned

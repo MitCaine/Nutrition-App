@@ -189,7 +189,11 @@ explicitly assigned actor may commit/push; no main integration is granted here.
 
 Use supported blocking completion, or a previously verified wake route. Do not
 poll unfinished work, fill waiting time with inspection or launch duplicate work.
-Relay actionable questions to Work; do not decide scope or product requirements.
+Apply the [quiet-wait rule](start-an-issue.md#wait-for-completion): record routine
+progress quietly in existing records; do not send repeated “still waiting” or
+“no new evidence” messages when a wait interval expires. Relay terminal results
+and actionable questions requiring Work's intervention, and answer requested
+status questions; do not decide scope or product requirements.
 
 Retain the terminal handoff, then return its location and task/attempt/source
 identity, full diff/change locations, actual commands/results/logs, requested and

@@ -81,16 +81,36 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (27900, "2aa5facfcd5640ed7b5a6f521fa70d7c5a394bda2406722668cfe14c8ebb36e0"),
-        "worker-instructions.md": (13597, "ce00208b84a6a9153a857e9160dfcca2bf4fae6b2ae0e203381e9ad37fa09b9a"),
+        "start-an-issue.md": (28179, "9897bbf45f4a4c698e14b9a693dc7fb94694ec392aa49939648dde742f87dd6e"),
+        "worker-instructions.md": (13905, "7d36722b9a855b7a7483ffd976322bdf8577c7522d27af0c46495b0eb943af81"),
         "capsule-controller-workflow.md": (14656, "1292b9ee70de02db49efd14bd1d15f5c9f4501e98733e75fb81bd7fd5c1ead5f"),
-        "new-project-setup.md": (11229, "f45368a2272b7267bfca847350fe4215d6ec2a4b7b6b3dac5d6adae1a546ab7e"),
-        "skill-templates/README.md": (9377, "4583801da5adfed873a4f206bb50edcf4cd847c2218f610aa1d12c88f48a0802"),
-        "skill-templates/capsule-queue/SKILL.md": (2029, "236793d7c56566433afe22625e80fe0fc07694522ae8fb90415fc1db0ee9a53a"),
+        "new-project-setup.md": (11229, "a3b45abbe281476d8fb894a6aa99c37cf824f78241c29aed8a6d192bb2a24964"),
+        "skill-templates/README.md": (9377, "9eb8351f5627d86c69b990966812b19ebe1e358c66d4a10e4703fb9ba41d4e9e"),
+        "skill-templates/capsule-queue/SKILL.md": (2029, "ad4441425b1c6be2058ecbd32016daebafccbd8956ccfebc7f1e328c5a852fad"),
     }
     provenance = (shared / "SOURCE.md").read_text()
+    local_map = (ROOT / "docs/local_project_map.md").read_text()
+    normalized_map = " ".join(local_map.replace(chr(96), "").split())
+    assert "new task intake is pinned at 686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" in normalized_map
+    assert "new task intake is pinned at 5ff7f306df6080648e2cc5fbbfc119e55a293754" not in normalized_map
+    assert "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" in provenance
+    assert "GH-307 and GH-309" in provenance
     assert "5ff7f306df6080648e2cc5fbbfc119e55a293754" in provenance
+    assert "completed GH-305 implementor assignment" in provenance
     assert "f6e1064d3f43aee61796f8558a7cef8181426883" in provenance
+    assert "live GH-305" not in provenance
+    normalized_provenance = " ".join(provenance.split())
+    assert "all four files in the complete two-file folders match upstream bytes" in normalized_provenance
+    assert "remain unchanged" in normalized_provenance
+    for upstream_identity in (
+        "090c34dc2e6371e514edb5d8e849c11c10bab708",
+        "28179",
+        "9897bbf45f4a4c698e14b9a693dc7fb94694ec392aa49939648dde742f87dd6e",
+        "4f8f3667561150a17868da9c2101d69297d769a5",
+        "13897",
+        "7dc48817966d77456f3ee294393fd0d987b9ae06227535e2f152ef8da83384f7",
+    ):
+        assert upstream_identity in provenance
     assert "20a5039e7731eaa1303443b782caa81a383a0af1" in provenance
     assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in provenance
     assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in provenance
@@ -918,7 +938,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "5ff7f306df6080648e2cc5fbbfc119e55a293754/docs/skill-templates/capsule-queue/")
+              "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -932,7 +952,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "5ff7f306df6080648e2cc5fbbfc119e55a293754"
+    revision = "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     provenance = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text()

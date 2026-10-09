@@ -340,7 +340,11 @@ branch as merged or invent a product change merely to clean it up.
   consumption. Reuse a proven route until it changes or fails; do not add duplicate
   notifications or restart a job to attach a watcher. Otherwise keep blocking wait.
 - **While waiting:** no status polling, active-workspace/log/test inspection,
-  repetitive commentary or interim acceptance judgments. Verify candidate scope
+  repetitive commentary or interim acceptance judgments. Keep routine progress
+  in existing records, not user-facing updates. “Still waiting,” “no new evidence”
+  and ordinary blocking-wait expiry are not reportable events. Surface terminal
+  results, actionable blockers requiring intervention, or requested status replies.
+  Verify candidate scope
   and evidence after terminal handoff. Receive unsolicited progress without
   starting a monitoring loop. Use task-appropriate deadlines; supported wait
   resumptions at host limits do not authorize extra checks.
