@@ -16,10 +16,24 @@ map or guess.
 
 ## Intake
 
-Start each new issue with a fresh controller context. For an owner-supplied queue,
-apply the [queue rules](new-project-setup.md#issue-queues). A replacement during an
-active issue recovers its authenticated checkpoint and existing assignment;
-replacement is not a new attempt or permission to duplicate dispatch.
+A new or existing controller may start an issue using `ri-work-kickoff`. Fresh
+controllers remain an owner-selected option or recovery choice when the current
+context is unreliable. Before each new issue, read the current project map,
+selected controller procedure, live issue and required inputs; authenticate the
+repository/base and reconcile existing assignments. Establish this issue's scope,
+authority and checkpoint through the workflow below. Prior issue decisions,
+approvals and evidence do not become new authority or proof. Reuse applicable
+standing grants and unchanged confirmation of this controller's selected
+environment/model/effort under project policy; worker freshness and nonauthor
+review remain unchanged, and reuse grants no additional implementation permission.
+
+After verified closeout, the same controller may advance an authorized queue with
+this per-issue orientation and the [queue rules](new-project-setup.md#issue-queues).
+A kickoff during unfinished work reconciles that assignment rather than replacing
+it or duplicating dispatch. Recovery after compaction or controller replacement
+recovers the authenticated checkpoint, selected instructions and existing
+assignment without transferring another issue's authority. Active attempts retain
+their instruction identity; a new issue selects the project's then-adopted revision.
 
 - Check the map's selected instruction identity, compatible runtime, role/model
   settings, commands, standards and permitted Git/issue actions. Use the adopted

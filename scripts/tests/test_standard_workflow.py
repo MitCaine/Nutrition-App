@@ -81,17 +81,17 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (30707, "dbd0d0796c2de5a7123c489d8be51a11fdecf870c76e8ac9c8307d09a2b38c76"),
+        "start-an-issue.md": (31750, "e7d5728e92457e437f4b12344101ef1c64920b4e423936d7dd311e71f1a5327a"),
         "worker-instructions.md": (14791, "52860da27cb05d5411d1b12f36d20846aa0fecaab7bb2860e836d9c41fb0bf7d"),
         "capsule-controller-workflow.md": (14954, "88df7ce7c7f568eb9cf1470390675fbadc7d093857d107390f8212799c1b21d6"),
-        "new-project-setup.md": (15251, "55401f5257482768604d9a8eef36c8e1f38d4596f4c301f69c5fdf737e95708d"),
-        "skill-templates/README.md": (9019, "5d91985ac42c50f95e135ea9af89b8f38821557863ddcbe5a8536ec149666c3e"),
-        "skill-templates/capsule-queue/SKILL.md": (2029, "081b6e42df33da1403528b8ade92447f13112e89707f21d0ad4c18852eb72fb0"),
+        "new-project-setup.md": (15155, "5678ca380ef7c1f61ba10199295d2e0262b097c498de1329005062038f4fff79"),
+        "skill-templates/README.md": (9019, "c7febe718c05e772f101bb39d65c3d4f99f1404eba69a3b5a2fad2edeb1fbaac"),
+        "skill-templates/capsule-queue/SKILL.md": (2029, "b80a1b1f8613525832f01857fe45b17ade998c7ddbbeea9d245ad5aa221c210c"),
     }
     provenance = (shared / "SOURCE.md").read_text()
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
-    assert "future task intake is pinned at 7d4c1bdeb70b53aa4555cfae7b4a6d9dbf2547a8" in normalized_map
+    assert "future task intake is pinned at 1d5eba9a9d46d0e4a6afc02c875390a3b137ec41" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
     assert "GH-311 implementation retains its active worker instruction selection" not in normalized_map
     assert "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" not in normalized_map
@@ -105,12 +105,12 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "f6e1064d3f43aee61796f8558a7cef8181426883" in provenance
     assert "live GH-305" not in provenance
     normalized_provenance = " ".join(provenance.split())
-    assert "all four installed files match the selected revision 7d4c1bd resources byte-for-byte" in normalized_provenance.lower()
-    assert "all four kickoff files and the worker instructions remain unchanged from the prior selected revision; only the daily procedure changes upstream" in normalized_provenance.lower()
+    assert "all four installed files match the selected revision 1d5eba9 resources byte-for-byte" in normalized_provenance.lower()
+    assert "the work kickoff changes; the other three kickoff files and worker instructions remain unchanged from the prior selected revision" in normalized_provenance.lower()
     for upstream_identity in (
-        "e20ed262f69b11689e0780882feaa2c5a6ad2d64",
-        "30707",
-        "dbd0d0796c2de5a7123c489d8be51a11fdecf870c76e8ac9c8307d09a2b38c76",
+        "8defab2ef5ca52d445c7bb4a7e5a03142dd2af26",
+        "31750",
+        "e7d5728e92457e437f4b12344101ef1c64920b4e423936d7dd311e71f1a5327a",
         "d5ec5fb55d69da2988147600b322ad5847a43d16",
         "14783",
         "59cb6bef5bffe5fb9c8157a761519088247c73a90634453602ce7943c2108cab",
@@ -130,8 +130,8 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
         assert name in provenance and str(size) in provenance and digest in provenance
     local_installed = {
         "engineering/workflow/shared/start-an-issue.md": (
-            "e20ed262f69b11689e0780882feaa2c5a6ad2d64", 30707,
-            "dbd0d0796c2de5a7123c489d8be51a11fdecf870c76e8ac9c8307d09a2b38c76",
+            "8defab2ef5ca52d445c7bb4a7e5a03142dd2af26", 31750,
+            "e7d5728e92457e437f4b12344101ef1c64920b4e423936d7dd311e71f1a5327a",
         ),
         "engineering/workflow/shared/worker-instructions.md": (
             "c98c32eeb90c15b6aab34dc90602ad37adfcd5a1", 14791,
@@ -142,20 +142,20 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
             "88df7ce7c7f568eb9cf1470390675fbadc7d093857d107390f8212799c1b21d6",
         ),
         "engineering/workflow/shared/new-project-setup.md": (
-            "db873ea8c4318261bda7ebbd8eda7134d60b8c2a", 15251,
-            "55401f5257482768604d9a8eef36c8e1f38d4596f4c301f69c5fdf737e95708d",
+            "6c7b0168624b8c4f11288b7b302623f4409c6d3f", 15155,
+            "5678ca380ef7c1f61ba10199295d2e0262b097c498de1329005062038f4fff79",
         ),
         "engineering/workflow/shared/skill-templates/README.md": (
-            "64568ac5f527456941f10f946059f096ba195a27", 9019,
-            "5d91985ac42c50f95e135ea9af89b8f38821557863ddcbe5a8536ec149666c3e",
+            "6fdb6cafb68cb57e59883dff377ab874351d1d6f", 9019,
+            "c7febe718c05e772f101bb39d65c3d4f99f1404eba69a3b5a2fad2edeb1fbaac",
         ),
         "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md": (
-            "0a4da8a14c886a73e9725eec4471f1a2f30ad580", 2029,
-            "081b6e42df33da1403528b8ade92447f13112e89707f21d0ad4c18852eb72fb0",
+            "fe2df7ba4fb4bc715958a85630a000cf7e9304df", 2029,
+            "b80a1b1f8613525832f01857fe45b17ade998c7ddbbeea9d245ad5aa221c210c",
         ),
         ".agents/skills/ri-work-kickoff/SKILL.md": (
-            "545db0cdaf99ea6fa07b0f506ea628eb23a19291", 1523,
-            "0941127280d8e38bbb37b8d3437b54b212498e17a91b908beb19778a8257a1be",
+            "86bab9c4db07e30994bccc74ddf7367319ecd0d0", 1609,
+            "da59ae6229c966c9d8d092c28b9cde03d28fb4e52d0b09d21c2ad677e7d4179a",
         ),
         ".agents/skills/ri-work-kickoff/references/project-procedure.md": (
             "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
@@ -189,8 +189,8 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "3b119ff01a9e22c090d3f2f27be4acd6ac4da0279ac5a4faf0da32adc54db6b1" in provenance
     installed = {
         ".agents/skills/ri-work-kickoff/SKILL.md": (
-            "545db0cdaf99ea6fa07b0f506ea628eb23a19291", 1523,
-            "0941127280d8e38bbb37b8d3437b54b212498e17a91b908beb19778a8257a1be",
+            "86bab9c4db07e30994bccc74ddf7367319ecd0d0", 1609,
+            "da59ae6229c966c9d8d092c28b9cde03d28fb4e52d0b09d21c2ad677e7d4179a",
         ),
         ".agents/skills/ri-work-kickoff/references/project-procedure.md": (
             "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
@@ -221,6 +221,55 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert lock["contracts"]["adapter"] == 13
     assert lock["contracts"]["mapping"].endswith("markdown-source-units-v13")
     assert len(lock["source_files"]) == 21
+
+
+@pytest.mark.parametrize("case,required", [
+    ("fresh kickoff", (
+        "A new or existing controller may start an issue using ri-work-kickoff",
+        "Fresh controllers remain an owner-selected option or recovery choice",
+        "read the current project map, selected controller procedure, live issue and required inputs",
+    )),
+    ("reuse after verified closeout", (
+        "Prior issue decisions, approvals and evidence do not become new authority or proof",
+        "Reuse applicable standing grants and unchanged confirmation",
+        "worker freshness and nonauthor review remain unchanged",
+        "reuse grants no additional implementation permission",
+    )),
+    ("same-controller queue advancement", (
+        "After verified closeout, the same controller may advance an authorized queue",
+        "this per-issue orientation",
+    )),
+    ("kickoff with unresolved assignment", (
+        "A kickoff during unfinished work reconciles that assignment rather than replacing it or duplicating dispatch",
+    )),
+    ("compaction recovery", (
+        "Recovery after compaction or controller replacement recovers the authenticated checkpoint, selected instructions and existing assignment",
+        "without transferring another issue's authority",
+        "Active attempts retain their instruction identity",
+        "a new issue selects the project's then-adopted revision",
+    )),
+])
+def test_selected_controller_reuse_cases_preserve_issue_and_role_boundaries(case, required):
+    shared = ROOT / "engineering/workflow/shared"
+    daily = " ".join((shared / "start-an-issue.md").read_text().replace("`", "").split())
+    for rule in required:
+        assert rule in daily, (case, rule)
+    setup = " ".join((shared / "new-project-setup.md").read_text().split())
+    kickoff = " ".join((ROOT / ".agents/skills/ri-work-kickoff/SKILL.md").read_text().split())
+    assert "Reorient new or existing controllers under the selected daily intake rule" in kickoff
+    assert "unfinished assignments before new work" in kickoff
+    assert "fresh-controller handoffs" not in kickoff
+    assert "Complete and verify closeout before advancing" in setup
+    assert "fresh controller under [daily intake](start-an-issue.md#intake)" in setup
+    assert "preserve issue ordering and boundaries" in setup
+    assert "Skip only issues already closed or explicitly deferred" in setup
+    assert "Start each new issue with a fresh controller context" not in daily
+    assert "each new issue uses a fresh controller" not in setup
+    assert "Queue scope does not authorize indefinite controller reuse" not in setup
+    # Reuse affects controller intake only, not the selected implementation route.
+    local_map = (ROOT / "docs/local_project_map.md").read_text()
+    assert local_map.count("Direct Work controller maintenance: permitted") == 1
+    assert "fresh nonauthor" in local_map and "The author cannot review its own work" in local_map
 
 
 def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intake():
@@ -1329,7 +1378,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "7d4c1bdeb70b53aa4555cfae7b4a6d9dbf2547a8/docs/skill-templates/capsule-queue/")
+              "1d5eba9a9d46d0e4a6afc02c875390a3b137ec41/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1343,7 +1392,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "7d4c1bdeb70b53aa4555cfae7b4a6d9dbf2547a8"
+    revision = "1d5eba9a9d46d0e4a6afc02c875390a3b137ec41"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     provenance = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text()
@@ -1374,8 +1423,8 @@ def test_selected_optional_upstream_relocations_are_pinned_and_declared():
          "3d4da861fdfa9eeb90bd22e1731f9a061015ac92b14ec4870bbb188765b7f73e"),
     ):
         assert blob in provenance and str(size) in provenance and digest in provenance
-    assert "d04e157f6b22abc70c8aeb0067398b224794153e" in provenance
-    assert "bb57c19350e9590c0ebceea52d0a98d8392ea5eb7247a0ff646ea06e19c8bbdd" in provenance
+    assert "b08dbe6206e9a6138a8bb3554d563b67c5333124" in provenance
+    assert "fdf33600830d9eb6af6209fd89f86f850e873e4382a9337086466ad59b8664c6" in provenance
 
 
 def test_controller_permissions_waiting_and_external_closeout_contract():

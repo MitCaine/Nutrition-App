@@ -1,6 +1,6 @@
 ---
 name: ri-work-kickoff
-description: Start an owner-selected ChatGPT Work controller on an issue or bounded issue queue using the target project's adopted RI workflow.
+description: Orient a new or existing owner-selected ChatGPT Work controller on an issue or bounded issue queue using the target project's adopted RI workflow.
 ---
 
 # Work kickoff
@@ -23,7 +23,7 @@ them in the existing
 checkpoint. Controller selection describes the owner's existing choice; it cannot
 switch this chat's model. Configure workers under the project's accepted policy.
 
-Carry out the selected workflow. For multiple issues use its queue rules and
-fresh-controller handoffs. Preserve selected instructions/configuration through
+Reorient new or existing controllers under the selected daily intake rule; reconcile
+unfinished assignments before new work. Carry out the selected workflow and queue rules. Preserve selected instructions/configuration through
 recovery. Report only genuine missing inputs, unsupported routes or uncovered
 authority needed to proceed.
