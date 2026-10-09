@@ -86,6 +86,12 @@ repository root:
 ./scripts/session-start.sh
 ```
 
+Session/audit wrappers select `NUTRITION_DEPS_PYTHON` (otherwise PATH `python3`)
+and enforce the Python contract before dependent checks, including session JSON
+and session-end. Audit children retain that interpreter through `sys.executable`.
+A missing Node alone does not block Python-only validation; the standalone report
+is diagnostic. See the [session selection contract](../operations/session-contract.md#session-start).
+
 For a task authorized to change dependencies, source the update route from the
 repository root in the integrated **zsh** terminal:
 

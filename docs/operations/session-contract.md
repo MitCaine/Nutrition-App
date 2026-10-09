@@ -60,6 +60,14 @@ inside the checkout:
 ./scripts/session-start.sh
 ```
 
+Session start, session end and direct audit wrappers bind `NUTRITION_DEPS_PYTHON`
+(or PATH `python3` when unset) for the report, audit and its `sys.executable` child
+checks. Every audit entrypoint enforces `toolchain-report.py --check python` before
+dependent work, including JSON sessions; gate diagnostics use stderr so JSON stdout
+remains machine-readable. Missing or unsuitable selected Python refuses that work.
+The standalone toolchain report remains available for independent diagnostic use.
+No wrapper installs or upgrades tools.
+
 The human-readable preflight reports Python and Node versions against their separate
 repository contracts. Eligibility is command-specific: a missing or mismatched tool blocks checks
 that require that tool and version, while independent checks may continue only when their own
