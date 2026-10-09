@@ -360,6 +360,15 @@ Rendered Jest tests exercise screen behavior and confirmation traces; they do no
 compilation, physical-device capture, VoiceOver behavior, or real-camera OCR accuracy. Use the
 separately selected native and device evidence for those claims.
 
+Shared Decimal request validation is covered by `test_decimal_request_validation.py` across
+Food nutrient/original/serving fields, Recipe and ingredient fields, and Daily Log create/update.
+Malformed conversion, unsupported types (including booleans), and nonfinite values return
+field-level schema errors (`decimal_invalid`, `decimal_type`, `decimal_not_finite`) through the
+normal structured HTTP 422 boundary. Finite precision, exponent notation, blank/null semantics,
+existing caller range/unit rules and storage scale remain unchanged. API regressions compare full
+synthetic persisted state after each invalid request, including history and mutation receipts;
+these validation-before-mutation tests do not substitute for PostgreSQL concurrency qualification.
+
 ## What each backend suite proves
 
 | Suite family | Main claim |
