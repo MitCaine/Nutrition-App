@@ -40,6 +40,11 @@
    do not create a capsule for an ordinary task. Release from a clean, qualified `main` commit.
 
 
+Controller replacement uses the [actual checkpoint and assignment handoff](../docs/local_project_map.md#replacement-controller-handoff),
+including an expressly selected override and authenticated task/source identity.
+Recover the supplied existing assignment; missing evidence is a gap, not permission
+to initialize a default checkpoint or dispatch again.
+
 ## Repository-owned task workflow
 
 Use [local project map](../docs/local_project_map.md), the sole current local map, and its complete

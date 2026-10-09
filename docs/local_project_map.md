@@ -273,6 +273,58 @@ command and environment, exit/status, immutable log identity and digest, skips, 
 and consumed allowances. Keep private diagnostics outside published source and reuse evidence
 only when its original identity remains eligible.
 
+### Replacement-controller handoff
+
+The outgoing controller supplies the **actual selected checkpoint file location**,
+including its explicit authorized state-dir override when present, and the
+**authoritative assignment/recovery reference** used by that attempt. Identify the
+repository/task/attempt, selected instruction identity, current phase, exact base
+and candidate or complete dirty source, assigned actor/job and return destination,
+and retained terminal-result/evidence location. A reference may name the existing
+checkpoint's assignment entry and supported job/thread or terminal handoff; use
+what that attempt actually has. Do not invent a registry, field schema or new
+mandatory artifact. Keep private locations/identifiers in the authenticated
+operational handoff, not public source.
+
+The incoming controller authenticates the supplied actual path and task/source
+bindings, then reconciles the referenced existing assignment and retained terminal
+result before selecting the next action. The documented default is only a default;
+a missing default does not establish inactivity when another path was selected.
+Recover the current active object, not an old revision/history entry. Recovery
+retains the existing assignment and does not authorize another checkpoint,
+duplicate dispatch, role transfer or clearing a stop. Replacement/fresh-context
+selection remains under owner/project authority. Workers keep their bounded read
+scopes and [acceptance responsibilities](operations/session-contract.md#actor-and-timing).
+
+If the supplied checkpoint or assignment evidence is missing/inaccessible, report
+that exact failure and which task/source binding remains unverified. Hold only
+dependent execution; request the actual reference from the outgoing controller or
+owner. Do not guess alternate private paths, infer idle state, copy historical
+authority into a new active record, or initialize a replacement checkpoint. The
+historical `render-task-handoff.py` lane is not this recovery route. #275's abandoned
+operation semantics are unchanged.
+
+#### Bounded recovery cases
+
+- **Default location:** handoff explicitly supplies the existing default
+  `~/.nutrition-app/task-controller/issue-N.json` and its actual assigned actor/job
+  recovery reference. A replacement resolves that supplied file, verifies task,
+  phase/source and assignment, and resumes reconciliation of that same assignment.
+  A read-only `./scripts/task status N` reports state but does not itself authenticate
+  live authority/job consumption; complete those supplied-reference checks. Do not
+  call prepare or dispatch merely because the controller context changed.
+- **Authorized alternate state dir:** handoff supplies the selected absolute
+  checkpoint path and authorized override. Use `./scripts/task --state-dir SELECTED_DIR
+  status N` (or the expressly selected `NUTRITION_TASK_STATE_DIR`) and reconcile its
+  referenced assignment. A default or earlier-revision file is not a substitute.
+  The bounded controlled-case copy used for verification is diagnostic only; it
+  does not establish a second live authority or transfer the assignment.
+- **Unavailable supplied evidence:** a missing/inaccessible selected file or
+  assignment reference produces a precise recovery gap. Preserve accessible state,
+  terminal evidence and valid completed work; do not infer no active work or create
+  a default record. Required qualification, fresh review, protected integration
+  and installed closeout remain unchanged after recovery.
+
 The original #246/#256 capsule attempts were stopped under their original authority. Preserve
 their branches, evidence, decisions and consumed allowances under [Nutrition recovery authority](../engineering/workflow/AUTHORITY.md#state-concurrency-and-recovery),
 [STATES](../engineering/workflow/STATES.md), [TASK_CAPSULE](../engineering/workflow/TASK_CAPSULE.md),

@@ -199,6 +199,11 @@ and do not create permission. The trusted task controller owns authenticated ext
 authorization, required qualification and protected integration.
 No RI SDK transport, mandatory declaration report, frozen launcher or timed model gateway applies.
 
+For controller replacement, carry the actual selected checkpoint location and
+authoritative assignment recovery reference under the [local handoff rule](docs/local_project_map.md#replacement-controller-handoff).
+Authenticate supplied task/source identity before continuation; a missing default
+checkpoint is not inactivity and does not authorize duplicate work.
+
 Preserve existing active capsule contracts, state/history, branches, evidence, pending decisions,
 C/R/T recovery and consumed allowances. The original #246 and #256 capsule attempts remain stopped
 under their original authority; this does not set their current issue status. The local map
