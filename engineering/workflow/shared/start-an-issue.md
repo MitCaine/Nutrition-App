@@ -45,8 +45,10 @@ brief handoff. Eligibility is not determined by file/line counts or by whether a
 change affects a dependency, runtime version or workflow instruction. It supports
 an identified dependency update without unrelated updates and adoption of an
 inspected RI revision, including necessary instruction copies, pins, hashes,
-links and bounded local workflow/tooling alignment. Inspect the actual changes;
-a pin update alone is not sufficient. Work must remain within existing or expressly
+links and bounded local workflow/tooling alignment. Before publishing the allowed-change
+scope, inspect the actual changes and directly linked operational documentation for
+required alignment; keep reads relevant to the objective. A pin update alone is not
+sufficient. Amend scope when genuinely new information appears. Work must remain within existing or expressly
 granted task authority; maintenance grants no additional host/account/security
 permissions and waives no project-required qualification or acceptance controls.
 Preserve active attempts' selected instruction identities.
@@ -309,6 +311,10 @@ Steps 1–2 apply to the normal route.
    a new export, manifest, upload or local copy.
    Checks must use a stable, identifiable source snapshot. Verify the tested source
    and actual workflow/check identity; a matching check name alone is insufficient.
+   Evaluate each required gate's actual exit status and result, including failures
+   and skips; an aggregate command exit code does not establish that every gate
+   passed. Resolve failed required gates through the existing correction route
+   before acceptance.
 5. **Independent reviewer:** remain read-only and review the full change, not just
    RI declarations or a summary; return concise evidence-backed
    dispositions for every criterion and applicable standard. Check docs too.

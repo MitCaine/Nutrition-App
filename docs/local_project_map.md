@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `841d57571983b5b7cec0071263fad7f78d809e20`: controllers use the complete
+future task intake is pinned at `7d4c1bdeb70b53aa4555cfae7b4a6d9dbf2547a8`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned

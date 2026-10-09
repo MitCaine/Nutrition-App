@@ -81,17 +81,17 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (30240, "4cdbc4ef8b881040516da836135af395a2a312ea1be4c3a9d72420eaf9d9bade"),
+        "start-an-issue.md": (30707, "dbd0d0796c2de5a7123c489d8be51a11fdecf870c76e8ac9c8307d09a2b38c76"),
         "worker-instructions.md": (14791, "52860da27cb05d5411d1b12f36d20846aa0fecaab7bb2860e836d9c41fb0bf7d"),
         "capsule-controller-workflow.md": (14954, "88df7ce7c7f568eb9cf1470390675fbadc7d093857d107390f8212799c1b21d6"),
-        "new-project-setup.md": (15251, "9f2dea919b4230e6d144304968361e41baf232aeb4755506ec0210018d70d7e7"),
-        "skill-templates/README.md": (9019, "ec9b75b80e29f9ad9217cb38adea6169eb895b7e517a29ee3169462da5b5e508"),
-        "skill-templates/capsule-queue/SKILL.md": (2029, "713b58752dedbd15be0b6b796dd095b5288b0ec4ad75e858d260bb54ab99b4fc"),
+        "new-project-setup.md": (15251, "55401f5257482768604d9a8eef36c8e1f38d4596f4c301f69c5fdf737e95708d"),
+        "skill-templates/README.md": (9019, "5d91985ac42c50f95e135ea9af89b8f38821557863ddcbe5a8536ec149666c3e"),
+        "skill-templates/capsule-queue/SKILL.md": (2029, "081b6e42df33da1403528b8ade92447f13112e89707f21d0ad4c18852eb72fb0"),
     }
     provenance = (shared / "SOURCE.md").read_text()
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
-    assert "future task intake is pinned at 841d57571983b5b7cec0071263fad7f78d809e20" in normalized_map
+    assert "future task intake is pinned at 7d4c1bdeb70b53aa4555cfae7b4a6d9dbf2547a8" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
     assert "GH-311 implementation retains its active worker instruction selection" not in normalized_map
     assert "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" not in normalized_map
@@ -105,12 +105,12 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "f6e1064d3f43aee61796f8558a7cef8181426883" in provenance
     assert "live GH-305" not in provenance
     normalized_provenance = " ".join(provenance.split())
-    assert "all four installed files match the selected revision 841d575 resources byte-for-byte" in normalized_provenance.lower()
-    assert "both skill files change to the inspected target; both references remain unchanged exact copies" in normalized_provenance.lower()
+    assert "all four installed files match the selected revision 7d4c1bd resources byte-for-byte" in normalized_provenance.lower()
+    assert "all four kickoff files and the worker instructions remain unchanged from the prior selected revision; only the daily procedure changes upstream" in normalized_provenance.lower()
     for upstream_identity in (
-        "1f44ab796d55826f4eaa87dc10188d244fd3c7b6",
-        "30240",
-        "4cdbc4ef8b881040516da836135af395a2a312ea1be4c3a9d72420eaf9d9bade",
+        "e20ed262f69b11689e0780882feaa2c5a6ad2d64",
+        "30707",
+        "dbd0d0796c2de5a7123c489d8be51a11fdecf870c76e8ac9c8307d09a2b38c76",
         "d5ec5fb55d69da2988147600b322ad5847a43d16",
         "14783",
         "59cb6bef5bffe5fb9c8157a761519088247c73a90634453602ce7943c2108cab",
@@ -130,8 +130,8 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
         assert name in provenance and str(size) in provenance and digest in provenance
     local_installed = {
         "engineering/workflow/shared/start-an-issue.md": (
-            "1f44ab796d55826f4eaa87dc10188d244fd3c7b6", 30240,
-            "4cdbc4ef8b881040516da836135af395a2a312ea1be4c3a9d72420eaf9d9bade",
+            "e20ed262f69b11689e0780882feaa2c5a6ad2d64", 30707,
+            "dbd0d0796c2de5a7123c489d8be51a11fdecf870c76e8ac9c8307d09a2b38c76",
         ),
         "engineering/workflow/shared/worker-instructions.md": (
             "c98c32eeb90c15b6aab34dc90602ad37adfcd5a1", 14791,
@@ -142,16 +142,16 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
             "88df7ce7c7f568eb9cf1470390675fbadc7d093857d107390f8212799c1b21d6",
         ),
         "engineering/workflow/shared/new-project-setup.md": (
-            "0fdb5b5326a6638c21373419bf5b9c97d3bfab43", 15251,
-            "9f2dea919b4230e6d144304968361e41baf232aeb4755506ec0210018d70d7e7",
+            "db873ea8c4318261bda7ebbd8eda7134d60b8c2a", 15251,
+            "55401f5257482768604d9a8eef36c8e1f38d4596f4c301f69c5fdf737e95708d",
         ),
         "engineering/workflow/shared/skill-templates/README.md": (
-            "67d84508ff78273d12e9d005825928f4d9a36535", 9019,
-            "ec9b75b80e29f9ad9217cb38adea6169eb895b7e517a29ee3169462da5b5e508",
+            "64568ac5f527456941f10f946059f096ba195a27", 9019,
+            "5d91985ac42c50f95e135ea9af89b8f38821557863ddcbe5a8536ec149666c3e",
         ),
         "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md": (
-            "5931012fc612cb58efdd5052e7e0402a63c569b5", 2029,
-            "713b58752dedbd15be0b6b796dd095b5288b0ec4ad75e858d260bb54ab99b4fc",
+            "0a4da8a14c886a73e9725eec4471f1a2f30ad580", 2029,
+            "081b6e42df33da1403528b8ade92447f13112e89707f21d0ad4c18852eb72fb0",
         ),
         ".agents/skills/ri-work-kickoff/SKILL.md": (
             "545db0cdaf99ea6fa07b0f506ea628eb23a19291", 1523,
@@ -1329,7 +1329,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "841d57571983b5b7cec0071263fad7f78d809e20/docs/skill-templates/capsule-queue/")
+              "7d4c1bdeb70b53aa4555cfae7b4a6d9dbf2547a8/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1343,7 +1343,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "841d57571983b5b7cec0071263fad7f78d809e20"
+    revision = "7d4c1bdeb70b53aa4555cfae7b4a6d9dbf2547a8"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     provenance = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text()
