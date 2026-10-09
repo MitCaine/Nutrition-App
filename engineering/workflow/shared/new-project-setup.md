@@ -1,7 +1,7 @@
 # Set up RI in a project
 
 Use the [controller workflow](capsule-controller-workflow.md) for RI-assisted
-capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/consumer-guide.md) for ordinary navigation.
+capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/841d57571983b5b7cec0071263fad7f78d809e20/docs/consumer-guide.md) for ordinary navigation.
 RI does not require an execution framework or every optional skill to be installed.
 
 ## Minimal setup
@@ -49,11 +49,13 @@ For Work, supply **Repository** and **Issue(s)**: one issue, an explicit list or
 an inclusive numerical range. Optional fields are **Capsule builder**,
 **Independent reviewer**, **Implementor** (model/effort), **Controller selection**
 (owner-confirmed existing selection), **Codex dispatcher**, task-specific
-**Authority/constraints**, **Stopping conditions** and **Requested route**
+**Authority** (owner-supplied grant or selection of an applicable recorded grant),
+**Constraints**, **Stopping conditions** and **Requested route**
 (normal or maintenance), plus **Implementation execution** (`direct Work controller`
 when permitted by the map). A maintenance request follows the controller
 [eligibility decision](start-an-issue.md#optional-maintenance-route), not an automatic
-waiver of planning or project controls. Resolve concrete chat IDs
+waiver of project controls. Dependency/runtime or instruction changes alone do
+not require a capsule; use the linked eligibility rule. Resolve concrete chat IDs
 through the supported route; a display title is not an authenticated destination.
 For a dispatcher, only **Repository** is initially required. **Work controller**
 may be supplied or established by an authorized handoff; until then orient and
@@ -85,9 +87,68 @@ requested settings, owner-confirmed selection, host-confirmed settings and
 unavailable telemetry under the project's
 [accepted confirmation policy](start-an-issue.md#execution-routing-models-and-efforts).
 Do not invent omitted controller telemetry, waive required confirmation, infer a
-conflicting mode from tools/metadata or establish a model fallback. Each new chat
-or worker needs its own confirmation; another chat's confirmation is not proof.
+conflicting mode from tools/metadata or establish a model fallback. Each chat or
+worker is assessed under its accepted launch/confirmation policy; a controller's
+owner-confirmed selection does not measure a worker's runtime settings.
 Do not ask the owner to reconfirm unchanged accepted selections.
+
+### Access and task authority
+
+Connector availability and task authority are separate. Include `@GitHub` in
+kickoff where that host supports the connector selector; otherwise use the
+project's permitted GitHub route. No particular connector is required, and access
+does not authorize publication, integration or settings changes.
+
+The optional **Authority** field may supply this reusable owner grant, or explicitly
+select an applicable recorded grant by location/identity:
+
+> For the named issue(s), I authorize publication of the required task
+> authorization records, task branches and in-scope candidates; required
+> qualification dispatches; integration after independent review and controller
+> approval; issue closure; and safe cleanup of owned task refs through the
+> project's protected procedures. This includes repository policy changes
+> expressly within the issue scope, but not additional host/account/security
+> permissions, unrelated scope or resuming paused work.
+
+Explicit owner invocation must supply or select the grant; merely loading a skill
+cannot manufacture it. Authenticate applicability and reuse the recorded grant
+without asking again for each routine step. Without a covering grant, hold the
+uncovered action and request only that authority. The grant does not bypass host
+denials or project protections. Bidirectional chat messaging requires its own
+bounded owner permission; publication authority is not disclosure authority.
+
+### Accepted worker-launch routes
+
+Project configuration names accepted launch routes separately from measured
+runtime confirmation. Projects may adopt this policy:
+
+> For an owner-confirmed Work controller, native `collaboration.spawn_agent` is
+> an accepted route for Work builders and reviewers, with the configured model
+> and effort explicitly requested. Missing environment-selector fields or
+> effective telemetry remain unverified and do not block an otherwise accepted
+> launch. Escalate actual launch failure, contradictory accepted evidence or a
+> genuinely missing required capability.
+
+Policy acceptance does not claim measured Work execution or effective model/effort.
+Record what was requested, what is confirmed and what remains unverified. Do not
+infer a conflicting mode from tool names. A missing instruction resource is a
+reading prerequisite, not evidence that a launch route is unavailable. A real
+launch failure follows bounded failure/capacity recovery as applicable, without
+silent substitution or duplicate dispatch. Preserve fresh contexts and nonauthor
+review. This policy takes effect only when selected by the consumer project.
+
+### Chat source orientation
+
+Apply [existing intake](start-an-issue.md#intake) to each chat's repository path,
+HEAD and selected instructions separately; one chat's source does not establish
+another's. Preserve parked branches. An unrelated checkout's failures do not
+establish that the selected task commands are blocked. Check readiness in the
+assigned task worktree/source without moving or overwriting a parked branch.
+A dispatcher authenticates
+only its assigned handoff/source within its reading scope, not original issue
+requirements. Reconcile existing assignments before dispatch: absence of an issue
+assignee or default checkpoint alone is not proof there is no active task. Use the
+project's authoritative assignment/recovery locations; no new tracking system.
 
 ### Issue queues
 
@@ -115,9 +176,9 @@ instructions with the same input contract.
 @ri-work-kickoff
 Repository: MitCaine/poker-app
 Issue(s): #447–#458, skipping closed or explicitly deferred issues
-Capsule builder: gpt-6.1-sol / low
-Independent reviewer: gpt-6.1-sol / low
-Codex dispatcher: Wait for controller handoff
+Controller selection: Work; gpt-6.1-sol / low, owner-confirmed
+Authority: I select the reusable task grant for these issues.
+Codex dispatcher: <concrete chat ID or supported reference>
 ```
 
 ```text
@@ -166,7 +227,9 @@ Use `docs/local_project_map.md` in every consumer project. Keep it short:
 - Compatible RI runtime/source and its invocation, plus selected role environments,
   models/efforts and permitted overrides from the
   [initial configuration](#kickoff-inputs-and-selected-configuration).
-- Accepted confirmation for required environment/model/effort settings and the
+- Accepted worker-launch routes, including any adopted
+  [native Work policy](#accepted-worker-launch-routes), plus confirmation for
+  required environment/model/effort settings and the
   authorized disposition when confirmation is unavailable, as defined in the
   [shared reporting rule](start-an-issue.md#execution-routing-models-and-efforts).
 - Shared capsule instructions: the capsule-format section of the selected RI

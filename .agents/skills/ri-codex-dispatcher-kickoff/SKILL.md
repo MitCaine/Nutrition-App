@@ -15,7 +15,9 @@ the selected RI identity/locations from the authenticated handoff or map selecti
 information. Read Shared worker rules and Codex dispatcher in full at that revision;
 do not perform controller intake or retrieve original issues/decision history.
 
-Recover any existing assignment before accepting another. Await the controller's
+Apply the selected setup's [source orientation and authority rules](references/project-procedure.md);
+connector access supplies no grant. Recover any existing assignment before
+accepting another. Await the controller's
 authenticated handoff; kickoff alone authorizes neither implementation nor worker
 creation. If no controller is designated, complete bounded orientation and wait
 without inventing a destination.

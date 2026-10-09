@@ -161,8 +161,10 @@ controller-approved maintenance receive the complete recorded maintenance handof
 task record.
 The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional
 on setup or replacement. New tasks normally use six-heading Markdown capsules and the standard controller. For a
-well-understood mechanical change, the controller may select optional maintenance after confirming
-eligibility and recording the brief handoff in the existing task record. Before dispatch, run
+bounded change whose objective, scope, decisions and verification are sufficiently understood, the
+controller may select optional maintenance after confirming eligibility under the
+[governing rule](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route) and recording
+the brief handoff in the existing task record. Before dispatch, run
 `./scripts/task validate-record --task-record PATH --route normal` or explicitly select
 `--route maintenance`; direct Work controller maintenance also supplies `--repo-root` and requires
 the exact local-map permission described in [the route map](docs/local_project_map.md#nutrition-permissions-and-routing).

@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `5749d2b411f0f12e1de6403c2ab9470cc3547b01`: controllers use the complete
+future task intake is pinned at `841d57571983b5b7cec0071263fad7f78d809e20`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -59,6 +59,13 @@ or settings permission.
 
 Direct Work controller maintenance: permitted
 
+GitHub connector access is separate from task authority. Use `@GitHub` when supported or another
+permitted GitHub route. An owner may explicitly select the [reusable task grant](../engineering/workflow/shared/new-project-setup.md#access-and-task-authority)
+for named issues; authenticate its applicability and retain the selection in the existing external
+checkpoint. Loading a skill or this map supplies no grant. Existing Nutrition owner-bound task
+authorization and protected procedures still govern publication, qualification, review and integration;
+no additional host/account/security permissions or cross-chat disclosure are implied.
+
 The normal route has the Work controller dispatch a capsule builder and a distinct independent
 reviewer. The optional maintenance route omits the builder and planning-only publication only after
 the controller confirms eligibility and records the brief handoff in the existing task record. The
@@ -77,11 +84,13 @@ authenticates the complete accepted task handoff, launches one implementor and r
 result. Tool or agent-spawn capability alone does not authorize an implementation route; workers do
 not recruit. The delegated dispatcher launches exactly one implementor.
 
-Direct maintenance is limited to well-understood mechanical work with no unresolved design decision
-or change to product behavior, dependencies, runtime, role permissions or acceptance requirements.
-Substantive changes use the normal capsule route. If implementation reveals wider impact, pause the
-affected work and return to normal planning while retaining valid work and evidence. A failed
-focused check alone permits bounded diagnosis and correction within the authorized scope.
+Maintenance eligibility follows the selected [governing rule](../engineering/workflow/shared/start-an-issue.md#optional-maintenance-route):
+the bounded objective, scope, decisions and verification must be sufficiently understood.
+An identified dependency/runtime update or inspected RI adoption with necessary bounded local
+workflow/tooling alignment is not categorically excluded. Unresolved design, substantial migration
+or unexpected wider impact requires a controller decision/normal planning; pause only the affected
+part and retain valid work/evidence. A failed focused check alone permits bounded in-scope correction,
+affected checks and fresh review. This selection supplies no additional task or host permissions.
 
 Before direct edits, authenticate the current checkpoint, selected Work actor and live assignments.
 Refuse direct execution when a builder, dispatcher or implementor assignment is active or unresolved;
@@ -114,6 +123,13 @@ again. That owner confirmation establishes the selected Work chat settings; it d
 authenticated external Nutrition task authorization. The trusted Work owner record confirms
 selected Work configuration, not provider-effective telemetry. Record the selection in the
 existing external task checkpoint before dependent work.
+
+Nutrition explicitly selects the [native Work policy](../engineering/workflow/shared/new-project-setup.md#accepted-worker-launch-routes)
+for builders and reviewers: `collaboration.spawn_agent` is accepted with the configured model/effort
+requested explicitly. Missing selector fields or measured telemetry remain unverified; policy
+acceptance does not claim measured execution. Actual launch failure, contradictory evidence or a
+genuinely missing required capability blocks dependent work. Missing reading resources are source
+prerequisites, not proof of a missing launch route.
 
 Configure and confirm each worker separately through its supported role-appropriate launch
 route. For each separately configured builder, implementor, and reviewer, proceed when the

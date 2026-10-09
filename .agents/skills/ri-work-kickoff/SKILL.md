@@ -15,8 +15,11 @@ and directed inputs, and authenticate existing task state before new work. Use
 the adopted revision, not automatically upstream main.
 
 Resolve the issue assignment, role selections, dispatcher route and task authority
-and any requested maintenance route/implementation execution under the selected setup's kickoff-input
-rules; the controller confirms eligibility. Record them in the existing
+and any requested maintenance route/implementation execution under the selected
+setup's kickoff-input
+rules, including selected task authority and accepted worker-launch policy;
+the controller confirms eligibility. Loading the skill supplies no grant. Record
+them in the existing
 checkpoint. Controller selection describes the owner's existing choice; it cannot
 switch this chat's model. Configure workers under the project's accepted policy.
 

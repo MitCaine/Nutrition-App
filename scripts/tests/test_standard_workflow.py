@@ -81,17 +81,17 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (29168, "d7697cddfb20195d2153719362b25233fb61c4c2b9b413af6eb21a275b1f7e8e"),
-        "worker-instructions.md": (14323, "0061961a7b6989411e3546cc80878decdb2465a76b7a23bc429801ec139385ca"),
-        "capsule-controller-workflow.md": (14776, "47c828a73a2072b3b52727650dc3f0f1653d5758b19cc624b8f61b0ac86dac71"),
-        "new-project-setup.md": (11449, "a339de0754f2bb00abadb310e049ccbae4c068661d6979d7366d60b645bac564"),
-        "skill-templates/README.md": (9019, "ac1a76801086edd97bae633224726ae51a5d986571d5f8a053b561c2ece77276"),
-        "skill-templates/capsule-queue/SKILL.md": (2029, "05068dbc4a3150f4fe4f2aeff9d5ff0f8c21bc67c25f4854bb05113d55eb21b8"),
+        "start-an-issue.md": (30240, "4cdbc4ef8b881040516da836135af395a2a312ea1be4c3a9d72420eaf9d9bade"),
+        "worker-instructions.md": (14791, "52860da27cb05d5411d1b12f36d20846aa0fecaab7bb2860e836d9c41fb0bf7d"),
+        "capsule-controller-workflow.md": (14954, "88df7ce7c7f568eb9cf1470390675fbadc7d093857d107390f8212799c1b21d6"),
+        "new-project-setup.md": (15251, "9f2dea919b4230e6d144304968361e41baf232aeb4755506ec0210018d70d7e7"),
+        "skill-templates/README.md": (9019, "ec9b75b80e29f9ad9217cb38adea6169eb895b7e517a29ee3169462da5b5e508"),
+        "skill-templates/capsule-queue/SKILL.md": (2029, "713b58752dedbd15be0b6b796dd095b5288b0ec4ad75e858d260bb54ab99b4fc"),
     }
     provenance = (shared / "SOURCE.md").read_text()
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
-    assert "future task intake is pinned at 5749d2b411f0f12e1de6403c2ab9470cc3547b01" in normalized_map
+    assert "future task intake is pinned at 841d57571983b5b7cec0071263fad7f78d809e20" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
     assert "GH-311 implementation retains its active worker instruction selection" not in normalized_map
     assert "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" not in normalized_map
@@ -105,15 +105,15 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "f6e1064d3f43aee61796f8558a7cef8181426883" in provenance
     assert "live GH-305" not in provenance
     normalized_provenance = " ".join(provenance.split())
-    assert "all four installed files match the selected revision 5749 resources byte-for-byte" in normalized_provenance.lower()
-    assert "dispatcher skill and both references remain unchanged" in normalized_provenance.lower()
+    assert "all four installed files match the selected revision 841d575 resources byte-for-byte" in normalized_provenance.lower()
+    assert "both skill files change to the inspected target; both references remain unchanged exact copies" in normalized_provenance.lower()
     for upstream_identity in (
-        "f6cc34784022ecd96c952acae6c8951f9131ebc6",
-        "29168",
-        "d7697cddfb20195d2153719362b25233fb61c4c2b9b413af6eb21a275b1f7e8e",
-        "6df8aef19e9540b07804284f6b4d399f8e9d6bfd",
-        "14315",
-        "094ac702eaca007e67fcb7a386be5693f2da459b4d30919ef4a51825948c2e0d",
+        "1f44ab796d55826f4eaa87dc10188d244fd3c7b6",
+        "30240",
+        "4cdbc4ef8b881040516da836135af395a2a312ea1be4c3a9d72420eaf9d9bade",
+        "d5ec5fb55d69da2988147600b322ad5847a43d16",
+        "14783",
+        "59cb6bef5bffe5fb9c8157a761519088247c73a90634453602ce7943c2108cab",
     ):
         assert upstream_identity in provenance
     assert "20a5039e7731eaa1303443b782caa81a383a0af1" in provenance
@@ -130,40 +130,40 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
         assert name in provenance and str(size) in provenance and digest in provenance
     local_installed = {
         "engineering/workflow/shared/start-an-issue.md": (
-            "f6cc34784022ecd96c952acae6c8951f9131ebc6", 29168,
-            "d7697cddfb20195d2153719362b25233fb61c4c2b9b413af6eb21a275b1f7e8e",
+            "1f44ab796d55826f4eaa87dc10188d244fd3c7b6", 30240,
+            "4cdbc4ef8b881040516da836135af395a2a312ea1be4c3a9d72420eaf9d9bade",
         ),
         "engineering/workflow/shared/worker-instructions.md": (
-            "01c7a7ccba8d3d6e6783c7ac21eb6f98f9793040", 14323,
-            "0061961a7b6989411e3546cc80878decdb2465a76b7a23bc429801ec139385ca",
+            "c98c32eeb90c15b6aab34dc90602ad37adfcd5a1", 14791,
+            "52860da27cb05d5411d1b12f36d20846aa0fecaab7bb2860e836d9c41fb0bf7d",
         ),
         "engineering/workflow/shared/capsule-controller-workflow.md": (
-            "a4847392af036aa57cac3d623597305b983e7d18", 14776,
-            "47c828a73a2072b3b52727650dc3f0f1653d5758b19cc624b8f61b0ac86dac71",
+            "ce7f0e7d261b44de9575255e5eff77edc6c78bc7", 14954,
+            "88df7ce7c7f568eb9cf1470390675fbadc7d093857d107390f8212799c1b21d6",
         ),
         "engineering/workflow/shared/new-project-setup.md": (
-            "690aac49d1ec785764bbdca08344886605d086a0", 11449,
-            "a339de0754f2bb00abadb310e049ccbae4c068661d6979d7366d60b645bac564",
+            "0fdb5b5326a6638c21373419bf5b9c97d3bfab43", 15251,
+            "9f2dea919b4230e6d144304968361e41baf232aeb4755506ec0210018d70d7e7",
         ),
         "engineering/workflow/shared/skill-templates/README.md": (
-            "b8108f29b6a41c755cca72b640bba8f00cce265e", 9019,
-            "ac1a76801086edd97bae633224726ae51a5d986571d5f8a053b561c2ece77276",
+            "67d84508ff78273d12e9d005825928f4d9a36535", 9019,
+            "ec9b75b80e29f9ad9217cb38adea6169eb895b7e517a29ee3169462da5b5e508",
         ),
         "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md": (
-            "edfec80e013d444c0b7851e00ef8d91cb9743210", 2029,
-            "05068dbc4a3150f4fe4f2aeff9d5ff0f8c21bc67c25f4854bb05113d55eb21b8",
+            "5931012fc612cb58efdd5052e7e0402a63c569b5", 2029,
+            "713b58752dedbd15be0b6b796dd095b5288b0ec4ad75e858d260bb54ab99b4fc",
         ),
         ".agents/skills/ri-work-kickoff/SKILL.md": (
-            "d7891d4825337e6f8f2de979a6b4498978d55114", 1417,
-            "22982297019547a3c050a4224c071ba7c419831fe9b2f1f6dd65be15b3444b5f",
+            "545db0cdaf99ea6fa07b0f506ea628eb23a19291", 1523,
+            "0941127280d8e38bbb37b8d3437b54b212498e17a91b908beb19778a8257a1be",
         ),
         ".agents/skills/ri-work-kickoff/references/project-procedure.md": (
             "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
             "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
         ),
         ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md": (
-            "055e1048858c89c0346c810a6a03242fc9ce26b8", 1502,
-            "79de7229dfa3bbe12a8c85e89c5020969ebb80f2b5223f1a8d66c366a2d627a8",
+            "5abe72319146eed679ee4876e152831af041a31f", 1640,
+            "01d7933a5811c1d8341afe41dbe52556105bb4c338b8ba5cb2575c3859d5d31a",
         ),
         ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md": (
             "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
@@ -189,16 +189,16 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "3b119ff01a9e22c090d3f2f27be4acd6ac4da0279ac5a4faf0da32adc54db6b1" in provenance
     installed = {
         ".agents/skills/ri-work-kickoff/SKILL.md": (
-            "d7891d4825337e6f8f2de979a6b4498978d55114", 1417,
-            "22982297019547a3c050a4224c071ba7c419831fe9b2f1f6dd65be15b3444b5f",
+            "545db0cdaf99ea6fa07b0f506ea628eb23a19291", 1523,
+            "0941127280d8e38bbb37b8d3437b54b212498e17a91b908beb19778a8257a1be",
         ),
         ".agents/skills/ri-work-kickoff/references/project-procedure.md": (
             "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
             "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
         ),
         ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md": (
-            "055e1048858c89c0346c810a6a03242fc9ce26b8", 1502,
-            "79de7229dfa3bbe12a8c85e89c5020969ebb80f2b5223f1a8d66c366a2d627a8",
+            "5abe72319146eed679ee4876e152831af041a31f", 1640,
+            "01d7933a5811c1d8341afe41dbe52556105bb4c338b8ba5cb2575c3859d5d31a",
         ),
         ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md": (
             "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
@@ -250,7 +250,7 @@ def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intak
     assert "author/implementor cannot be its reviewer" in reviewer
 
 
-def test_direct_work_route_scenarios_keep_scope_and_review_controller_owned():
+def test_direct_work_route_instructions_keep_scope_and_review_controller_owned():
     import re
 
     procedure = (ROOT / "engineering/workflow/shared/start-an-issue.md").read_text()
@@ -264,27 +264,25 @@ def test_direct_work_route_scenarios_keep_scope_and_review_controller_owned():
     authority = (ROOT / "engineering/workflow/AUTHORITY.md").read_text()
 
     scenarios = (
-        "well-understood mechanical change",
-        "no unresolved design decision",
-        "no change to product behavior, dependencies, runtime, role permissions or acceptance requirements",
-        "correcting identified broken documentation links",
-        "pause the affected work and move to the normal capsule route, retaining valid work and evidence",
-        "A failed focused check alone does not force replanning",
+        "bounded objective, scope, required decisions and verification",
+        "an identified dependency update without unrelated updates",
+        "adoption of an inspected RI revision",
+        "bounded local workflow/tooling alignment",
+        "unresolved design decisions, substantial migration work or unexpected wider impact",
+        "pause that part for a controller decision",
+        "A failed check alone does not force capsule planning",
         "The author cannot review its own implementation",
+        "waives no project-required qualification or acceptance controls",
     )
     maintenance_normalized = " ".join(maintenance.split())
     readme_normalized = " ".join(readme.split())
     for scenario in scenarios:
         assert scenario in maintenance_normalized or scenario in readme_normalized, scenario
-    for excluded_scope in (
-        "product behavior",
-        "dependencies",
-        "runtime",
-        "role permissions",
-        "acceptance requirements",
-        "no unresolved design decision",
-    ):
-        assert excluded_scope in maintenance_normalized
+    assert "not categorically excluded" in normalized_map
+    assert "identified dependency/runtime update or inspected RI adoption" in normalized_map
+    assert "collaboration.spawn_agent" in normalized_map
+    assert "native Work policy" in normalized_map
+    assert "GitHub connector access is separate from task authority" in normalized_map
 
     for direct_rule in (
         "skips the builder, Codex dispatcher and separate implementor",
@@ -366,7 +364,8 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
     assert "sending or backing metadata alone proves neither consumption nor idle wake-up" in normalized_map_lower
     assert "normal route has the work controller dispatch a capsule builder" in normalized_map_lower
     assert "owner-designated codex dispatcher authenticates the complete accepted task handoff" in normalized_map_lower
-    assert "collaboration.spawn_agent" not in normalized_map
+    assert "collaboration.spawn_agent" in normalized_map
+    assert "policy acceptance does not claim measured execution" in normalized_map.lower()
     assert "worker-instructions.md#role-index" in normalized_map
     assert "worker-instructions.md#codex-dispatcher" in normalized_map
     assert "start-an-issue.md#execute-serially" in normalized_map
@@ -1330,7 +1329,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "5749d2b411f0f12e1de6403c2ab9470cc3547b01/docs/skill-templates/capsule-queue/")
+              "841d57571983b5b7cec0071263fad7f78d809e20/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1344,7 +1343,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "5749d2b411f0f12e1de6403c2ab9470cc3547b01"
+    revision = "841d57571983b5b7cec0071263fad7f78d809e20"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     provenance = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text()
@@ -1375,8 +1374,8 @@ def test_selected_optional_upstream_relocations_are_pinned_and_declared():
          "3d4da861fdfa9eeb90bd22e1731f9a061015ac92b14ec4870bbb188765b7f73e"),
     ):
         assert blob in provenance and str(size) in provenance and digest in provenance
-    assert "fd892a382d07607847e4b22a2d59f293ef6ad8cf" in provenance
-    assert "9339cb7bed66cad755b769a01161a632b7ff3c302e5b97003d02e4d130a56a78" in provenance
+    assert "d04e157f6b22abc70c8aeb0067398b224794153e" in provenance
+    assert "bb57c19350e9590c0ebceea52d0a98d8392ea5eb7247a0ff646ea06e19c8bbdd" in provenance
 
 
 def test_controller_permissions_waiting_and_external_closeout_contract():
@@ -1640,4 +1639,6 @@ def test_project_map_records_role_correct_nutrition_dispatch():
     assert "distinct independent reviewer" in routing_lower
     assert "owner-designated codex dispatcher authenticates the complete accepted task handoff" in routing_lower
     assert "launches exactly one implementor" in routing_lower
-    assert "collaboration.spawn_agent" not in routing_lower
+    assert "collaboration.spawn_agent" in routing_lower
+    assert "native work policy" in routing_lower
+    assert "missing selector fields or measured telemetry remain unverified" in routing_lower

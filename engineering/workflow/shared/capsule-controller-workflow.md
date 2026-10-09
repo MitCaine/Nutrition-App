@@ -67,8 +67,10 @@ controls before dispatch rather than silently keeping the task local.
 
 The optional [maintenance route](start-an-issue.md#optional-maintenance-route)
 replaces builder/planning publication with a controller-approved brief handoff
-in the existing task record; explicitly reconcile local capsule-only validators
-before adopting it. Initial implementation starts from that accepted handoff or
+in the existing task record. Its governing eligibility includes understood
+dependency updates and inspected RI adoption with bounded local alignment;
+change category alone does not require capsule planning. Explicitly reconcile
+local capsule-only validators before adopting it. Initial implementation starts from that accepted handoff or
 validated normal-route planning state. A correction starts
 from the authenticated recovery source/parent and retained finding, not from an
 artificial requirement that the branch still heads the original planning commit.

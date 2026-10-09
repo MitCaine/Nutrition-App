@@ -26,7 +26,12 @@ replacement is not a new attempt or permission to duplicate dispatch.
   version throughout the attempt; do not silently select new instructions,
   reinstall skills or upgrade the runtime. Resolve a conflicting map first.
 - Authenticate the live issue, current base/branch and checkout. Preserve unrelated
-  edits. Check for an active task/checkpoint before starting a duplicate attempt.
+  edits and parked branches. Follow [per-chat source orientation](new-project-setup.md#chat-source-orientation)
+  and reconcile existing assignments before dispatch; missing assignee/default
+  checkpoint alone does not establish inactivity.
+- Resolve connector access separately from [task authority](new-project-setup.md#access-and-task-authority).
+  Reuse applicable recorded owner grants; hold only uncovered actions, not every
+  routine publication or closeout step.
 - Resolve missing product decisions; do not invent requirements or parameters.
   Check a suspected prerequisite against actual current callers, reachable behavior
   and its controlling requirement before expanding scope or starting a repair.
@@ -34,13 +39,24 @@ replacement is not a new attempt or permission to duplicate dispatch.
 
 ## Optional maintenance route
 
-During intake, the controller may select maintenance for a well-understood
-mechanical change with no unresolved design decision and no change to product
-behavior, dependencies, runtime, role permissions or acceptance requirements.
-Eligibility depends on the change, not file or line counts. Inspect upstream
-changes before treating an RI instruction update as eligible; updating a pin
-alone is insufficient. Policy, role-boundary, acceptance or substantive execution
-changes use the normal capsule route. Preserve active attempts' instruction revisions.
+During intake, the controller may select maintenance when the bounded objective,
+scope, required decisions and verification are sufficiently understood to fit a
+brief handoff. Eligibility is not determined by file/line counts or by whether a
+change affects a dependency, runtime version or workflow instruction. It supports
+an identified dependency update without unrelated updates and adoption of an
+inspected RI revision, including necessary instruction copies, pins, hashes,
+links and bounded local workflow/tooling alignment. Inspect the actual changes;
+a pin update alone is not sufficient. Work must remain within existing or expressly
+granted task authority; maintenance grants no additional host/account/security
+permissions and waives no project-required qualification or acceptance controls.
+Preserve active attempts' selected instruction identities.
+
+Use normal planning when unresolved design decisions, substantial migration work
+or unexpected wider impact require it. If only part exceeds the brief handoff's
+scope, preserve valid work and evidence and pause that part for a controller
+decision; do not automatically restart completed phases. A failed check alone does
+not force capsule planning: permit bounded in-scope correction under existing
+authority, followed by affected checks and independent review.
 
 For eligible work, record a brief controller handoff in the existing task record:
 objective, exact base, allowed changes, required checks and concrete return
@@ -55,17 +71,15 @@ only a fresh independent reviewer is assigned. Use the controller's existing
 selected model/effort, not the implementor default. Record this execution selection
 in the same task record. The author cannot review its own implementation;
 controller approval, authorized integration and verified closeout remain required.
-This exception does not expand task scope or permit changes to role policy within
-an eligible maintenance task. Scale checks and review to impact: documentation-only work uses applicable
+This execution selection does not expand task scope or authority. Scale checks
+and review to impact: documentation-only work uses applicable
 identity, link, documentation and affected tooling checks; product suites run only
 when required by the project or affected by the change.
 
-If investigation or implementation reveals wider impact, pause the affected work
-and move to the normal capsule route, retaining valid work and evidence. A failed
-focused check alone does not force replanning. Consumer adoption must explicitly
-resolve any local capsule-only validator before selecting maintenance; this route
-does not bypass project controls. A kickoff may request maintenance, but the
-controller confirms eligibility before dispatch.
+Consumer adoption must explicitly resolve any local capsule-only validator before
+selecting maintenance; this route does not bypass project controls. A kickoff may
+request maintenance, but the controller confirms eligibility before implementation
+or dispatch.
 
 ## Capsule format
 
@@ -128,8 +142,10 @@ already-running chat's model.
 Record requested settings separately from host-confirmed settings. A selected
 host mode or authoritative configuration/session record confirming the setting
 is sufficient evidence; dispatch options establish only what was requested.
-The project map names accepted confirmation for required settings and the
-response when confirmation is unavailable; it may select a shared policy.
+The project map names accepted launch routes and confirmation for required
+settings, including the [optional native Work policy](new-project-setup.md#accepted-worker-launch-routes),
+and the response when confirmation is unavailable. Policy acceptance is separate
+from measured runtime confirmation.
 Unknown proves neither compliance nor mismatch. Proceed only under that
 authorization. Do not infer product mode from tool names, backing metadata or
 an agent's self-description.
