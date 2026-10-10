@@ -123,6 +123,8 @@ class DependencyUpdateTest(unittest.TestCase):
         bin_dir.mkdir()
         calls = self.root / "npm-calls.jsonl"
         calls.write_text("")
+        trace = self.root / "npm-trace.jsonl"
+        trace.write_text("")
         stub = bin_dir / "npm_stub.py"
         stub.write_text(r'''import json
 import os
@@ -137,17 +139,35 @@ if args == ["--nutrition-npm-stub-sentinel"]:
         "python": sys.executable,
     }))
     raise SystemExit(0)
+trace_path = Path(os.environ["NPM_STUB_TRACE"])
+prior_trace = [json.loads(line) for line in trace_path.read_text().splitlines() if line.strip()]
+with trace_path.open("a", encoding="utf-8") as trace_stream:
+    trace_stream.write(json.dumps({"argv": args}) + "\n")
+behavior = json.loads(os.environ["NPM_STUB_BEHAVIOR"])
+
+def selected_result(value, index):
+    if isinstance(value, list):
+        if not value:
+            return {}
+        return value[min(index, len(value) - 1)]
+    return value
+
 if args and args[0] == "update":
     packages = []
     for item in args[1:]:
         if item.startswith("-"):
             break
         packages.append(item)
+    prior_updates = [json.loads(line) for line in Path(os.environ["NPM_STUB_CALLS"]).read_text().splitlines()
+                     if line.strip()]
     with open(os.environ["NPM_STUB_CALLS"], "a", encoding="utf-8") as stream:
         stream.write(json.dumps(packages) + "\n")
-    behavior = json.loads(os.environ["NPM_STUB_BEHAVIOR"])
     key = "bulk" if len(packages) > 1 else (packages[0] if packages else "empty")
-    result = behavior.get(key, {})
+    prior_count = sum(
+        1 for call in prior_updates
+        if ("bulk" if len(call) > 1 else (call[0] if call else "empty")) == key
+    )
+    result = selected_result(behavior.get(key, {}), prior_count)
     stdout = result.get("stdout", "")
     stderr = result.get("stderr", "")
     if stdout:
@@ -167,8 +187,17 @@ if args and args[0] == "update":
         path.write_text(json.dumps(lock))
 elif args and args[0] == "ci":
     (Path.cwd() / "node_modules").mkdir(exist_ok=True)
+elif args and args[0] == "exec":
+    prior_execs = sum(1 for item in prior_trace if item["argv"] and item["argv"][0] == "exec")
+    result = selected_result(behavior.get("exec", {}), prior_execs)
+    if result.get("stdout"):
+        print(result["stdout"])
+    if result.get("stderr"):
+        print(result["stderr"], file=sys.stderr)
+    if result.get("status"):
+        raise SystemExit(result["status"])
 elif args and args[0] == "outdated":
-    print("{}")
+    print(behavior.get("outdated_stdout", "{}"))
 ''')
         launcher = bin_dir / "npm"
         launcher.write_text(
@@ -180,6 +209,7 @@ elif args and args[0] == "outdated":
             "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
             "NPM_STUB_BEHAVIOR": json.dumps(behavior),
             "NPM_STUB_CALLS": str(calls),
+            "NPM_STUB_TRACE": str(trace),
         }
         if launcher.is_symlink() or not launcher.is_file() or not os.access(launcher, os.X_OK):
             raise AssertionError(f"npm stub launcher is not an executable regular file: {launcher}")
@@ -236,6 +266,47 @@ elif args and args[0] == "outdated":
             **environment,
             "NUTRITION_DEPS_PYTHON": os.environ.get("NUTRITION_DEPS_PYTHON", sys.executable),
         }), calls
+
+    def prepare_all_mobile_fixture(self):
+        self.manifest["dependencies"]["other"] = "^1.0.0"
+        (self.mobile / "package.json").write_text(json.dumps(self.manifest))
+        lock = json.loads(self.lock.read_text())
+        lock["packages"][""] = self.manifest
+        lock["packages"]["node_modules/other"] = {"version": "1.0.0"}
+        self.lock.write_text(json.dumps(lock))
+        backend = self.root / "apps/backend"
+        backend.mkdir()
+        backend_lock = backend / "requirements-dev.lock"
+        backend_lock.write_bytes(b"fixture==1.0.0\n")
+        return backend_lock
+
+    def run_all_mobile_with_stub(self, behavior):
+        backend_lock = self.prepare_all_mobile_fixture()
+        environment, calls = self.install_npm_stub(behavior)
+        before = backend_lock.read_bytes()
+        original_mobile_lock = self.lock.read_bytes()
+        output, errors = io.StringIO(), io.StringIO()
+        with environment, patch.object(module, "backend", return_value=(backend_lock, before, before)), \
+                patch.object(module, "toolchain_report"), \
+                patch.object(sys, "argv", ["update", "all", "--apply"]), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            result = module.main()
+        scenario_log = os.environ.get("GH276_NPM_STUB_SCENARIO_LOG")
+        if scenario_log:
+            scenario = {
+                "behavior": behavior,
+                "captured_stderr": errors.getvalue(),
+                "captured_stdout": output.getvalue(),
+                "initial_lock_sha256": hashlib.sha256(original_mobile_lock).hexdigest(),
+                "lock_mode": self.lock.stat().st_mode & 0o777,
+                "lock_sha256": hashlib.sha256(self.lock.read_bytes()).hexdigest(),
+                "npm_update_packages": [json.loads(line) for line in calls.read_text().splitlines()],
+                "result": result,
+                "trace": [json.loads(line) for line in (self.root / "npm-trace.jsonl").read_text().splitlines()],
+            }
+            with Path(scenario_log).open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(scenario, sort_keys=True) + "\n")
+        return result, output.getvalue(), errors.getvalue(), calls
 
     def test_preview_keeps_lock_and_apply_updates_it(self):
         original = self.lock.read_bytes()
@@ -623,6 +694,79 @@ elif args and args[0] == "outdated":
         self.assertIn("failed (23)", message)
         self.assertIn("npm stdout evidence", message)
         self.assertIn("npm ERR! code ERESOLVE", message)
+
+    def test_resolver_npm_stub_launcher_identity_sentinel(self):
+        environment, calls = self.install_npm_stub({})
+        with environment:
+            self.assertEqual(calls.read_text(), "")
+            self.assertEqual((self.root / "npm-trace.jsonl").read_text(), "")
+
+    def test_resolver_all_expo_held_second_update_conflict_captures_and_narrows(self):
+        result, output, errors, calls = self.run_all_mobile_with_stub({
+            "exec": [
+                {"stdout": "Expo compatibility check failed\n  sample@1.1.0 - expected version: 1.0.0",
+                 "status": 1},
+                {},
+            ],
+            "other": [
+                {"stdout": "npm update companion diagnostic", "stderr": "npm ERR! code ERESOLVE",
+                 "status": 23},
+                {"version": "1.1.0"},
+            ],
+            "sample": {"version": "1.0.0"},
+        })
+        self.assertEqual(result, 0)
+        self.assertEqual([json.loads(line) for line in calls.read_text().splitlines()], [
+            ["other", "sample"], ["other"], ["other"], ["sample"],
+        ])
+        self.assertIn("npm update failed (23)", errors)
+        self.assertIn("npm update companion diagnostic", errors)
+        self.assertIn("npm ERR! code ERESOLVE", errors)
+        self.assertIn("retrying direct packages independently", errors)
+        self.assertIn("mobile retry other: validated.", output)
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes()), {
+            "sample": "1.0.0", "other": "1.1.0",
+        })
+
+    def test_resolver_all_expo_held_second_update_success_forwards_both_streams(self):
+        result, output, errors, calls = self.run_all_mobile_with_stub({
+            "exec": [
+                {"stdout": "Expo compatibility check failed\n  sample@1.1.0 - expected version: 1.0.0",
+                 "status": 1},
+                {},
+            ],
+            "other": {"stdout": "second update stdout evidence", "stderr": "second update stderr evidence",
+                      "version": "1.1.0"},
+        })
+        self.assertEqual(result, 0)
+        self.assertEqual([json.loads(line) for line in calls.read_text().splitlines()], [
+            ["other", "sample"], ["other"],
+        ])
+        self.assertIn("second update stdout evidence", output)
+        self.assertIn("second update stderr evidence", errors)
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes()), {
+            "sample": "1.0.0", "other": "1.1.0",
+        })
+
+    def test_resolver_all_expo_held_second_update_shared_failure_stays_generic(self):
+        result, output, errors, calls = self.run_all_mobile_with_stub({
+            "exec": {"stdout": "Expo compatibility check failed\n  sample@1.1.0 - expected version: 1.0.0",
+                     "status": 1},
+            "other": {"stdout": "shared failure companion diagnostic", "stderr": "npm ERR! ECONNRESET",
+                      "status": 29},
+        })
+        self.assertEqual(result, 2)
+        self.assertEqual([json.loads(line) for line in calls.read_text().splitlines()], [
+            ["other", "sample"], ["other"],
+        ])
+        self.assertIn("npm update failed (29)", errors)
+        self.assertIn("shared failure companion diagnostic", errors)
+        self.assertIn("npm ERR! ECONNRESET", errors)
+        self.assertIn("no package retry for shared or contract failure", errors)
+        self.assertNotIn("retrying direct packages independently", errors)
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes()), {
+            "sample": "1.0.0", "other": "1.0.0",
+        })
 
     def test_resolver_stdout_conflict_keeps_the_nonempty_stderr(self):
         environment, _ = self.install_npm_stub({"sample": {

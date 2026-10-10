@@ -465,7 +465,7 @@ def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False,
             remaining = [name for name in packages if name not in held]
             if remaining:
                 run(["npm", "update", *remaining, "--package-lock-only", "--ignore-scripts",
-                     "--engine-strict", "--no-audit", "--no-fund", "--save=false"], target)
+                     "--engine-strict", "--no-audit", "--no-fund", "--save=false"], target, capture=True)
             else:
                 print("All requested mobile packages are Expo-held; retaining the original lock.")
             if held_entries((target / "package-lock.json").read_bytes(), held) != held_entries(before, held):
