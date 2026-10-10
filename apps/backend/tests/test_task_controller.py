@@ -4448,6 +4448,139 @@ def test_reconciliation_rejects_completed_poll_result_after_stop(tmp_path: Path)
     assert refs.delete_calls == []
 
 
+@pytest.mark.parametrize(
+    ("candidate_change", "expected_error"),
+    [
+        ("head", "QUALIFICATION_CANDIDATE_CHANGED"),
+        ("dirty", "CANDIDATE_WORKTREE_DIRTY"),
+    ],
+)
+def test_public_reconcile_rechecks_candidate_at_terminal_application(
+    tmp_path: Path,
+    monkeypatch,
+    candidate_change: str,
+    expected_error: str,
+) -> None:
+    repo, base, candidate, state_dir, operation, base_transport = persisted_running_qualification(
+        tmp_path,
+    )
+    TASK.checkpoint_transaction(
+        state_dir,
+        999,
+        lambda current: {
+            **current,
+            "attempt_history": ["prior-attempt"],
+            "unrelated": {"preserve": "terminal-application-race"},
+        },
+    )
+    before = TASK.load_state(state_dir, 999)
+    before_operation = before["qualification_operation"]
+
+    authorization_entered = threading.Event()
+    release_authorization = threading.Event()
+
+    class BlockingAuthorizationTransport(FakeQualificationTransport):
+        def list_issue_comments(self, repository: str, issue_number: int) -> list[dict]:
+            authorization_entered.set()
+            assert release_authorization.wait(15)
+            return super().list_issue_comments(repository, issue_number)
+
+    state = TASK.load_state(state_dir, 999)
+    transport = BlockingAuthorizationTransport(
+        comment=base_transport.comments[0],
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    transport.dispatch_inputs = {
+        "task_id": state["task_id"],
+        "dispatch_nonce": operation["dispatch_nonce"],
+        "candidate_sha": candidate,
+    }
+    transport.hosted_runs = [transport._run()]
+    refs = FakeCandidateRefTransport()
+    outputs: list[dict] = []
+    monkeypatch.setattr(TASK, "resolve_repo_root", lambda path: Path(path).resolve())
+    monkeypatch.setattr(TASK, "require_candidate_repository", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(TASK, "configured_qualification_app_id", lambda: 424242)
+    monkeypatch.setattr(TASK, "GhQualificationTransport", lambda: transport)
+    monkeypatch.setattr(TASK, "GitCandidateRefTransport", lambda _repo: refs)
+    monkeypatch.setattr(TASK, "emit", outputs.append)
+
+    command_result: list[int] = []
+
+    def reconcile() -> None:
+        command_result.append(TASK.main([
+            "--state-dir", str(state_dir),
+            "qualify-reconcile", "999",
+            "--candidate-root", str(repo),
+        ]))
+
+    worker = threading.Thread(target=reconcile)
+    worker.start()
+    try:
+        assert authorization_entered.wait(10), "reconciliation did not fetch current authorization"
+        if candidate_change == "head":
+            git(repo, "commit", "--allow-empty", "-q", "-m", "candidate drift during authorization")
+        else:
+            (repo / "src" / "value.py").write_text("VALUE = 2\n", encoding="utf-8")
+    finally:
+        release_authorization.set()
+        worker.join(10)
+
+    assert not worker.is_alive(), "public qualification reconciliation did not finish"
+    assert command_result == [1]
+    assert outputs[-1]["error"] == expected_error
+
+    after = TASK.load_state(state_dir, 999)
+    after_operation = after["qualification_operation"]
+    for field in (
+        "operation_id",
+        "candidate_sha",
+        "candidate_ref",
+        "dispatch_nonce",
+        "controller_main_sha",
+        "workflow",
+        "expected_app_id",
+        "authorization",
+        "resolved_authorization",
+        "ownership_binding",
+        "candidate_ref_published",
+    ):
+        assert after_operation[field] == before_operation[field]
+    assert after_operation["status"] == "UNKNOWN"
+    assert after_operation["error"] == expected_error
+    assert {
+        key: value
+        for key, value in after_operation.items()
+        if key not in {"status", "error"}
+    } == {
+        key: value
+        for key, value in before_operation.items()
+        if key not in {"status", "error"}
+    }
+    assert {
+        key: value
+        for key, value in after.items()
+        if key != "qualification_operation"
+    } == {
+        key: value
+        for key, value in before.items()
+        if key != "qualification_operation"
+    }
+    assert after["phase"] == before["phase"] == "AUTHORIZED"
+    assert after["qualification"] is None
+    assert after["attempt_history"] == before["attempt_history"] == ["prior-attempt"]
+    assert after["unrelated"] == before["unrelated"] == {
+        "preserve": "terminal-application-race",
+    }
+    assert refs.delete_calls == []
+    assert refs.deleted == []
+    assert transport.dispatch_calls == 0
+    assert transport.workflow_list_calls == 1
+    assert transport.check_list_calls == 1
+
+
 def test_cleanup_rechecks_stop_after_live_authorization_fetch(tmp_path: Path) -> None:
     repo, base, candidate, state_dir, operation, base_transport = persisted_running_qualification(tmp_path)
     state = TASK.load_state(state_dir, 999)

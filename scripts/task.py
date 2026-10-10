@@ -2349,6 +2349,16 @@ def apply_qualification_terminal_result(
 ) -> dict[str, Any]:
     """Fetch external authority first, then apply against the latest checkpoint."""
     ownership.require_active(state_dir, issue_number)
+
+    def validate_candidate() -> None:
+        if candidate_repo is None:
+            return
+        observed_candidate = git(candidate_repo, "rev-parse", "HEAD")
+        if observed_candidate != operation.get("candidate_sha"):
+            raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
+        if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
+            raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+
     with checkpoint_lock(state_dir, issue_number):
         snapshot = load_state(state_dir, issue_number)
 
@@ -2368,12 +2378,7 @@ def apply_qualification_terminal_result(
     }:
         raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
 
-    if candidate_repo is not None:
-        observed_candidate = git(candidate_repo, "rev-parse", "HEAD")
-        if observed_candidate != operation.get("candidate_sha"):
-            raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
-        if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
-            raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+    validate_candidate()
 
     authorization = resolve_current_authorization(snapshot, transport)
     if authorization.base_sha != operation.get("controller_main_sha"):
@@ -2419,6 +2424,9 @@ def apply_qualification_terminal_result(
             "UNKNOWN",
         }:
             raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        # Recheck the local candidate while checkpoint mutation is serialized.
+        # The authorization fetch above stays outside the checkpoint transaction.
+        validate_candidate()
         updated = json.loads(json.dumps(current))
         updated["qualification"] = qualification
         updated["phase"] = result_document["phase"]
