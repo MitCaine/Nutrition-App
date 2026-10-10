@@ -152,14 +152,26 @@ packages within declared ranges; it does not change manifests or toolchain pins.
 Expo/React Native/native, and language-runtime changes require a separate migration with
 the relevant tests and native qualification. The bulk mobile refresh retains Expo's
 expected package versions when npm selects newer compatible-range versions that Expo
-does not yet accept. A new apply requires a clean worktree; a recorded partial apply
-may resume only its exact updater-owned changes. Lock previews do not publish locks; resolver scratch/network work and possible
-compiler bootstrap still require applicable authority.
-If one area or package fails, other independent attempts continue and the command exits
-nonzero after reporting partial success. Fix the cause and rerun the same apply to
-complete pending areas; changed branches, commits or unrelated edits block resume.
-Do not treat
-a partially updated checkout as fully qualified until the applicable checks pass.
+does not yet accept. A new apply requires a clean worktree; a recorded partial apply can resume only with
+the same exact command on the same branch and HEAD. Lock previews do not publish locks;
+resolver scratch/network work and possible compiler bootstrap still require applicable
+authority. If one area or package fails, other independent attempts continue and the
+command exits nonzero after reporting partial success. Fix the cause and rerun the same
+apply to complete pending areas. Changed branches, commits or unrelated edits block
+resume. Do not treat a partially updated checkout as fully qualified until the applicable
+checks pass.
+
+#### Retrying an interrupted lock publication
+
+The updater records the expected staging and recovery file paths, bytes, modes, filesystem
+identities and transaction owner before publishing a single lock. Rerun the same `--apply`
+command after an interruption: if the lock still has the recorded before bytes, the area
+remains pending; if it has the recorded after bytes, that area is recognized as applied
+and is skipped. The updater removes only artifacts that still match their transaction
+records. Missing ownership records, changed or replaced artifacts, symlinks, mode drift,
+checkout identity drift and unrelated changes stop the retry for inspection; the updater
+leaves unauthenticated artifacts untouched. Do not remove or replace these files to force
+a retry.
 Registry availability is reported as
 `unavailable` rather than treated as proof that a package is current.
 The current backend Ruff range remains below 0.16 because that line flags existing
@@ -176,9 +188,11 @@ To update only one declared backend dependency, use:
 ./scripts/update-dependencies backend fastapi --apply
 ```
 
-The first command previews the resolved change; the second writes only the lockfile. The
-compiler is included in the ranged development dependencies and is bootstrapped into a
-temporary environment if no prepared backend environment is available. Set
+The first command previews the resolved change; the second writes only the lockfile.
+An interrupted apply uses the same [authenticated retry rules](#retrying-an-interrupted-lock-publication)
+and must rerun the exact command. The compiler is included in the ranged development
+dependencies and is bootstrapped into a temporary environment if no prepared backend
+environment is available. Set
 `NUTRITION_DEPS_PYTHON` if the interpreter line in `.python-version` is not
 available under its usual executable name.
 The preview lists every resolved package version change, including transitive changes,
@@ -213,9 +227,10 @@ checks lockfile declarations, installs the candidate lock without scripts in a t
 directory, checks Expo compatibility, and refuses new dependency-risk register drift. Existing
 risk findings are reported and still need separate review. Review
 the exact resolved changes before qualification. Expo and native package migrations need
-their coordinated upgrade process. A new apply requires a clean worktree; an interrupted
-apply can resume only on the same branch and HEAD with exact recorded updater output.
-Unrelated changes remain protected. Exact resolved versions remain pinned in
+their coordinated upgrade process. A new apply requires a clean worktree; an interrupted apply uses the same
+[authenticated retry rules](#retrying-an-interrupted-lock-publication) and must rerun the
+exact command on the same branch and HEAD. Unrelated changes remain protected. Exact
+resolved versions remain pinned in
 lockfiles; declared ranges remain flexible. The mobile command accepts Python 3.9 or
 newer alongside the repository's `.nvmrc` Node line, and lists every resolved version
 change plus the `repository`, `mobile`, and `ios-native` qualification profiles.

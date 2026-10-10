@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
+import os
+import shlex
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -35,8 +39,20 @@ class StubTransaction:
     def publication_guard(self):
         return contextlib.nullcontext()
 
-    def publishing(self, _area, _proposals):
+    def publishing(self, _area, _proposals, *, artifacts=None):
+        self.artifacts = artifacts or []
+
+    def write_artifact(self, _area, path, data):
+        path.write_bytes(data)
+        mode = next(item[4] for item in self.artifacts if item[0] == path)
+        path.chmod(mode)
+
+    def prepare_artifact_rollback(self, _area):
         pass
+
+    def cleanup_artifacts(self, _area, *, guarded=False):
+        for path, *_ in self.artifacts:
+            path.unlink(missing_ok=True)
 
     def applied(self, _area):
         pass
@@ -101,6 +117,125 @@ class DependencyUpdateTest(unittest.TestCase):
         with patch.object(module, "run", side_effect=self.fake_run), patch.object(sys, "argv", ["update", *args]):
             with contextlib.redirect_stdout(io.StringIO()):
                 return module.main()
+
+    def install_npm_stub(self, behavior):
+        bin_dir = self.root / "stub-bin"
+        bin_dir.mkdir()
+        calls = self.root / "npm-calls.jsonl"
+        calls.write_text("")
+        stub = bin_dir / "npm_stub.py"
+        stub.write_text(r'''import json
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if args == ["--nutrition-npm-stub-sentinel"]:
+    print(json.dumps({
+        "argv": args,
+        "marker": "nutrition-npm-stub-v1",
+        "python": sys.executable,
+    }))
+    raise SystemExit(0)
+if args and args[0] == "update":
+    packages = []
+    for item in args[1:]:
+        if item.startswith("-"):
+            break
+        packages.append(item)
+    with open(os.environ["NPM_STUB_CALLS"], "a", encoding="utf-8") as stream:
+        stream.write(json.dumps(packages) + "\n")
+    behavior = json.loads(os.environ["NPM_STUB_BEHAVIOR"])
+    key = "bulk" if len(packages) > 1 else (packages[0] if packages else "empty")
+    result = behavior.get(key, {})
+    stdout = result.get("stdout", "")
+    stderr = result.get("stderr", "")
+    if stdout:
+        print(stdout)
+    if stderr:
+        print(stderr, file=sys.stderr)
+    status = result.get("status", 0)
+    if status:
+        raise SystemExit(status)
+    if result.get("update", True):
+        path = Path.cwd() / "package-lock.json"
+        lock = json.loads(path.read_text())
+        for package in packages:
+            entry = lock.get("packages", {}).get("node_modules/" + package)
+            if entry is not None:
+                entry["version"] = result.get("version", "1.1.0")
+        path.write_text(json.dumps(lock))
+elif args and args[0] == "ci":
+    (Path.cwd() / "node_modules").mkdir(exist_ok=True)
+elif args and args[0] == "outdated":
+    print("{}")
+''')
+        launcher = bin_dir / "npm"
+        launcher.write_text(
+            "#!/bin/sh\n"
+            f"exec {shlex.quote(sys.executable)} {shlex.quote(str(stub))} \"$@\"\n"
+        )
+        launcher.chmod(0o755)
+        environment = {
+            "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            "NPM_STUB_BEHAVIOR": json.dumps(behavior),
+            "NPM_STUB_CALLS": str(calls),
+        }
+        if launcher.is_symlink() or not launcher.is_file() or not os.access(launcher, os.X_OK):
+            raise AssertionError(f"npm stub launcher is not an executable regular file: {launcher}")
+        resolved = shutil.which("npm", path=environment["PATH"])
+        if resolved is None or Path(resolved).absolute() != launcher.absolute():
+            raise AssertionError(f"npm resolved to {resolved!r}, expected harmless stub {launcher}")
+        probe_environment = os.environ.copy()
+        probe_environment.update(environment)
+        probe = subprocess.run(
+            [resolved, "--nutrition-npm-stub-sentinel"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=probe_environment,
+        )
+        if probe.returncode != 0 or probe.stderr:
+            raise AssertionError(
+                f"npm stub sentinel failed: status={probe.returncode}, stderr={probe.stderr!r}"
+            )
+        try:
+            identity = json.loads(probe.stdout)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(f"npm stub sentinel returned invalid identity: {probe.stdout!r}") from exc
+        expected_identity = {
+            "argv": ["--nutrition-npm-stub-sentinel"],
+            "marker": "nutrition-npm-stub-v1",
+            "python": sys.executable,
+        }
+        if identity != expected_identity:
+            raise AssertionError(f"npm resolved outside the harmless stub: {identity!r}")
+        evidence_log = os.environ.get("GH276_NPM_STUB_EVIDENCE_LOG")
+        if evidence_log:
+            probe_evidence = {
+                "argv": [resolved, "--nutrition-npm-stub-sentinel"],
+                "identity": identity,
+                "launcher": str(launcher),
+                "launcher_sha256": hashlib.sha256(launcher.read_bytes()).hexdigest(),
+                "resolved_npm": str(Path(resolved).absolute()),
+                "stub": str(stub),
+                "stub_sha256": hashlib.sha256(stub.read_bytes()).hexdigest(),
+                "returncode": probe.returncode,
+                "stdout": probe.stdout,
+                "stderr": probe.stderr,
+                "environment": {
+                    "PATH": environment["PATH"],
+                    "NUTRITION_DEPS_PYTHON": os.environ.get("NUTRITION_DEPS_PYTHON", sys.executable),
+                    "NPM_STUB_BEHAVIOR": environment["NPM_STUB_BEHAVIOR"],
+                    "NPM_STUB_CALLS": environment["NPM_STUB_CALLS"],
+                },
+            }
+            with Path(evidence_log).open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(probe_evidence, sort_keys=True) + "\n")
+        return patch.dict(os.environ, {
+            **environment,
+            "NUTRITION_DEPS_PYTHON": os.environ.get("NUTRITION_DEPS_PYTHON", sys.executable),
+        }), calls
 
     def test_preview_keeps_lock_and_apply_updates_it(self):
         original = self.lock.read_bytes()
@@ -476,6 +611,85 @@ class DependencyUpdateTest(unittest.TestCase):
         self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
         self.assertIn("remaining direct packages were not attempted", errors.getvalue())
         self.assertIn("succeeded: backend partial, mobile", errors.getvalue())
+
+    def test_resolver_stderr_conflict_is_captured_through_mobile_subprocess_path(self):
+        environment, _ = self.install_npm_stub({"sample": {
+            "stdout": "npm stdout evidence", "stderr": "npm ERR! code ERESOLVE", "status": 23,
+        }})
+        with environment, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(module.ResolutionConflict) as raised:
+                module.mobile(["sample"], self.root / "resolver-stderr")
+        message = str(raised.exception)
+        self.assertIn("failed (23)", message)
+        self.assertIn("npm stdout evidence", message)
+        self.assertIn("npm ERR! code ERESOLVE", message)
+
+    def test_resolver_stdout_conflict_keeps_the_nonempty_stderr(self):
+        environment, _ = self.install_npm_stub({"sample": {
+            "stdout": "npm ERR! code ERESOLVE", "stderr": "npm stderr evidence", "status": 24,
+        }})
+        with environment, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(module.ResolutionConflict) as raised:
+                module.mobile(["sample"], self.root / "resolver-stdout")
+        message = str(raised.exception)
+        self.assertIn("failed (24)", message)
+        self.assertIn("npm ERR! code ERESOLVE", message)
+        self.assertIn("npm stderr evidence", message)
+
+    def test_resolver_success_keeps_mobile_output_and_result_contract(self):
+        environment, _ = self.install_npm_stub({"sample": {
+            "stdout": "npm update stdout", "stderr": "npm update stderr", "version": "1.1.0",
+        }})
+        output, errors = io.StringIO(), io.StringIO()
+        with environment, contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            _, before, after = module.mobile(["sample"], self.root / "resolver-success")
+        self.assertIn("npm update stdout", output.getvalue())
+        self.assertIn("npm update stderr", errors.getvalue())
+        self.assertEqual(module.mobile_versions(before)["sample"], "1.0.0")
+        self.assertEqual(module.mobile_versions(after)["sample"], "1.1.0")
+
+    def test_resolver_shared_subprocess_failure_stays_out_of_narrowing(self):
+        environment, _ = self.install_npm_stub({"sample": {
+            "stdout": "npm stdout before shared failure", "stderr": "npm ERR! ECONNRESET", "status": 29,
+        }})
+        with environment, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(module.UpdateError) as raised:
+                module.mobile(["sample"], self.root / "resolver-shared")
+        self.assertNotIsInstance(raised.exception, module.ResolutionConflict)
+        self.assertIn("failed (29)", str(raised.exception))
+        self.assertIn("npm stdout before shared failure", str(raised.exception))
+        self.assertIn("npm ERR! ECONNRESET", str(raised.exception))
+
+    def test_resolver_bulk_conflict_narrows_direct_packages_and_preserves_partial_failure(self):
+        self.manifest["dependencies"]["other"] = "^1.0.0"
+        (self.mobile / "package.json").write_text(json.dumps(self.manifest))
+        self.write_lock("1.0.0")
+        lock = json.loads(self.lock.read_text())
+        lock["packages"]["node_modules/other"] = {"version": "1.0.0"}
+        self.lock.write_text(json.dumps(lock))
+        backend = self.root / "apps/backend"
+        backend.mkdir()
+        backend_lock = backend / "requirements-dev.lock"
+        backend_lock.write_bytes(b"fastapi==1.0.0\n")
+        environment, calls = self.install_npm_stub({
+            "bulk": {"stdout": "bulk output", "stderr": "bulk ERESOLVE", "status": 23},
+            "other": {"stdout": "other output", "stderr": "other ERESOLVE", "status": 24},
+            "sample": {"version": "1.1.0"},
+        })
+        with environment, patch.object(module, "backend", return_value=(backend_lock,
+                backend_lock.read_bytes(), backend_lock.read_bytes())), \
+             patch.object(module, "toolchain_report"), patch.object(sys, "argv", ["update", "all", "--apply"]), \
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+            result = module.main()
+        self.assertEqual(result, 2)
+        self.assertEqual([json.loads(line) for line in calls.read_text().splitlines()],
+                         [["other", "sample"], ["other"], ["sample"]])
+        self.assertIn("mobile retry other failed", errors.getvalue())
+        self.assertIn("succeeded: backend, mobile partial", errors.getvalue())
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["other"], "1.0.0")
+        self.assertIn("bulk ERESOLVE", errors.getvalue())
+        self.assertIn("bulk output", errors.getvalue())
 
     def test_run_classifies_only_recognized_resolver_conflicts(self):
         with patch.object(module.subprocess, "run") as process:

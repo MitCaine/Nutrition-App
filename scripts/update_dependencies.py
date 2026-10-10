@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -37,41 +38,54 @@ class ResolutionConflict(UpdateError):
 
 def publish_single_lock(transaction: UpdateTransaction, area: str, path: Path,
                         before: bytes, after: bytes) -> None:
-    """Publish one validated lock under Git's checkout lock and verify afterward."""
+    """Publish one validated lock with durable ownership for crash artifacts."""
     staged = path.with_name(path.name + ".update-tmp")
     recovery = path.with_name(path.name + ".update-recovery")
-    if staged.exists() or staged.is_symlink() or recovery.exists() or recovery.is_symlink():
+    if any(candidate.exists() or candidate.is_symlink() for candidate in (staged, recovery)):
         raise UpdateError("Updater staging or recovery file exists; inspect it before publication.")
-    retain_recovery = False
     try:
-        with transaction.publication_guard():
-            if path.read_bytes() != before:
-                raise UpdateError("Lockfile changed at publication boundary; refusing to overwrite it.")
-            transaction.publishing(area, [(path, before, after)])
-            recovery.write_bytes(before)
-            staged.write_bytes(after)
-            transaction.assert_identity()
-            os.replace(staged, path)
+        original = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise UpdateError("Lockfile is missing or cannot be inspected before publication.") from exc
+    if not stat.S_ISREG(original.st_mode):
+        raise UpdateError("Lockfile is not a regular file; refusing publication.")
+    original_mode = stat.S_IMODE(original.st_mode)
+    if path.read_bytes() != before:
+        raise UpdateError("Lockfile changed before publication; refusing to overwrite it.")
+    with transaction.publication_guard():
+        current = path.stat(follow_symlinks=False)
+        if ((current.st_dev, current.st_ino) != (original.st_dev, original.st_ino)
+                or stat.S_IMODE(current.st_mode) != original_mode or path.read_bytes() != before):
+            raise UpdateError("Lockfile changed at publication boundary; refusing to overwrite it.")
+        transaction.publishing(
+            area,
+            [(path, before, after)],
+            artifacts=[
+                (staged, path, "staged", after, original_mode),
+                (recovery, path, "recovery", before, original_mode),
+            ],
+        )
+        transaction.write_artifact(area, recovery, before)
+        transaction.write_artifact(area, staged, after)
+        transaction.assert_identity()
+        os.replace(staged, path)
+        try:
+            transaction.applied(area)
+        except TransactionError as exc:
             try:
-                transaction.applied(area)
-            except TransactionError:
+                transaction.assert_identity()
+            except TransactionError as identity_error:
                 try:
-                    transaction.assert_identity()
-                except TransactionError:
-                    if not path.is_symlink() and path.is_file() and path.read_bytes() == after:
-                        try:
-                            os.replace(recovery, path)
-                        except OSError as exc:
-                            retain_recovery = True
-                            raise UpdateError(f"Checkout changed; lock restoration failed. Recovery bytes: {recovery}") from exc
-                    else:
-                        retain_recovery = True
-                        raise UpdateError(f"Checkout changed and lockfile has intervening edits. Recovery bytes: {recovery}")
-                raise
-    finally:
-        staged.unlink(missing_ok=True)
-        if not retain_recovery:
-            recovery.unlink(missing_ok=True)
+                    transaction.prepare_artifact_rollback(area)
+                    os.replace(recovery, path)
+                    transaction.cleanup_artifacts(area, guarded=True)
+                except (OSError, TransactionError) as rollback_error:
+                    raise UpdateError(
+                        f"Checkout changed and lockfile has intervening edits. Recovery bytes: {recovery}"
+                    ) from rollback_error
+                raise identity_error from exc
+            raise
+        transaction.cleanup_artifacts(area, guarded=True)
 
 
 @contextmanager
@@ -95,15 +109,22 @@ def run(args: list[str], cwd: Path, *, capture: bool = False) -> str:
                                 stderr=subprocess.PIPE if capture else None, check=False, timeout=600)
     except subprocess.TimeoutExpired as exc:
         raise UpdateError(f"{' '.join(args[:2])} timed out after 600 seconds") from exc
+    stdout = result.stdout if isinstance(result.stdout, str) else ""
+    stderr = result.stderr if isinstance(result.stderr, str) else ""
     if result.returncode:
-        detail = (result.stderr or result.stdout or "").strip()
+        detail = "\n".join(stream.strip() for stream in (stdout, stderr) if stream.strip())
         message = f"{' '.join(args[:2])} failed ({result.returncode})" + (f": {detail}" if detail else "")
         if ((args[:2] == ["npm", "update"] and re.search(r"\bERESOLVE\b", detail))
                 or ("piptools" in args and "compile" in args
                     and "ResolutionImpossible" in detail)):
             raise ResolutionConflict(message)
         raise UpdateError(message)
-    return result.stdout or ""
+    if capture and args[:2] == ["npm", "update"]:
+        if stdout:
+            sys.stdout.write(stdout)
+        if stderr:
+            sys.stderr.write(stderr)
+    return stdout
 
 
 def clean_checkout() -> None:
@@ -413,7 +434,7 @@ def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False,
     held: set[str] = set()
     expo_held: set[str] = set()
     run(["npm", "update", *packages, "--package-lock-only", "--ignore-scripts", "--engine-strict",
-         "--no-audit", "--no-fund", "--save=false"], target)
+         "--no-audit", "--no-fund", "--save=false"], target, capture=True)
     if report_latest:
         run(["npm", "ci", "--ignore-scripts", "--engine-strict", "--no-audit", "--no-fund"],
             target, capture=True)

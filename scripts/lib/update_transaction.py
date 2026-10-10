@@ -128,12 +128,12 @@ class UpdateTransaction:
                 raise TransactionError("A different dependency update is pending; resume the recorded command first.")
             transaction = cls(root, state, path)
             transaction.recover_stale_index_lock(process_lock_fd)
+            transaction.recover_publication()
             if state.get("status") == "complete" and not changed_paths(root):
                 path.unlink()
             else:
                 if state.get("area") != area or state.get("packages") != packages:
                     raise TransactionError("A different dependency update is pending; resume the recorded command first.")
-                transaction.recover_publication()
                 transaction.verify(inputs)
                 return transaction
         elif index_lock_path(identity).exists() or index_lock_path(identity).is_symlink():
@@ -231,32 +231,301 @@ class UpdateTransaction:
             raise TransactionError("Dependency authority inputs changed since the update began.")
         return expected
 
+    def _artifact_records(self, area: str) -> tuple[dict[str, dict], dict]:
+        output = self.state.get("outputs", {}).get(area)
+        if not isinstance(output, dict):
+            raise TransactionError("Dependency transaction output is missing during artifact recovery.")
+        artifacts = output.get("artifacts")
+        if artifacts is None:
+            return {}, output
+        if not isinstance(artifacts, dict):
+            raise TransactionError("Updater artifact ownership record is invalid; inspect it manually.")
+        nonce = self.state.get("index_lock_nonce")
+        if not isinstance(nonce, str) or not re.fullmatch(r"[0-9a-f]{32}", nonce):
+            raise TransactionError("Updater artifact transaction identity is invalid; inspect it manually.")
+        files = output.get("files")
+        if not isinstance(files, dict) or len(files) != 1:
+            raise TransactionError("Updater artifact target inventory is invalid; inspect it manually.")
+        expected_paths = set()
+        for target_relpath, hashes in files.items():
+            if (not isinstance(target_relpath, str) or Path(target_relpath).is_absolute()
+                    or ".." in Path(target_relpath).parts or Path(target_relpath).as_posix() != target_relpath
+                    or not isinstance(hashes, dict)):
+                raise TransactionError("Updater artifact target escapes the checkout; inspect it manually.")
+            expected_paths.update({target_relpath + ".update-tmp", target_relpath + ".update-recovery"})
+        if set(artifacts) != expected_paths:
+            raise TransactionError("Updater artifact ownership inventory does not match its transaction.")
+        by_role = {}
+        for relpath, record in artifacts.items():
+            if not isinstance(relpath, str) or Path(relpath).is_absolute() or ".." in Path(relpath).parts:
+                raise TransactionError("Updater artifact path escapes the checkout; inspect it manually.")
+            if not isinstance(record, dict) or record.get("owner_nonce") != nonce:
+                raise TransactionError("Updater artifact belongs to another transaction; inspect it manually.")
+            role = record.get("role")
+            if role not in {"staged", "recovery"} or role in by_role:
+                raise TransactionError("Updater artifact role is invalid; inspect it manually.")
+            target_relpath = record.get("target")
+            if not isinstance(target_relpath, str) or target_relpath not in files:
+                raise TransactionError("Updater artifact target is not recorded by this transaction.")
+            suffix = ".update-tmp" if role == "staged" else ".update-recovery"
+            target_path = Path(target_relpath)
+            if relpath != target_path.with_name(target_path.name + suffix).as_posix():
+                raise TransactionError("Updater artifact path does not match its recorded target.")
+            expected_hash = files[target_relpath].get("after" if role == "staged" else "before")
+            if record.get("sha256") != expected_hash:
+                raise TransactionError("Updater artifact digest does not match its transaction proposal.")
+            mode = record.get("mode")
+            size = record.get("size")
+            device = record.get("device")
+            inode = record.get("inode")
+            if (isinstance(mode, bool) or not isinstance(mode, int) or not 0 <= mode <= 0o7777
+                    or isinstance(size, bool) or not isinstance(size, int) or size < 0
+                    or (device is None) != (inode is None)
+                    or (device is not None and (isinstance(device, bool) or not isinstance(device, int)
+                                                or isinstance(inode, bool) or not isinstance(inode, int)))):
+                raise TransactionError("Updater artifact identity or mode record is invalid; inspect it manually.")
+            by_role[role] = (self.root / relpath, record)
+        if set(by_role) != {"staged", "recovery"}:
+            raise TransactionError("Updater artifact roles are incomplete; inspect it manually.")
+        cleanup = output.get("artifact_cleanup", "active")
+        if cleanup not in {"active", "rollback_pending", "cleanup_pending", "cleaned"}:
+            raise TransactionError("Updater artifact cleanup state is invalid; inspect it manually.")
+        return by_role, output
+
+    def _assert_checkout_path(self, path: Path) -> None:
+        try:
+            relative = path.relative_to(self.root)
+        except ValueError as exc:
+            raise TransactionError("Updater publication path escapes the checkout; inspect it manually.") from exc
+        if ".." in relative.parts:
+            raise TransactionError("Updater publication path escapes the checkout; inspect it manually.")
+        current = self.root
+        try:
+            root_info = os.lstat(current)
+        except OSError as exc:
+            raise TransactionError("Updater checkout path cannot be authenticated.") from exc
+        if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+            raise TransactionError("Updater checkout root is not a regular directory.")
+        for part in relative.parts[:-1]:
+            current = current / part
+            try:
+                info = os.lstat(current)
+            except FileNotFoundError:
+                return
+            except OSError as exc:
+                raise TransactionError("Updater publication parent cannot be authenticated.") from exc
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                raise TransactionError("Updater publication parent is not a checkout directory.")
+
+    def _read_nofollow(self, path: Path, description: str) -> tuple[os.stat_result, bytes] | None:
+        self._assert_checkout_path(path)
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise TransactionError(f"Cannot authenticate {description}; inspect it manually.") from exc
+        try:
+            with os.fdopen(descriptor, "rb") as stream:
+                opened = os.fstat(stream.fileno())
+                data = stream.read()
+            current = os.stat(path, follow_symlinks=False)
+        except OSError as exc:
+            raise TransactionError(f"Cannot authenticate {description}; inspect it manually.") from exc
+        if (not stat.S_ISREG(opened.st_mode)
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+            raise TransactionError(f"{description.capitalize()} changed while being authenticated; inspect it manually.")
+        return opened, data
+
+    def _assert_artifact_file(self, path: Path, record: dict) -> None:
+        actual = self._read_nofollow(path, "updater publication artifact")
+        if actual is None:
+            raise TransactionError("Updater publication artifact disappeared; inspect it manually.")
+        info, data = actual
+        if (record.get("device") is None or record.get("inode") is None
+                or (info.st_dev, info.st_ino) != (record["device"], record["inode"])
+                or stat.S_IMODE(info.st_mode) != record["mode"]
+                or info.st_size != record["size"] or digest(data) != record["sha256"]):
+            raise TransactionError("Updater publication artifact changed or was replaced; inspect it manually.")
+
+    def _artifact_at_target(self, target: Path, record: dict) -> bool:
+        actual = self._read_nofollow(target, "lockfile publication target")
+        if actual is None:
+            return False
+        info, data = actual
+        if digest(data) != record["sha256"]:
+            return False
+        if (record.get("device") is None or record.get("inode") is None
+                or (info.st_dev, info.st_ino) != (record["device"], record["inode"])
+                or stat.S_IMODE(info.st_mode) != record["mode"]
+                or info.st_size != record["size"]):
+            raise TransactionError("Lockfile publication artifact was replaced or changed; inspect it manually.")
+        return True
+
+    def _artifact_locations(self, area: str) -> dict[str, str]:
+        records, output = self._artifact_records(area)
+        if not records:
+            return {}
+        cleanup = output.get("artifact_cleanup", "active")
+        locations = {}
+        output_status = output.get("status")
+        recovery_at_target = False
+        if (output_status == "publishing"
+                and cleanup in {"rollback_pending", "cleanup_pending", "cleaned"}):
+            _, recovery_record = records["recovery"]
+            recovery_at_target = self._artifact_at_target(
+                self.root / recovery_record["target"], recovery_record
+            )
+        for role, (path, record) in records.items():
+            self._assert_checkout_path(path)
+            if cleanup == "cleaned" and (path.exists() or path.is_symlink()):
+                raise TransactionError("Unexpected updater artifact exists after recorded cleanup; inspect it manually.")
+            sidecar = self._read_nofollow(path, "updater publication artifact")
+            target = self.root / record["target"]
+            if sidecar is not None:
+                self._assert_artifact_file(path, record)
+                if role == "staged" and self._artifact_at_target(target, record):
+                    raise TransactionError("Updater staging artifact is linked to the lockfile target.")
+                locations[role] = "sidecar"
+                continue
+            if role == "staged":
+                target_is_expected = self._artifact_at_target(target, record)
+            else:
+                target_is_expected = recovery_at_target
+            if target_is_expected:
+                locations[role] = "target"
+            elif (role == "staged" and cleanup in {"rollback_pending", "cleanup_pending", "cleaned"}
+                  and recovery_at_target and output_status == "publishing"):
+                locations[role] = "consumed"
+            elif record.get("device") is None and cleanup == "active":
+                locations[role] = "uncreated"
+            elif cleanup in {"cleanup_pending", "cleaned"}:
+                locations[role] = "missing"
+            else:
+                raise TransactionError("Updater publication artifact is missing or outside its recorded location.")
+        return locations
+
+    def write_artifact(self, area: str, path: Path, data: bytes) -> None:
+        records, _ = self._artifact_records(area)
+        matching = [(record) for _, (artifact_path, record) in records.items()
+                    if artifact_path == path and record.get("sha256") == digest(data)
+                    and record.get("size") == len(data)]
+        if len(matching) != 1:
+            raise TransactionError("Updater publication artifact was not durably registered.")
+        record = matching[0]
+        self._assert_checkout_path(path)
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
+                                 record["mode"])
+        except OSError as exc:
+            raise TransactionError("Updater publication artifact path is occupied; inspect it manually.") from exc
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+            os.fchmod(stream.fileno(), record["mode"])
+            stream.flush()
+            os.fsync(stream.fileno())
+            owned = os.fstat(stream.fileno())
+        if not stat.S_ISREG(owned.st_mode) or stat.S_IMODE(owned.st_mode) != record["mode"]:
+            raise TransactionError("Updater publication artifact mode could not be established.")
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+        record["device"] = owned.st_dev
+        record["inode"] = owned.st_ino
+        _save(self.path, self.state)
+
+    def prepare_artifact_rollback(self, area: str) -> None:
+        if checkout_identity(self.root) == self.state["identity"]:
+            raise TransactionError("Artifact rollback requires confirmed checkout identity drift.")
+        locations = self._artifact_locations(area)
+        if locations.get("staged") != "target" or locations.get("recovery") != "sidecar":
+            raise TransactionError("Cannot authenticate updater bytes for rollback; preserve recovery artifacts.")
+        self.state["outputs"][area]["artifact_cleanup"] = "rollback_pending"
+        _save(self.path, self.state)
+        locations = self._artifact_locations(area)
+        if locations.get("staged") != "target" or locations.get("recovery") != "sidecar":
+            raise TransactionError("Updater artifacts changed during rollback preparation; preserve recovery bytes.")
+
+    def cleanup_artifacts(self, area: str, *, guarded: bool = False) -> None:
+        records, _ = self._artifact_records(area)
+        if not records:
+            return
+        if not guarded:
+            with self.publication_guard():
+                self.cleanup_artifacts(area, guarded=True)
+            return
+        records, output = self._artifact_records(area)
+        cleanup_state = output.get("artifact_cleanup", "active")
+        identity_matches = checkout_identity(self.root) == self.state["identity"]
+        locations = self._artifact_locations(area)
+        rollback_after_identity_drift = cleanup_state == "rollback_pending" and not identity_matches
+        if not identity_matches and not rollback_after_identity_drift:
+            raise TransactionError("Checkout branch, HEAD or worktree changed before artifact cleanup.")
+        if output.get("artifact_cleanup") == "cleaned":
+            return
+        if rollback_after_identity_drift and any(location == "sidecar" for location in locations.values()):
+            raise TransactionError("Checkout changed; preserve remaining updater recovery artifacts for inspection.")
+        if identity_matches:
+            self.assert_identity()
+        output["artifact_cleanup"] = "cleanup_pending"
+        _save(self.path, self.state)
+        for role, (path, record) in records.items():
+            if locations[role] == "sidecar":
+                if not identity_matches:
+                    raise TransactionError("Checkout changed; preserve remaining updater recovery artifacts for inspection.")
+                self.assert_identity()
+                self._assert_checkout_path(path)
+                self._assert_artifact_file(path, record)
+                path.unlink()
+                directory = os.open(path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+        if identity_matches:
+            self.assert_identity()
+        for path, _ in records.values():
+            if path.exists() or path.is_symlink():
+                raise TransactionError("Updater publication artifact appeared during cleanup; inspect it manually.")
+        output["artifact_cleanup"] = "cleaned"
+        _save(self.path, self.state)
+
     def recover_publication(self) -> None:
         if checkout_identity(self.root) != self.state["identity"]:
             raise TransactionError("Checkout branch, HEAD or worktree changed since the update began.")
         for area, output in list(self.state["outputs"].items()):
-            if output["status"] != "publishing":
+            if output["status"] not in {"publishing", "applied"}:
                 continue
-            matches = []
-            for relpath, hashes in output["files"].items():
-                path = self.root / relpath
-                actual = digest(path.read_bytes()) if path.is_file() else None
-                if actual not in {hashes["before"], hashes["after"]}:
-                    raise TransactionError("Interrupted publication has unrecognized lock bytes.")
-                matches.append("after" if actual == hashes["after"] else "before")
-            if all(match == "after" for match in matches):
-                output["status"] = "applied"
-                self.state["outcomes"][area] = "applied"
-            elif all(match == "before" for match in matches):
-                previous = output.get("previous")
-                if previous is None:
-                    del self.state["outputs"][area]
+            self._artifact_locations(area)
+            if output["status"] == "publishing":
+                matches = []
+                for relpath, hashes in output["files"].items():
+                    path = self.root / relpath
+                    actual_file = self._read_nofollow(path, "lockfile publication target")
+                    actual = digest(actual_file[1]) if actual_file is not None else None
+                    if actual not in {hashes["before"], hashes["after"]}:
+                        raise TransactionError("Interrupted publication has unrecognized lock bytes.")
+                    matches.append("after" if actual == hashes["after"] else "before")
+                if all(match == "after" for match in matches):
+                    output["status"] = "applied"
+                    self.state["outcomes"][area] = "applied"
+                    _save(self.path, self.state)
+                elif all(match == "before" for match in matches):
+                    self.cleanup_artifacts(area)
+                    previous = output.get("previous")
+                    if previous is None:
+                        del self.state["outputs"][area]
+                    else:
+                        self.state["outputs"][area] = previous
+                    self.state["outcomes"][area] = "pending"
+                    _save(self.path, self.state)
+                    continue
                 else:
-                    self.state["outputs"][area] = previous
-                self.state["outcomes"][area] = "pending"
-            else:
-                raise TransactionError("Interrupted multi-file publication is partial; inspect recovery artifacts.")
-            _save(self.path, self.state)
+                    raise TransactionError("Interrupted multi-file publication is partial; inspect recovery artifacts.")
+            if output["status"] == "applied":
+                self.cleanup_artifacts(area)
 
     def verify(self, inputs: dict[str, dict[str, str | None]]) -> None:
         self.assert_identity()
@@ -330,25 +599,72 @@ class UpdateTransaction:
     def done(self, area: str) -> bool:
         return self.state["outcomes"].get(area) in {"applied", "current"}
 
-    def publishing(self, area: str, proposals: list[tuple[Path, bytes, bytes]]) -> None:
+    def publishing(self, area: str, proposals: list[tuple[Path, bytes, bytes]], *,
+                   artifacts: list[tuple[Path, Path, str, bytes, int]] | None = None) -> None:
         files = {}
         for path, before, after in proposals:
-            if not path.is_file() or path.read_bytes() != before:
+            actual = self._read_nofollow(path, "lockfile publication target")
+            if actual is None or actual[1] != before:
                 raise TransactionError("Lockfile changed before publication.")
             relpath = path.relative_to(self.root).as_posix()
             files[relpath] = {"before": digest(before), "after": digest(after)}
+        artifact_records = None
+        if artifacts is not None:
+            if len(files) != 1:
+                raise TransactionError("Single-lock artifact registration requires one lock target.")
+            nonce = self.state.get("index_lock_nonce")
+            if not isinstance(nonce, str) or not re.fullmatch(r"[0-9a-f]{32}", nonce):
+                raise TransactionError("Transaction has no identity for publication artifacts.")
+            artifact_records = {}
+            for artifact_path, target_path, role, data, mode in artifacts:
+                if role not in {"staged", "recovery"} or target_path not in (proposal[0] for proposal in proposals):
+                    raise TransactionError("Invalid single-lock publication artifact specification.")
+                suffix = ".update-tmp" if role == "staged" else ".update-recovery"
+                if artifact_path != target_path.with_name(target_path.name + suffix):
+                    raise TransactionError("Updater artifact path does not match its lock target.")
+                if isinstance(mode, bool) or not isinstance(mode, int) or not 0 <= mode <= 0o7777:
+                    raise TransactionError("Updater artifact mode is invalid.")
+                target_relpath = target_path.relative_to(self.root).as_posix()
+                expected_hash = files[target_relpath]["after" if role == "staged" else "before"]
+                if digest(data) != expected_hash:
+                    raise TransactionError("Updater artifact bytes do not match the validated proposal.")
+                artifact_relpath = artifact_path.relative_to(self.root).as_posix()
+                if artifact_relpath in artifact_records:
+                    raise TransactionError("Duplicate updater artifact path.")
+                artifact_records[artifact_relpath] = {
+                    "owner_nonce": nonce,
+                    "role": role,
+                    "target": target_relpath,
+                    "sha256": expected_hash,
+                    "size": len(data),
+                    "mode": mode,
+                    "device": None,
+                    "inode": None,
+                }
+            if {record["role"] for record in artifact_records.values()} != {"staged", "recovery"}:
+                raise TransactionError("Single-lock publication requires staged and recovery artifacts.")
         previous = self.state["outputs"].get(area)
-        self.state["outputs"][area] = {"status": "publishing", "files": files}
+        output = {"status": "publishing", "files": files}
+        if artifact_records is not None:
+            output["artifacts"] = artifact_records
+            output["artifact_cleanup"] = "active"
         if previous is not None:
-            self.state["outputs"][area]["previous"] = previous
+            output["previous"] = previous
+        self.state["outputs"][area] = output
         _save(self.path, self.state)
 
     def applied(self, area: str) -> None:
         self.assert_identity()
         output = self.state["outputs"][area]
         for relpath, hashes in output["files"].items():
-            if digest((self.root / relpath).read_bytes()) != hashes["after"]:
+            actual = self._read_nofollow(self.root / relpath, "lockfile publication target")
+            if actual is None or digest(actual[1]) != hashes["after"]:
                 raise TransactionError("Published lock bytes do not match transaction proposal.")
+        artifacts, _ = self._artifact_records(area)
+        if artifacts:
+            locations = self._artifact_locations(area)
+            if locations.get("staged") != "target" or locations.get("recovery") != "sidecar":
+                raise TransactionError("Published lock artifacts do not match transaction ownership.")
         output["status"] = "applied"
         self.state["outcomes"][area] = "applied"
         _save(self.path, self.state)

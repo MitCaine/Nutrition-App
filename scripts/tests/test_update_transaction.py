@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import stat
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -324,6 +325,184 @@ with transaction.publication_guard():
         self.assertEqual(self.backend_lock.read_bytes(), b"user edit\n")
         self.assertEqual(self.backend_lock.with_name(self.backend_lock.name + ".update-recovery").read_bytes(),
                          b"fastapi==1.0.0\n")
+
+    def crash_real_single_lock_publisher(self, mode):
+        code = r'''import importlib.util, os, sys
+from pathlib import Path
+script = Path(sys.argv[1])
+root = Path(sys.argv[2]).resolve()
+mode = sys.argv[3]
+sys.path.insert(0, str(script.parent))
+from lib.update_transaction import UpdateTransaction
+spec = importlib.util.spec_from_file_location("crashing_update_dependencies", script)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.ROOT = root
+module.BACKEND = root / "apps/backend"
+module.MOBILE = root / "apps/mobile"
+path = module.BACKEND / "requirements-dev.lock"
+transaction = UpdateTransaction.begin(root, "backend", [], ("backend",),
+                                      module.transaction_inputs(("backend",)))
+before = path.read_bytes()
+after = before.replace(b"1.0.0", b"1.1.0")
+if mode == "applied":
+    real_applied = transaction.applied
+    def applied_then_exit(area):
+        real_applied(area)
+        os._exit(75)
+    transaction.applied = applied_then_exit
+real_replace = os.replace
+def replace_then_exit(source, target):
+    if Path(target) == path and Path(source).name == path.name + ".update-tmp":
+        if mode == "staged":
+            os._exit(73)
+        result = real_replace(source, target)
+        if mode == "replaced":
+            os._exit(74)
+        return result
+    return real_replace(source, target)
+module.os.replace = replace_then_exit
+module.publish_single_lock(transaction, "backend", path, before, after)
+os._exit(0)
+'''
+        result = subprocess.run([sys.executable, "-c", code, str(SCRIPT), str(self.root), mode],
+                                capture_output=True, text=True, check=False)
+        expected = {"staged": 73, "replaced": 74, "applied": 75}[mode]
+        self.assertEqual(result.returncode, expected, result.stderr)
+        return result.returncode
+
+    def reset_single_lock_fixture(self):
+        state_path(self.root).unlink(missing_ok=True)
+        self.backend_lock.write_bytes(b"fastapi==1.0.0\n")
+        self.backend_lock.chmod(0o640)
+        for suffix in (".update-tmp", ".update-recovery"):
+            self.backend_lock.with_name(self.backend_lock.name + suffix).unlink(missing_ok=True)
+        git_dir = Path(self.git("rev-parse", "--absolute-git-dir"))
+        (git_dir / "index.lock").unlink(missing_ok=True)
+        for stage in git_dir.glob("index.lock.nutrition-*.tmp"):
+            stage.unlink(missing_ok=True)
+
+    def test_hard_exit_real_publisher_recovers_through_exact_retry(self):
+        for mode in ("staged", "replaced", "applied"):
+            with self.subTest(mode=mode):
+                self.reset_single_lock_fixture()
+                self.crash_real_single_lock_publisher(mode)
+                staged = self.backend_lock.with_name(self.backend_lock.name + ".update-tmp")
+                recovery = self.backend_lock.with_name(self.backend_lock.name + ".update-recovery")
+                self.assertTrue(recovery.exists())
+                self.assertEqual(stat.S_IMODE(recovery.stat().st_mode), 0o640)
+                if mode == "staged":
+                    self.assertTrue(staged.exists())
+                    self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.0.0\n")
+                    self.assertEqual(staged.read_bytes(), b"fastapi==1.1.0\n")
+                    self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o640)
+                else:
+                    self.assertFalse(staged.exists())
+                    self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.1.0\n")
+                    self.assertEqual(stat.S_IMODE(self.backend_lock.stat().st_mode), 0o640)
+                with patch.object(module, "backend", side_effect=self.backend_proposal) as proposal:
+                    result, output, errors = self.run_update("backend", "--apply")
+                    if result == 0:
+                        repeated, repeated_output, repeated_errors = self.run_update("backend", "--apply")
+                    else:
+                        repeated, repeated_output, repeated_errors = None, "", ""
+                self.assertEqual((result, errors), (0, ""))
+                self.assertEqual((repeated, repeated_errors), (0, ""))
+                self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.1.0\n")
+                self.assertEqual(stat.S_IMODE(self.backend_lock.stat().st_mode), 0o640)
+                self.assertEqual((self.root / "notes.txt").read_bytes(), b"original\n")
+                self.assertFalse(staged.exists())
+                self.assertFalse(recovery.exists())
+                self.assertEqual(proposal.call_count, 1 if mode == "staged" else 0)
+                self.assertIn("already applied", repeated_output)
+                if mode != "staged":
+                    self.assertIn("previously validated transaction output retained", output)
+
+    def test_interrupted_publication_artifact_tampering_fails_closed(self):
+        for role, suffix in (("staged", ".update-tmp"), ("recovery", ".update-recovery")):
+            for corruption in ("changed", "replaced", "symlink", "mode", "wrong-transaction"):
+                with self.subTest(role=role, corruption=corruption):
+                    self.reset_single_lock_fixture()
+                    self.crash_real_single_lock_publisher("staged")
+                    artifact_path = self.backend_lock.with_name(self.backend_lock.name + suffix)
+                    before = artifact_path.read_bytes()
+                    if corruption == "changed":
+                        artifact_path.write_bytes(b"foreign publication bytes\n")
+                    elif corruption == "replaced":
+                        replacement = self.root / "replacement.tmp"
+                        replacement.write_bytes(before)
+                        replacement.chmod(0o640)
+                        replacement.replace(artifact_path)
+                    elif corruption == "symlink":
+                        artifact_path.unlink()
+                        artifact_path.symlink_to(self.root / "notes.txt")
+                    elif corruption == "mode":
+                        artifact_path.chmod(0o600)
+                    else:
+                        transaction_state = json.loads(state_path(self.root).read_text())
+                        relpath = f"apps/backend/requirements-dev.lock{suffix}"
+                        transaction_state["outputs"]["backend"]["artifacts"][relpath]["owner_nonce"] = "0" * 32
+                        state_path(self.root).write_text(json.dumps(transaction_state))
+                    with patch.object(module, "backend", side_effect=self.backend_proposal) as proposal:
+                        result, _, errors = self.run_update("backend", "--apply")
+                    self.assertEqual(result, 2)
+                    self.assertTrue(errors.strip())
+                    proposal.assert_not_called()
+                    if corruption == "symlink":
+                        self.assertTrue(artifact_path.is_symlink())
+                    elif corruption == "changed":
+                        self.assertEqual(artifact_path.read_bytes(), b"foreign publication bytes\n")
+                    else:
+                        self.assertTrue(artifact_path.exists())
+                        self.assertEqual(artifact_path.read_bytes(), before)
+                    self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.0.0\n")
+                    self.assertEqual((self.root / "notes.txt").read_bytes(), b"original\n")
+
+    def test_interrupted_publication_preserves_unrelated_drift_and_artifacts(self):
+        self.reset_single_lock_fixture()
+        self.crash_real_single_lock_publisher("staged")
+        unrelated = self.root / "user-notes.txt"
+        unrelated.write_bytes(b"keep this file\n")
+        unrelated.chmod(0o600)
+        staged = self.backend_lock.with_name(self.backend_lock.name + ".update-tmp")
+        recovery = self.backend_lock.with_name(self.backend_lock.name + ".update-recovery")
+        with patch.object(module, "backend", side_effect=self.backend_proposal) as proposal:
+            result, _, errors = self.run_update("backend", "--apply")
+        self.assertEqual(result, 2)
+        self.assertIn("Checkout contains staged, untracked, renamed or non-updater changes", errors)
+        proposal.assert_not_called()
+        self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.0.0\n")
+        self.assertFalse(staged.exists())
+        self.assertFalse(recovery.exists())
+        self.assertEqual(unrelated.read_bytes(), b"keep this file\n")
+        self.assertEqual(stat.S_IMODE(unrelated.stat().st_mode), 0o600)
+
+    def test_checkout_identity_drift_preserves_authenticated_artifacts(self):
+        self.reset_single_lock_fixture()
+        self.crash_real_single_lock_publisher("staged")
+        staged = self.backend_lock.with_name(self.backend_lock.name + ".update-tmp")
+        recovery = self.backend_lock.with_name(self.backend_lock.name + ".update-recovery")
+        staged_before, recovery_before = staged.read_bytes(), recovery.read_bytes()
+        moved = self.git("commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "moved")
+        self.git("update-ref", "HEAD", moved)
+        with patch.object(module, "backend", side_effect=self.backend_proposal) as proposal:
+            result, _, errors = self.run_update("backend", "--apply")
+        self.assertEqual(result, 2)
+        self.assertIn("Checkout branch, HEAD or worktree changed", errors)
+        proposal.assert_not_called()
+        self.assertEqual(staged.read_bytes(), staged_before)
+        self.assertEqual(recovery.read_bytes(), recovery_before)
+        self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.0.0\n")
+
+    def test_foreign_publication_artifact_is_preserved(self):
+        staged = self.backend_lock.with_name(self.backend_lock.name + ".update-tmp")
+        staged.write_bytes(b"foreign artifact\n")
+        with patch.object(module, "backend", side_effect=self.backend_proposal) as proposal:
+            result, _, errors = self.run_update("backend", "--apply")
+        self.assertEqual(result, 2)
+        self.assertIn("existing changes", errors)
+        proposal.assert_not_called()
+        self.assertEqual(staged.read_bytes(), b"foreign artifact\n")
 
     def test_interrupted_publication_reconciles_only_exact_bytes(self):
         inputs = module.transaction_inputs(("backend",))
