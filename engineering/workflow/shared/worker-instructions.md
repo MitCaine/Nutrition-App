@@ -46,17 +46,15 @@ Report actual failures and unknowns; terminal stops cannot be cleared by later s
 
 Return one terminal handoff with source/branch identity, completed work, actual
 checks and evidence locations, failures/skips, findings and remaining obligations.
-Separate requested settings from host-confirmed settings under the selected map's
-accepted confirmation policy and [shared reporting rule](start-an-issue.md#execution-routing-models-and-efforts).
-Unknown proves neither compliance nor mismatch; proceed under the map's
-[accepted launch/confirmation policy](new-project-setup.md#accepted-worker-launch-routes),
-without treating missing telemetry as launch failure. Report unresolved mandatory
-confirmation to the controller;
-never silently substitute or treat missing confirmation as provider capacity.
+Report requested and host-confirmed settings separately under the map's accepted
+policy and [shared reporting rule](start-an-issue.md#execution-routing-models-and-efforts).
+Unknown telemetry is neither compliance, mismatch nor capacity failure; follow
+[accepted launch/confirmation policy](new-project-setup.md#accepted-worker-launch-routes)
+and report unresolved mandatory confirmation without substitution.
 Follow the assigned [return and relay route](start-an-issue.md#assign-roles-and-supply-inputs).
-Keep progress distinct from terminal outcomes. Evidence retains its original
-execution identity; apply the controller's [correction and reuse rules](start-an-issue.md#diagnose-blockers-and-recover).
-Missing proof is not PASS; retained results are not newly executed.
+Keep progress distinct from terminal outcomes. Apply the controller's
+[correction and reuse rules](start-an-issue.md#evidence-eligibility-and-corrections).
+Missing proof is not PASS.
 
 ## Capsule builder
 
@@ -108,11 +106,10 @@ the affected paths. Restoration examples include terminal states, ownership,
 allocation limits and ordinary application callers. Passing counts alone do not
 prove a required behavior.
 
-Follow the [command readiness and check-order rules](start-an-issue.md#complete-the-phases).
-Run the selected checks against stable, identifiable source. Retain exact commands,
-source/environment identity and actual results/logs, including failures and skips.
-If source or relevant inputs change during a check, report the evidence as ineligible.
-Do not substitute a similarly named workflow or infer success from missing results.
+Follow the [command readiness and check-order rules](start-an-issue.md#command-readiness).
+Retain actual commands, source/environment identities and results/logs, including
+failures/skips, under [evidence eligibility](start-an-issue.md#evidence-eligibility-and-corrections).
+Report changed inputs or missing results; do not infer acceptance.
 Preserve useful work for bounded corrections; confirm scope changes with the controller.
 
 Return the full change, criterion evidence and unresolved obligations for controller
@@ -149,7 +146,8 @@ Return concise evidence-backed dispositions, exact source identity and actionabl
 findings. Missing proof already due cannot pass. For explicitly post-installation
 criteria, assess the implementation/check plan now and identify proof still due;
 do not require installation before the approval needed to install. The controller
-records approval, integration and closeout separately; review grants none of them.
+owns findings disposition, separate approval, integration and closeout; review
+grants none of those actions.
 
 Identify the substantive reviewer, report settings under the
 [shared confirmation policy](#shared-worker-rules), and state inspection limits.
@@ -214,15 +212,15 @@ and unresolved findings to Work. Preserve
 original evidence identities. Follow the [return and relay ownership rule](start-an-issue.md#assign-roles-and-supply-inputs)
 and confirm Work controller consumption. Work verifies the candidate and owns review,
 approval, integration and closeout; your relay is not an independent review.
+After consumption, follow the controller's
+[handoff message boundary](start-an-issue.md#work-to-codex-implementation-handoff).
 
 Keep only enough durable state in the existing handoff/checkpoint location to
 identify the assignment, active job, selected instructions/source, result and
 delivery status. After compaction or dispatcher replacement, recover that state
 before dispatch; reconcile stale records with authenticated assignment/source
-and terminal evidence without repeating completed work. Ordinary wait intervals
-mean continue waiting. Delivery failure or task deadline permits bounded job,
-terminal-result and cleanup reconciliation, not a monitoring loop or unfinished
-work inspection. Duplicate/stale handoffs cannot start another assignment.
+and terminal evidence without repeating completed work. Apply the linked
+waiting/recovery rules; duplicate/stale handoffs cannot start another assignment.
 Preserve terminal stops. Capacity or routing failures go to Work without silent
 model/environment substitution or retry loops.
 

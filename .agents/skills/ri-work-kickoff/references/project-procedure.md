@@ -15,3 +15,8 @@ controllers read their complete selected procedure and directed issue inputs.
 Copying this locator does not install the selected resources or register a Work
 skill. Follow the selected confirmation/authority policy; invocation alone grants
 no Git, settings, disclosure or worker-creation authority.
+
+For bounded reads, use the map/handoff-selected section reader under its
+[workflow-tools contract](../../../../engineering/workflow/shared/workflow-tools.md) when available. Select only role-permitted inputs and
+check identity/coverage; resolve incomplete output through the governing role rule.
+Ordinary reads remain supported.

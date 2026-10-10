@@ -19,6 +19,14 @@ fabricate that authenticated comment or a passed check.
 - `task verify` and `task review` retain explicit candidate-bound decisions. The reviewer
   must be independent of implementation. The controller records actual evidence and actor;
   an asserted actor string alone is not evidence that independent review occurred.
+  Under the selected daily procedure, the controller authenticates candidate identity, authorized
+  scope, required check completion and evidence identity; the fresh independent reviewer assesses
+  substantive correctness and test adequacy. Review PASS does not establish controller approval or
+  protected integration.
+- `scripts/run-review.sh --commands REQUEST --attempt ID` records bounded task-authored command
+  evidence through the existing runner. It does not authenticate authority, determine test adequacy,
+  accept a candidate, verify it, approve it or integrate it. Mandatory and advisory outcomes, source
+  drift and incomplete attempts retain their documented evidence semantics in the testing guide.
 - `task rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2`
   supports a corrected candidate only after an authenticated standard changes-requested review.
   It rechecks the current owner authorization, base, full C2 scope and profile floor; retains

@@ -119,6 +119,60 @@ an exact-candidate-SHA dedicated-App `Main qualification` check. Ordinary CI rem
 separate regression signal. Shared substantive commands prevent drift without running
 another copy of a suite within a selected job.
 
+### Authored command review attempts
+
+For a bounded review request whose checks are selected by the task, run the existing consumer
+runner from the repository root:
+
+```bash
+./scripts/run-review.sh --commands /absolute/path/request.json --attempt ISSUE-attempt-1
+```
+
+Authored mode requires both options and does not combine with `--profile`, `--label`, or
+`--no-package`. The JSON request binds a full expected HEAD, exact repository root, unique attempt
+ID and ordered command steps. Each step has a unique ID, direct `argv` array, repository-relative
+`cwd`, selected nonsecret environment overrides, earlier-step prerequisites, and a mandatory or
+advisory designation. The runner does not interpret arguments through a shell or invent missing
+prerequisites. For example:
+
+```json
+{
+  "schema_version": 1,
+  "repository": "/absolute/path/to/Nutrition App",
+  "expected_head": "0123456789abcdef0123456789abcdef01234567",
+  "attempt": "ISSUE-attempt-1",
+  "steps": [
+    {
+      "id": "docs",
+      "argv": ["/absolute/path/to/python", "scripts/validate-docs.py"],
+      "cwd": ".",
+      "env": {},
+      "prerequisites": [],
+      "designation": "mandatory"
+    }
+  ]
+}
+```
+
+The output root is `NUTRITION_REVIEW_OUTPUT_DIR` when explicitly set, otherwise the runner's
+documented sibling output directory. It must resolve outside and not alias the source repository.
+`runs/<attempt>` is created exclusively; a repeated ID preserves existing evidence and exits before
+running commands. The attempt retains the original request/hash, ordered arguments and selected
+environment, effective child inputs, outcomes and exit codes, complete stdout/stderr logs and hashes,
+existing runner logs, failures, warnings, and explicit incomplete/blocked states. Credential-like
+environment names and values are rejected from retained request inputs.
+
+Before and after observations bind HEAD, branch, index tree and entries, assume-unchanged and
+skip-worktree flags, tracked and nonignored untracked file bytes/modes/symlinks, repository and
+parent-directory modes, and Git status. Ignored runtime files are not inventoried. Any source drift
+makes the attempt ineligible and blocks its bundle and PASS. Missing results or interruption retain
+an incomplete attempt without a terminal pass marker. Failed prerequisites are blocked; later success
+does not clear prior failure. Authored task-mandatory documentation checks fail the mandatory gate
+even though documentation is advisory in an existing profile. The existing profile invocations and
+their failure semantics remain unchanged. This runner records command evidence; it does not qualify,
+verify, independently review, approve or integrate a candidate, and it does not run session-end unless
+that command is explicitly authored.
+
 | Dedicated-App profile | Covered checks |
 | --- | --- |
 | `repository` | Documentation, shell syntax, and the fixed trusted fast controller suite when tooling paths select it |

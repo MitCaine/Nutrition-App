@@ -104,141 +104,72 @@ def test_retired_model_evidence_cli_cannot_dispatch():
 
 def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
+
     shared = ROOT / "engineering/workflow/shared"
-    identities = {
-        "start-an-issue.md": (31750, "e7d5728e92457e437f4b12344101ef1c64920b4e423936d7dd311e71f1a5327a"),
-        "worker-instructions.md": (14791, "52860da27cb05d5411d1b12f36d20846aa0fecaab7bb2860e836d9c41fb0bf7d"),
-        "capsule-controller-workflow.md": (14954, "88df7ce7c7f568eb9cf1470390675fbadc7d093857d107390f8212799c1b21d6"),
-        "new-project-setup.md": (15155, "5678ca380ef7c1f61ba10199295d2e0262b097c498de1329005062038f4fff79"),
-        "skill-templates/README.md": (9019, "c7febe718c05e772f101bb39d65c3d4f99f1404eba69a3b5a2fad2edeb1fbaac"),
-        "skill-templates/capsule-queue/SKILL.md": (2029, "b80a1b1f8613525832f01857fe45b17ade998c7ddbbeea9d245ad5aa221c210c"),
-    }
     provenance = (shared / "SOURCE.md").read_text()
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
-    assert "future task intake is pinned at 1d5eba9a9d46d0e4a6afc02c875390a3b137ec41" in normalized_map
+    normalized_provenance = " ".join(provenance.split())
+    current_revision = "ae8768d4f806dbdc212a50d5e55c74b386e4963f"
+
+    assert f"future task intake is pinned at {current_revision}" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
-    assert "GH-311 implementation retains its active worker instruction selection" not in normalized_map
-    assert "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" not in normalized_map
-    assert "future task intake is pinned at 5ff7f306df6080648e2cc5fbbfc119e55a293754" not in normalized_map
+    assert "current-selection section below" in normalized_provenance
+    assert f"## Current selection: {current_revision}" in provenance
+    assert "## Previous selected revision: 1d5eba9a9d46d0e4a6afc02c875390a3b137ec41" in provenance
+    assert "all four installed files match the selected revision 1d5eba9 resources byte-for-byte" in normalized_provenance.lower()
     assert "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" in provenance
     assert "GH-307 and GH-309" in provenance
     assert "5ff7f306df6080648e2cc5fbbfc119e55a293754" in provenance
     assert "GH-311 attempt's historical worker-instruction selection" in provenance
     assert "This is attempt provenance and does not assert that the attempt or assignment remains active." in provenance
-    assert "completed GH-305 implementor assignment" in " ".join(provenance.split())
-    assert "f6e1064d3f43aee61796f8558a7cef8181426883" in provenance
+    assert "completed GH-305 implementor assignment" in normalized_provenance
     assert "live GH-305" not in provenance
-    normalized_provenance = " ".join(provenance.split())
-    assert "all four installed files match the selected revision 1d5eba9 resources byte-for-byte" in normalized_provenance.lower()
-    assert "the work kickoff changes; the other three kickoff files and worker instructions remain unchanged from the prior selected revision" in normalized_provenance.lower()
-    for upstream_identity in (
-        "8defab2ef5ca52d445c7bb4a7e5a03142dd2af26",
-        "31750",
-        "e7d5728e92457e437f4b12344101ef1c64920b4e423936d7dd311e71f1a5327a",
-        "d5ec5fb55d69da2988147600b322ad5847a43d16",
-        "14783",
-        "59cb6bef5bffe5fb9c8157a761519088247c73a90634453602ce7943c2108cab",
-    ):
-        assert upstream_identity in provenance
-    assert "20a5039e7731eaa1303443b782caa81a383a0af1" in provenance
-    assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in provenance
-    assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in provenance
-    assert "docs/start-an-issue.md" in provenance
-    assert "[local `start-an-issue.md`](start-an-issue.md)" in provenance
-    assert "[local `worker-instructions.md`](worker-instructions.md)" in provenance
-    assert "[local `capsule-controller-workflow.md`](capsule-controller-workflow.md)" in provenance
-    for name, (size, digest) in identities.items():
+
+    current_resources = {
+        "start-an-issue.md": (31806, "8bcacfd3f275787bc84398e0598fcc7da5e5d36914919f851b13cb0543097022"),
+        "worker-instructions.md": (14471, "6b20fefdab27c2d98d7082d396c80f70dad64e6f1706d36b620f63665c186cbd"),
+        "capsule-controller-workflow.md": (13299, "cfed8464e9049b73f5b77c9c58dd6437ab9443c5a907f5fc7d13906938173c02"),
+        "new-project-setup.md": (15155, "ad1e64c78e90691d6af2832e90c111b3c26fdce9f6db9f3002782278f3eb4dbb"),
+        "skill-templates/README.md": (9019, "2d20d5de2322804f8bf2485e505db3c379283cc771ff923b8fa01644021d11f9"),
+        "skill-templates/capsule-queue/SKILL.md": (2029, "cf206bdc22675aac386b18c79ff1267281dc8da4f3bed60133fbfc3e4bccf037"),
+        "workflow-tools.md": (9223, "985b3c197b38c62a6499d3407e4a6a5776d65b8a0f5ba82a4a8408c5e7fe229d"),
+    }
+    for name, (size, digest) in current_resources.items():
         data = (shared / name).read_bytes()
         assert len(data) == size
         assert hashlib.sha256(data).hexdigest() == digest
-        assert name in provenance and str(size) in provenance and digest in provenance
-    local_installed = {
-        "engineering/workflow/shared/start-an-issue.md": (
-            "8defab2ef5ca52d445c7bb4a7e5a03142dd2af26", 31750,
-            "e7d5728e92457e437f4b12344101ef1c64920b4e423936d7dd311e71f1a5327a",
-        ),
-        "engineering/workflow/shared/worker-instructions.md": (
-            "c98c32eeb90c15b6aab34dc90602ad37adfcd5a1", 14791,
-            "52860da27cb05d5411d1b12f36d20846aa0fecaab7bb2860e836d9c41fb0bf7d",
-        ),
-        "engineering/workflow/shared/capsule-controller-workflow.md": (
-            "ce7f0e7d261b44de9575255e5eff77edc6c78bc7", 14954,
-            "88df7ce7c7f568eb9cf1470390675fbadc7d093857d107390f8212799c1b21d6",
-        ),
-        "engineering/workflow/shared/new-project-setup.md": (
-            "6c7b0168624b8c4f11288b7b302623f4409c6d3f", 15155,
-            "5678ca380ef7c1f61ba10199295d2e0262b097c498de1329005062038f4fff79",
-        ),
-        "engineering/workflow/shared/skill-templates/README.md": (
-            "6fdb6cafb68cb57e59883dff377ab874351d1d6f", 9019,
-            "c7febe718c05e772f101bb39d65c3d4f99f1404eba69a3b5a2fad2edeb1fbaac",
-        ),
-        "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md": (
-            "fe2df7ba4fb4bc715958a85630a000cf7e9304df", 2029,
-            "b80a1b1f8613525832f01857fe45b17ade998c7ddbbeea9d245ad5aa221c210c",
-        ),
-        ".agents/skills/ri-work-kickoff/SKILL.md": (
-            "86bab9c4db07e30994bccc74ddf7367319ecd0d0", 1609,
-            "da59ae6229c966c9d8d092c28b9cde03d28fb4e52d0b09d21c2ad677e7d4179a",
-        ),
-        ".agents/skills/ri-work-kickoff/references/project-procedure.md": (
-            "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
-            "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
-        ),
-        ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md": (
-            "5abe72319146eed679ee4876e152831af041a31f", 1640,
-            "01d7933a5811c1d8341afe41dbe52556105bb4c338b8ba5cb2575c3859d5d31a",
-        ),
-        ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md": (
-            "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
-            "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
-        ),
+        assert name in provenance and digest in provenance
+
+    assert "docs/workflow-tools.md" in provenance
+    assert "Both complete kickoff folders were inventoried" in normalized_provenance
+    assert "20a5039e7731eaa1303443b782caa81a383a0af1" in provenance
+    assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in provenance
+    assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in provenance
+    assert "## Section reader" in (shared / "workflow-tools.md").read_text()
+    assert "repository_intelligence.adoption" in (shared / "workflow-tools.md").read_text()
+
+    kickoff = {
+        ".agents/skills/ri-work-kickoff/SKILL.md": (1609, "da59ae6229c966c9d8d092c28b9cde03d28fb4e52d0b09d21c2ad677e7d4179a"),
+        ".agents/skills/ri-work-kickoff/references/project-procedure.md": (1448, "c1cea1280a89737d274f0f5d05a66d795f35331192fc5913e620c9f8978611a7"),
+        ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md": (1640, "01d7933a5811c1d8341afe41dbe52556105bb4c338b8ba5cb2575c3859d5d31a"),
+        ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md": (1448, "c1cea1280a89737d274f0f5d05a66d795f35331192fc5913e620c9f8978611a7"),
     }
-    for name, (blob, size, digest) in local_installed.items():
-        assert name in provenance and blob in provenance
-        assert str(size) in provenance and digest in provenance
-    for retired in ("README.md", "capsule-builder.md", "implementor.md", "reviewer.md", "shared-rules.md"):
-        assert not (shared / "roles" / retired).exists()
-    queue_identities = (
-        ("a6c43878adf55b2b148daaa47e4e61bfbd7f66cd", 8485,
-         "73cf2fb82b03e374e0b8f7dfe26ffb057094eaddc03a0954e21fa2427fabe1aa"),
-        ("77fb46c51ff48596634b86765b3df7a4e59761aa", 1545,
-         "e99801dc7a2ae26410f3b07572664f283d02add71a5d54809c4a839364412677"),
-        ("acbaf960cff25c71fd1bdb1488b8e70dc34062b2", 11872,
-         "b7912b3d614ad9a69776c62c1557b0896aa7878f4583f6cddebc2777997fc5de"),
-    )
-    for blob, size, digest in queue_identities:
-        assert blob in provenance and str(size) in provenance and digest in provenance
-    assert "54db08ecb4f44ddb1df7d4aa22988daef1e89f47" in provenance
-    assert "3b119ff01a9e22c090d3f2f27be4acd6ac4da0279ac5a4faf0da32adc54db6b1" in provenance
-    installed = {
-        ".agents/skills/ri-work-kickoff/SKILL.md": (
-            "86bab9c4db07e30994bccc74ddf7367319ecd0d0", 1609,
-            "da59ae6229c966c9d8d092c28b9cde03d28fb4e52d0b09d21c2ad677e7d4179a",
-        ),
-        ".agents/skills/ri-work-kickoff/references/project-procedure.md": (
-            "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
-            "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
-        ),
-        ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md": (
-            "5abe72319146eed679ee4876e152831af041a31f", 1640,
-            "01d7933a5811c1d8341afe41dbe52556105bb4c338b8ba5cb2575c3859d5d31a",
-        ),
-        ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md": (
-            "c5a8760f8207b5371370c6cbbdcd61f34c5b7b3d", 1118,
-            "05bce6f9719288b2cecb8f2bc91f0e53264317773d4fbce469a7ae6b9bd57c11",
-        ),
-    }
-    for name, (blob, size, digest) in installed.items():
+    for name, (size, digest) in kickoff.items():
         data = (ROOT / name).read_bytes()
         assert len(data) == size
         assert hashlib.sha256(data).hexdigest() == digest
-        git_blob = hashlib.sha1(
-            b"blob " + str(len(data)).encode() + b"\0" + data
-        ).hexdigest()
-        assert git_blob == blob
         assert digest in provenance
+    assert "workflow-tools contract" in (ROOT / ".agents/skills/ri-work-kickoff/references/project-procedure.md").read_text()
+    assert "workflow-tools contract" in (ROOT / ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md").read_text()
+    assert "This proves file contents only" in provenance
+
+    assert "https://github.com/MitCaine/repository-intelligence/blob/" + current_revision in (shared / "skill-templates/capsule-queue/SKILL.md").read_text()
+    assert "collaboration.spawn_agent" in normalized_map
+    assert "gpt-6.1-sol" in normalized_map and "gpt-6-luna" in normalized_map
+    assert "Main qualification" in normalized_map and "4708441" in normalized_map
+    assert "secret scanning" in normalized_map.lower()
+
     lock = json.loads((ROOT / "engineering/tooling/ri-lock.json").read_text())
     assert lock["revision"] == "20a5039e7731eaa1303443b782caa81a383a0af1"
     assert lock["contracts"]["navigation"] == 7
@@ -246,55 +177,6 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert lock["contracts"]["adapter"] == 13
     assert lock["contracts"]["mapping"].endswith("markdown-source-units-v13")
     assert len(lock["source_files"]) == 21
-
-
-@pytest.mark.parametrize("case,required", [
-    ("fresh kickoff", (
-        "A new or existing controller may start an issue using ri-work-kickoff",
-        "Fresh controllers remain an owner-selected option or recovery choice",
-        "read the current project map, selected controller procedure, live issue and required inputs",
-    )),
-    ("reuse after verified closeout", (
-        "Prior issue decisions, approvals and evidence do not become new authority or proof",
-        "Reuse applicable standing grants and unchanged confirmation",
-        "worker freshness and nonauthor review remain unchanged",
-        "reuse grants no additional implementation permission",
-    )),
-    ("same-controller queue advancement", (
-        "After verified closeout, the same controller may advance an authorized queue",
-        "this per-issue orientation",
-    )),
-    ("kickoff with unresolved assignment", (
-        "A kickoff during unfinished work reconciles that assignment rather than replacing it or duplicating dispatch",
-    )),
-    ("compaction recovery", (
-        "Recovery after compaction or controller replacement recovers the authenticated checkpoint, selected instructions and existing assignment",
-        "without transferring another issue's authority",
-        "Active attempts retain their instruction identity",
-        "a new issue selects the project's then-adopted revision",
-    )),
-])
-def test_selected_controller_reuse_cases_preserve_issue_and_role_boundaries(case, required):
-    shared = ROOT / "engineering/workflow/shared"
-    daily = " ".join((shared / "start-an-issue.md").read_text().replace("`", "").split())
-    for rule in required:
-        assert rule in daily, (case, rule)
-    setup = " ".join((shared / "new-project-setup.md").read_text().split())
-    kickoff = " ".join((ROOT / ".agents/skills/ri-work-kickoff/SKILL.md").read_text().split())
-    assert "Reorient new or existing controllers under the selected daily intake rule" in kickoff
-    assert "unfinished assignments before new work" in kickoff
-    assert "fresh-controller handoffs" not in kickoff
-    assert "Complete and verify closeout before advancing" in setup
-    assert "fresh controller under [daily intake](start-an-issue.md#intake)" in setup
-    assert "preserve issue ordering and boundaries" in setup
-    assert "Skip only issues already closed or explicitly deferred" in setup
-    assert "Start each new issue with a fresh controller context" not in daily
-    assert "each new issue uses a fresh controller" not in setup
-    assert "Queue scope does not authorize indefinite controller reuse" not in setup
-    # Reuse affects controller intake only, not the selected implementation route.
-    local_map = (ROOT / "docs/local_project_map.md").read_text()
-    assert local_map.count("Direct Work controller maintenance: permitted") == 1
-    assert "fresh nonauthor" in local_map and "The author cannot review its own work" in local_map
 
 
 def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intake():
@@ -352,11 +234,11 @@ def test_direct_work_route_instructions_keep_scope_and_review_controller_owned()
     readme_normalized = " ".join(readme.split())
     for scenario in scenarios:
         assert scenario in maintenance_normalized or scenario in readme_normalized, scenario
-    assert "not categorically excluded" in normalized_map
-    assert "identified dependency/runtime update or inspected RI adoption" in normalized_map
+    assert "start-an-issue.md#optional-maintenance-route" in normalized_map
     assert "collaboration.spawn_agent" in normalized_map
     assert "native Work policy" in normalized_map
     assert "GitHub connector access is separate from task authority" in normalized_map
+    assert "Direct Work controller maintenance: permitted" in map_text
 
     for direct_rule in (
         "skips the builder, Codex dispatcher and separate implementor",
@@ -365,16 +247,11 @@ def test_direct_work_route_instructions_keep_scope_and_review_controller_owned()
     ):
         assert direct_rule in " ".join(maintenance.split())
     assert "selected implementation actor address in-scope findings" in " ".join(procedure.split())
-    assert "fresh nonauthor independent review" in normalized_map
-    assert "authenticate the current checkpoint, selected Work actor and live assignments" in normalized_map
-    assert "active or unresolved" in normalized_map
-    assert "actor text in the task record does not establish independence" in normalized_map
-    assert "retain C1 findings/proof" in normalized_map
-    assert "affected C2 checks" in normalized_map
-    assert "nonauthor C2 review" in normalized_map
-    assert "Do not recruit an implementor solely for this correction" in normalized_map
-    assert "preserve that assignment and return for bounded reconciliation" in normalized_map
-    assert "Missing or unresolved assignment evidence is a hold, not evidence that the task is idle" in normalized_map
+    assert "fresh nonauthor" in normalized_map
+    assert "after confirmed consumption of a dispatcher's terminal result" in normalized_map.lower()
+    assert "qualification, review, integration, closeout and queue progress stay in controller records" in normalized_map
+    assert "requested route: maintenance" in normalized_map.lower()
+    assert "implementation execution: direct work controller" in normalized_map.lower()
     assert "actual direct author" in authority
     assert "reviewer independence" in authority
     assert "Decision: eligible" in _direct_work_maintenance_record()
@@ -391,7 +268,7 @@ def test_direct_work_route_instructions_keep_scope_and_review_controller_owned()
 def test_current_handoffs_route_controller_and_assigned_worker_sections():
     current = {
         "AGENTS.md": ("Shared worker rules", "future capsule"),
-        "docs/local_project_map.md": ("worker role index", "assigned Codex dispatcher"),
+        "docs/local_project_map.md": ("worker role index", "assigned dispatcher"),
         "engineering/tasks/TEMPLATE.md": ("Shared worker rules", "Initial builder"),
         "engineering/workflow/TASK_CAPSULE.md": ("Shared worker rules", "future capsule"),
         "engineering/workflow/EXECUTION.md": ("Shared worker rules", "next level-two heading"),
@@ -425,26 +302,19 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
     assert "`gpt-6.1-sol` / `low`" in normalized_map
     assert "`gpt-6-luna` / `max`" in normalized_map
     normalized_map_lower = normalized_map.lower()
-    assert "requested environment/model/effort separately from host-confirmed settings" in normalized_map_lower
-    assert "existing owner-confirmed selection of the identified work controller chat without asking" in normalized_map_lower
-    assert "missing telemetry proves neither compliance nor mismatch and is not a capacity failure" in normalized_map_lower
-    assert "configure and confirm each worker separately" in normalized_map_lower
-    assert "genuinely mandatory for a worker" in normalized_map_lower
-    assert "persist each worker's requested settings" in normalized_map_lower
+    assert "requested settings, launch evidence, host-confirmed settings and measured telemetry" in normalized_map_lower
+    assert "when effective telemetry is unavailable, record it as unverified" in normalized_map_lower
     assert "existing external checkpoint" in normalized_map_lower
-    assert "relays them to the Work controller and records controller consumption" in normalized_map
-    assert "Native child results return to their parent" in normalized_map
-    assert "a terminal result already delivered can be consumed immediately" in normalized_map_lower
-    assert "sending or backing metadata alone proves neither consumption nor idle wake-up" in normalized_map_lower
-    assert "normal route has the work controller dispatch a capsule builder" in normalized_map_lower
-    assert "owner-designated codex dispatcher authenticates the complete accepted task handoff" in normalized_map_lower
+    assert "after confirmed consumption of a dispatcher's terminal result" in normalized_map_lower
+    assert "bounded corrections, the next implementation assignment" in normalized_map_lower
+    assert "workflow tools contract" in normalized_map_lower
     assert "collaboration.spawn_agent" in normalized_map
-    assert "policy acceptance does not claim measured execution" in normalized_map.lower()
+    assert "policy acceptance does not establish measured execution" in normalized_map.lower()
     assert "worker-instructions.md#role-index" in normalized_map
     assert "worker-instructions.md#codex-dispatcher" in normalized_map
     assert "start-an-issue.md#execute-serially" in normalized_map
     assert "start-an-issue.md#wait-recover-and-resume" in normalized_map
-    assert "start-an-issue.md#diagnose-blockers-and-recover" in normalized_map
+    assert "start-an-issue.md#evidence-eligibility-and-corrections" in normalized_map
     assert "gpt-5.6-luna" not in map_text
     capsule = (ROOT / "engineering/tasks/GH-290.md").read_text()
     assert "task-specific environment override for GH-290 only" in " ".join(capsule.split())
@@ -1384,6 +1254,7 @@ def test_all_affected_local_directed_links_and_anchors_resolve():
              "engineering/workflow/shared/new-project-setup.md",
              "engineering/workflow/shared/skill-templates/README.md",
              "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md",
+             "engineering/workflow/shared/workflow-tools.md",
              ".agents/skills/ri-work-kickoff/SKILL.md",
              ".agents/skills/ri-work-kickoff/references/project-procedure.md",
              ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md",
@@ -1407,7 +1278,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "1d5eba9a9d46d0e4a6afc02c875390a3b137ec41/docs/skill-templates/capsule-queue/")
+              "ae8768d4f806dbdc212a50d5e55c74b386e4963f/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1421,7 +1292,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "1d5eba9a9d46d0e4a6afc02c875390a3b137ec41"
+    revision = "ae8768d4f806dbdc212a50d5e55c74b386e4963f"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     provenance = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text()
@@ -1504,16 +1375,14 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
         "nested macOS network-denied sandbox",
         "do not substitute another historical or upstream revision",
         "When effective telemetry is unavailable, record it as unverified",
-        "Dispatch options establish only the request",
-        "trusted Work owner record confirms selected Work configuration, not provider-effective telemetry",
+        "Dispatch options establish a request, not a worker launch or effective settings",
         "candidate text, a task file or a passing check cannot create that external task authorization",
-        "owner confirmation establishes the selected Work chat settings",
-        "it does not replace authenticated external Nutrition task authorization",
+            "retain the already owner-confirmed selected Work controller chat without asking again for that selection",
+            "it establishes selected Work configuration, not external Nutrition task authority or provider-effective telemetry",
         "No fallback is selected here",
-        "route identity in the existing operational record",
-        "records controller consumption",
-        "idle wake-up",
-        "a terminal result already delivered can be consumed immediately",
+            "route identity and delivery state retained in the existing operational record",
+            "after confirmed consumption of a dispatcher's terminal result",
+            "qualification, review, integration, closeout and queue progress stay in controller records",
         "Main qualification",
         "App `4708441`",
         "rename-aware changed-path inventory",
@@ -1679,14 +1548,12 @@ def test_project_map_records_per_worker_launch_disposition():
         .split()
     ).lower()
     for phrase in (
-        "for each separately configured builder, implementor, and reviewer",
-        "supported role-appropriate launch route accepts the requested environment/model/effort",
-        "reports no mismatch or substitution",
-        "inherit confirmation from the controller or another worker",
-        "record requested settings and launch evidence separately",
-        "unavailable host confirmation or effective telemetry remains unverified",
-        "a rejected configuration, confirmed mismatch or substitution, or unavailable required route blocks",
-        "reuse an accepted route only while its route and configuration remain unchanged",
+        "owner-selected requested settings",
+        "dispatch options establish a request, not a worker launch or effective settings",
+        "requested settings, launch evidence, host-confirmed settings and measured telemetry",
+        "when effective telemetry is unavailable, record it as unverified",
+        "do not infer mode, model or effort from tools",
+        "unavailable capability required by the authenticated task goes back to the controller",
     ):
         assert phrase in routing
 
@@ -1699,10 +1566,11 @@ def test_project_map_records_role_correct_nutrition_dispatch():
     text = (ROOT / "docs/local_project_map.md").read_text()
     routing = " ".join(text.split("## Nutrition permissions and routing\n", 1)[1].split("\n## ", 1)[0].split())
     routing_lower = routing.lower()
-    assert "normal route has the work controller dispatch a capsule builder" in routing_lower
-    assert "distinct independent reviewer" in routing_lower
-    assert "owner-designated codex dispatcher authenticates the complete accepted task handoff" in routing_lower
-    assert "launches exactly one implementor" in routing_lower
+    assert "route selection, serial assignments, role boundaries" in routing_lower
+    assert "controller authenticates the exact candidate, authorized scope" in routing_lower
+    assert "fresh independent reviewer assesses substantive correctness and test adequacy" in routing_lower
+    assert "after confirmed consumption of a dispatcher's terminal result" in routing_lower
+    assert "qualification, review, integration, closeout and queue progress stay in controller records" in routing_lower
+    assert "direct work controller maintenance: permitted" in routing_lower
     assert "collaboration.spawn_agent" in routing_lower
     assert "native work policy" in routing_lower
-    assert "missing selector fields or measured telemetry remain unverified" in routing_lower

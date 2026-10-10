@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Authored-command observations must not inherit a Git redirection such as
+# GIT_DIR or GIT_WORK_TREE from the caller. Keep legacy profile behavior as-is.
+for argument in "$@"; do
+    if [[ "$argument" == "--commands" ]]; then
+        for git_variable in ${!GIT_@}; do
+            unset "$git_variable"
+        done
+        break
+    fi
+done
+
 source "$(dirname "$0")/lib/common.sh"
 
 usage() {
@@ -11,6 +22,8 @@ Options:
   --profile NAME   baseline (default), backend, mobile, repository, cross-cutting
   --label TEXT     Short task/review identifier used in output names
   --no-package     Skip the project snapshot; still create an evidence bundle
+  --commands PATH  Run an explicit JSON-authored command request
+  --attempt ID     Unique evidence attempt ID (required with --commands)
   -h, --help       Show this help
 
 The baseline profile runs ordinary backend, mobile, documentation, shell,
@@ -24,22 +37,42 @@ USAGE
 PROFILE="baseline"
 LABEL="review"
 INCLUDE_PROJECT=1
+COMMANDS_PATH=""
+ATTEMPT_ID=""
+PROFILE_EXPLICIT=0
+LABEL_EXPLICIT=0
+NO_PACKAGE_EXPLICIT=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --profile)
             [[ $# -ge 2 ]] || die "--profile requires a value."
             PROFILE="$2"
+            PROFILE_EXPLICIT=1
             shift 2
             ;;
         --label)
             [[ $# -ge 2 ]] || die "--label requires a value."
             LABEL="$2"
+            LABEL_EXPLICIT=1
             shift 2
             ;;
         --no-package)
             INCLUDE_PROJECT=0
+            NO_PACKAGE_EXPLICIT=1
             shift
+            ;;
+        --commands)
+            [[ $# -ge 2 ]] || die "--commands requires a request path."
+            [[ -z "$COMMANDS_PATH" ]] || die "--commands may be supplied only once."
+            COMMANDS_PATH="$2"
+            shift 2
+            ;;
+        --attempt)
+            [[ $# -ge 2 ]] || die "--attempt requires an ID."
+            [[ -z "$ATTEMPT_ID" ]] || die "--attempt may be supplied only once."
+            ATTEMPT_ID="$2"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -51,33 +84,48 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+RUN_AUTHORED=0
+if [[ -n "$COMMANDS_PATH" || -n "$ATTEMPT_ID" ]]; then
+    [[ -n "$COMMANDS_PATH" && -n "$ATTEMPT_ID" ]] || \
+        die "--commands and --attempt must be supplied together."
+    [[ $PROFILE_EXPLICIT -eq 0 && $LABEL_EXPLICIT -eq 0 && $NO_PACKAGE_EXPLICIT -eq 0 ]] || \
+        die "Authored-command mode does not accept --profile, --label, or --no-package."
+    [[ "$ATTEMPT_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || \
+        die "--attempt must be a bounded identifier using letters, numbers, dot, underscore, or hyphen."
+    RUN_AUTHORED=1
+fi
+
 RUN_BACKEND=0
 RUN_MOBILE=0
 RUN_REPOSITORY=1
 RUN_COMPOSE=0
 
-case "$PROFILE" in
-    baseline)
-        RUN_BACKEND=1
-        RUN_MOBILE=1
-        ;;
-    backend)
-        RUN_BACKEND=1
-        ;;
-    mobile)
-        RUN_MOBILE=1
-        ;;
-    repository)
-        ;;
-    cross-cutting)
-        RUN_BACKEND=1
-        RUN_MOBILE=1
-        RUN_COMPOSE=1
-        ;;
-    *)
-        die "Unsupported profile '$PROFILE'."
-        ;;
-esac
+if [[ $RUN_AUTHORED -eq 1 ]]; then
+    RUN_REPOSITORY=0
+else
+    case "$PROFILE" in
+        baseline)
+            RUN_BACKEND=1
+            RUN_MOBILE=1
+            ;;
+        backend)
+            RUN_BACKEND=1
+            ;;
+        mobile)
+            RUN_MOBILE=1
+            ;;
+        repository)
+            ;;
+        cross-cutting)
+            RUN_BACKEND=1
+            RUN_MOBILE=1
+            RUN_COMPOSE=1
+            ;;
+        *)
+            die "Unsupported profile '$PROFILE'."
+            ;;
+    esac
+fi
 
 banner "Nutrition App Review Runner"
 repo_cd
@@ -101,7 +149,7 @@ fi
 BACKEND_PYTHON="$REPO_ROOT/apps/backend/.venv/bin/python"
 
 if [[ $RUN_BACKEND -eq 1 && ! -x "$BACKEND_PYTHON" ]]; then
-    die "Backend virtual environment not found at apps/backend/.venv."
+    die "Backend Python not found or not executable at $BACKEND_PYTHON."
 fi
 
 if [[ $RUN_REPOSITORY -eq 1 ]]; then
@@ -112,7 +160,7 @@ if [[ $RUN_REPOSITORY -eq 1 ]]; then
         die "Missing or non-executable scripts/session-end.sh."
 fi
 
-if [[ $INCLUDE_PROJECT -eq 1 && ! -x "$REPO_ROOT/scripts/zip-project.sh" ]]; then
+if [[ $RUN_AUTHORED -eq 0 && $INCLUDE_PROJECT -eq 1 && ! -x "$REPO_ROOT/scripts/zip-project.sh" ]]; then
     die "Missing or non-executable scripts/zip-project.sh."
 fi
 
@@ -126,7 +174,11 @@ SAFE_LABEL="$(
 [[ -n "$SAFE_LABEL" ]] || SAFE_LABEL="review"
 
 STAMP="$(date +"%Y%m%d-%H%M%S")"
-RUN_ID="${STAMP}-${SAFE_LABEL}"
+if [[ $RUN_AUTHORED -eq 1 ]]; then
+    RUN_ID="$ATTEMPT_ID"
+else
+    RUN_ID="${STAMP}-${SAFE_LABEL}"
+fi
 
 # Keep generated evidence outside the repository so review execution does not
 # dirty the working tree or enter the project source archive.
@@ -149,20 +201,47 @@ REPO_FINGERPRINT_AFTER_TXT="$RUN_DIR/repository-fingerprint-after.txt"
 LAUNCHER_PATH="$REPO_ROOT/Run Nutrition Review.command"
 
 SOURCE_ZIP="$RUN_DIR/project-review.zip"
-FINAL_ZIP="$OUTPUT_ROOT/nutrition-app-${SAFE_LABEL}-${STAMP}.zip"
+if [[ $RUN_AUTHORED -eq 1 ]]; then
+    FINAL_ZIP="$RUN_DIR/review-bundle.zip"
+else
+    FINAL_ZIP="$OUTPUT_ROOT/nutrition-app-${SAFE_LABEL}-${STAMP}.zip"
+fi
+AUTHORED_HELPER="$REPO_ROOT/scripts/lib/review_commands.py"
 BUNDLE_STAGE="$(make_temp_dir)"
 
-ensure_directory "$LOG_DIR"
-ensure_directory "$FAILURE_DIR"
-ensure_directory "$WARNING_DIR"
-ensure_directory "$OUTPUT_ROOT"
-
-: > "$RESULTS_TSV"
+AUTHORED_PREPARED=0
 
 cleanup() {
+    local original_status=$?
+    if [[ $RUN_AUTHORED -eq 1 && $AUTHORED_PREPARED -eq 1 && ! -f "$RUN_DIR/complete.json" ]]; then
+        python3 "$AUTHORED_HELPER" incomplete \
+            --attempt-dir "$RUN_DIR" \
+            --reason "runner exited before terminal completion (exit $original_status)" \
+            >/dev/null 2>&1 || true
+    fi
     rm -rf "$BUNDLE_STAGE"
+    return "$original_status"
 }
 trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+trap 'exit 130' INT
+
+if [[ $RUN_AUTHORED -eq 1 ]]; then
+    python3 "$AUTHORED_HELPER" prepare \
+        --request "$COMMANDS_PATH" \
+        --repository "$REPO_ROOT" \
+        --attempt "$ATTEMPT_ID" \
+        --attempt-dir "$RUN_DIR"
+    AUTHORED_PREPARED=1
+else
+    ensure_directory "$LOG_DIR"
+    ensure_directory "$FAILURE_DIR"
+    ensure_directory "$WARNING_DIR"
+    ensure_directory "$OUTPUT_ROOT"
+fi
+
+: > "$RESULTS_TSV"
 
 repository_fingerprint() {
     python3 - "$REPO_ROOT" <<'PY'
@@ -574,6 +653,84 @@ project_package() {
         return 1
     fi
 }
+
+if [[ $RUN_AUTHORED -eq 1 ]]; then
+    section "Executing authored review commands"
+    while IFS= read -r step_id; do
+        [[ -n "$step_id" ]] || continue
+        designation="$(python3 "$AUTHORED_HELPER" designation --attempt-dir "$RUN_DIR" --step-id "$step_id")"
+        case "$designation" in
+            mandatory) severity="critical" ;;
+            advisory) severity="advisory" ;;
+            *) die "Unsupported authored designation '$designation' for '$step_id'." ;;
+        esac
+        slug="$step_id"
+        run_step \
+            "$slug" \
+            "Authored command: $step_id" \
+            "$severity" \
+            "python3 scripts/lib/review_commands.py execute --attempt-dir <attempt> --step-id $step_id" \
+            python3 "$AUTHORED_HELPER" execute --attempt-dir "$RUN_DIR" --step-id "$step_id"
+        python3 "$AUTHORED_HELPER" record-runner-result \
+            --attempt-dir "$RUN_DIR" \
+            --step-id "$step_id" \
+            --results-tsv "$RESULTS_TSV"
+    done < <(python3 "$AUTHORED_HELPER" steps --attempt-dir "$RUN_DIR")
+
+    if python3 "$AUTHORED_HELPER" finalize --attempt-dir "$RUN_DIR" --results-tsv "$RESULTS_TSV"; then
+        finalize_exit=0
+    else
+        finalize_exit=$?
+    fi
+    if [[ $finalize_exit -ne 0 ]]; then
+        error "Authored review attempt is incomplete or ineligible; evidence remains at $RUN_DIR."
+        exit 1
+    fi
+
+    section "Creating authored-command evidence bundle"
+    ensure_directory "$BUNDLE_STAGE/evidence"
+    cp \
+        "$RUN_DIR/request.json" \
+        "$RUN_DIR/request-identity.json" \
+        "$RUN_DIR/command-plan.json" \
+        "$RUN_DIR/source-before.json" \
+        "$RUN_DIR/source-after.json" \
+        "$RUN_DIR/results.tsv" \
+        "$RUN_DIR/results.json" \
+        "$RUN_DIR/summary.md" \
+        "$BUNDLE_STAGE/evidence/"
+    cp -R "$LOG_DIR" "$BUNDLE_STAGE/evidence/logs"
+    cp -R "$FAILURE_DIR" "$BUNDLE_STAGE/evidence/failures"
+    cp -R "$WARNING_DIR" "$BUNDLE_STAGE/evidence/warnings"
+    cp -R "$RUN_DIR/commands" "$BUNDLE_STAGE/evidence/commands"
+    cat > "$BUNDLE_STAGE/README.md" <<'README'
+# Authored Review Command Bundle
+
+This bundle retains the original request and identity, validated command plan,
+before and after repository observations, per-step stdout and stderr, the
+existing review-runner logs, structured results, warnings, and failures.
+The terminal completion marker is retained beside the bundle in the attempt
+directory because it includes the bundle hash.
+README
+    (
+        cd "$BUNDLE_STAGE"
+        zip -qry "$FINAL_ZIP" .
+    )
+    unzip -tqq "$FINAL_ZIP"
+
+    if python3 "$AUTHORED_HELPER" complete --attempt-dir "$RUN_DIR" --bundle "$FINAL_ZIP"; then
+        success "Authored review attempt completed; evidence is at $RUN_DIR."
+        exit 0
+    else
+        complete_exit=$?
+    fi
+    if [[ -f "$RUN_DIR/complete.json" ]]; then
+        error "Authored review attempt completed with failures; evidence is at $RUN_DIR."
+    else
+        error "Authored review attempt could not be finalized (exit $complete_exit); evidence is at $RUN_DIR."
+    fi
+    exit 1
+fi
 
 if [[ $RUN_BACKEND -eq 1 ]]; then
     run_step \

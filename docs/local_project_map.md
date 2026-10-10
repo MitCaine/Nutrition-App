@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `1d5eba9a9d46d0e4a6afc02c875390a3b137ec41`: controllers use the complete
+future task intake is pinned at `ae8768d4f806dbdc212a50d5e55c74b386e4963f`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -13,7 +13,9 @@ selected instruction inputs through acceptance. A future-intake pin does not rep
 historical attempt.
 
 The adopted [SOURCE record](../engineering/workflow/shared/SOURCE.md) is authoritative for upstream
-bytes, local transformations/relocations, kickoff-folder identities and compatible runtime. Pins
+bytes, local transformations/relocations, kickoff-folder identities and compatible runtime. The selected
+[workflow tools contract](../engineering/workflow/shared/workflow-tools.md) documents optional helpers and
+consumer-owned command evidence. Pins
 identify selected inputs; they do not grant permission or create a receipt or approval mechanism.
 The [adoption/replacement guide](../engineering/workflow/shared/capsule-controller-workflow.md#replace-an-entangled-adoption)
 applies only to owner-authorized setup or replacement, not ordinary issue intake.
@@ -47,6 +49,28 @@ diff and source for acceptance.
 `./scripts/ri query` is optional when useful; use the guide's exact-source selection and evidence
 rules for its arguments and output.
 
+
+Optional section-reader and adoption helpers are separate from producer/runtime `20a5039` and are
+selected from the authenticated RI checkout `/Users/mipoo/Projects/Repository Intelligence` at
+revision `ae8768d4f806dbdc212a50d5e55c74b386e4963f`. Before use, confirm that exact HEAD and a clean
+worktree, then authenticate imports with the existing
+`/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python` (Python 3.14.8), `PYTHONPATH=src`,
+and module source paths. The compatible installed helper dependencies are tree-sitter 0.25.1 and
+tree-sitter-markdown 0.5.1. Do not install, upgrade, substitute the producer environment, or infer
+host skill discovery/import registration from local module invocation.
+
+From that exact RI root, use `PYTHONPATH=src .venv/bin/python -m
+repository_intelligence.section_reader --help` or
+`PYTHONPATH=src .venv/bin/python -m repository_intelligence.adoption --help`; request execution is
+`PYTHONPATH=src .venv/bin/python -m repository_intelligence.section_reader --request
+/absolute/path/selection.json` and
+`PYTHONPATH=src .venv/bin/python -m repository_intelligence.adoption --request
+/absolute/path/inventory.json --mode preview|verify|apply`. Supply authenticated exact-source requests
+and retain results in the existing task evidence location. Apply only under existing task authority,
+after complete inventory validation and preview inspection. Incomplete reads, preview differences,
+unavailable filesystem capabilities and refusals remain explicit; they do not authorize substitution
+or dependency installation.
+
 ## Nutrition permissions and routing
 
 The owner sets product intent, accepted risk and integration permission. The controller
@@ -66,46 +90,31 @@ checkpoint. Loading a skill or this map supplies no grant. Existing Nutrition ow
 authorization and protected procedures still govern publication, qualification, review and integration;
 no additional host/account/security permissions or cross-chat disclosure are implied.
 
-The normal route has the Work controller dispatch a capsule builder and a distinct independent
-reviewer. The optional maintenance route omits the builder and planning-only publication only after
-the controller confirms eligibility and records the brief handoff in the existing task record. The
-default maintenance route delegates implementation through the owner-designated Codex dispatcher
-to exactly one implementor. Direct Work controller implementation is permitted only for that
-controller-confirmed eligible maintenance selection and when the permission line above remains
-present exactly once in this section. Record `Requested route: maintenance` and
-`Implementation execution: direct Work controller` in the same existing task record, and record the
-actual direct author in that handoff or existing operational record. The controller assumes the
-implementor's duties, scope limits and checks, uses its already selected Work settings and
-confirmation, and does not apply the implementor's Codex defaults. This selection has no capsule
-builder, Codex dispatcher or separate implementor assignment; it requires a fresh nonauthor
-independent review of the exact candidate, plus qualification, verification, approval, integration
-and closeout. The author cannot review its own work. If implementation is delegated, the owner-designated Codex dispatcher
-authenticates the complete accepted task handoff, launches one implementor and relays its terminal
-result. Tool or agent-spawn capability alone does not authorize an implementation route; workers do
-not recruit. The delegated dispatcher launches exactly one implementor.
+The selected [daily procedure](../engineering/workflow/shared/start-an-issue.md) and
+[worker instructions](../engineering/workflow/shared/worker-instructions.md#role-index) own route
+selection, serial assignments, role boundaries, read scopes, waits, recovery and corrections. The
+controller authenticates the exact candidate, authorized scope, required check completion and
+evidence identity. The fresh independent reviewer assesses substantive correctness and test adequacy.
+After confirmed consumption of a dispatcher's terminal result, messages are limited to bounded
+corrections, the next implementation assignment, necessary delivery, stop or recovery instructions;
+qualification, review, integration, closeout and queue progress stay in controller records.
 
-Maintenance eligibility follows the selected [governing rule](../engineering/workflow/shared/start-an-issue.md#optional-maintenance-route):
-the bounded objective, scope, decisions and verification must be sufficiently understood.
-An identified dependency/runtime update or inspected RI adoption with necessary bounded local
-workflow/tooling alignment is not categorically excluded. Unresolved design, substantial migration
-or unexpected wider impact requires a controller decision/normal planning; pause only the affected
-part and retain valid work/evidence. A failed focused check alone permits bounded in-scope correction,
-affected checks and fresh review. This selection supplies no additional task or host permissions.
-
-Before direct edits, authenticate the current checkpoint, selected Work actor and live assignments.
-Refuse direct execution when a builder, dispatcher or implementor assignment is active or unresolved;
-preserve that assignment and return for bounded reconciliation instead of taking it over. Missing or
-unresolved assignment evidence is a hold, not evidence that the task is idle. Before review, use the
-existing controller authentication route to identify the actual author and reviewer. Refuse review
-when those authenticated actors are the same or the reviewer identity is unresolved, and preserve
-state; actor text in the task record does not establish independence. If review requests changes, return bounded correction to the selected direct
-author under the unchanged scope, retain C1 findings/proof, run affected C2 checks and require fresh
-nonauthor C2 review. Do not recruit an implementor solely for this correction.
+The optional maintenance route is selected only after controller-confirmed eligibility and the
+existing task record holds its brief handoff. Direct Work controller maintenance is available only
+while the exact permission line above remains present once in this section and current external
+authority and live checkpoint are authenticated. A direct selection records `Requested route:
+maintenance` and `Implementation execution: direct Work controller` in that task record, plus the
+actual author in the existing handoff or operational record. The controller uses its already selected
+Work settings, assumes implementor duties and scope limits, and cannot review its own work; a fresh
+nonauthor review, qualification, verification, approval, integration and closeout remain separate.
+This map gives no additional task, host, Git, issue or settings authority.
 
 The project-scoped Codex kickoff folders are `.agents/skills/ri-work-kickoff/` and
-`.agents/skills/ri-codex-dispatcher-kickoff/`. Their presence does not prove fresh Codex discovery
-or register a Work skill. Verify each host through its supported selector/import route; use direct
-document-based kickoff when Work registration is unavailable or unverified.
+`.agents/skills/ri-codex-dispatcher-kickoff/`. Their presence does not prove fresh Codex discovery or
+register a Work skill. Verify each host through its supported selector/import route; use direct
+document-based kickoff when Work registration is unavailable or unverified. Each folder's selected
+project-procedure locator links the optional [workflow tools contract](../engineering/workflow/shared/workflow-tools.md);
+the linked modules remain optional source tools and are not host skills.
 
 The selected role settings are owner-authorized requests:
 
@@ -114,74 +123,48 @@ The selected role settings are owner-authorized requests:
 | Controller, capsule builder and independent reviewer | Work | `gpt-6.1-sol` / `low` |
 | Implementor | Codex | `gpt-6-luna` / `max` |
 
-The table records the owner-selected requested settings. Direct Work controller implementation
-continues with the already selected controller settings and their existing confirmation; it does
-not create an implementor launch or transfer the implementor's settings to the controller. Dispatch options establish only the
-request; they do not establish a worker's launch or effective settings. Retain the existing
-owner-confirmed selection of the identified Work controller chat without asking for that selection
-again. That owner confirmation establishes the selected Work chat settings; it does not replace
-authenticated external Nutrition task authorization. The trusted Work owner record confirms
-selected Work configuration, not provider-effective telemetry. Record the selection in the
-existing external task checkpoint before dependent work.
+The table records owner-selected requested settings. Direct Work controller implementation continues
+with the existing controller settings; it neither creates an implementor launch nor transfers
+implementor settings to the controller. Dispatch options establish a request, not a worker launch or
+effective settings. Retain the already owner-confirmed selected Work controller chat without asking
+again for that selection. It establishes selected Work configuration, not external Nutrition task
+authority or provider-effective telemetry. Preserve the
+distinction between requested settings, launch evidence, host-confirmed settings and measured
+telemetry in the existing external checkpoint. When effective telemetry is unavailable, record it as
+unverified. Do not
+infer mode, model or effort from tools, selector, app name, backing metadata or another worker's
+confirmation.
 
-Nutrition explicitly selects the [native Work policy](../engineering/workflow/shared/new-project-setup.md#accepted-worker-launch-routes)
-for builders and reviewers: `collaboration.spawn_agent` is accepted with the configured model/effort
-requested explicitly. Missing selector fields or measured telemetry remain unverified; policy
-acceptance does not claim measured execution. Actual launch failure, contradictory evidence or a
-genuinely missing required capability blocks dependent work. Missing reading resources are source
-prerequisites, not proof of a missing launch route.
+Nutrition selects the [native Work policy](../engineering/workflow/shared/new-project-setup.md#accepted-worker-launch-routes)
+for builders and reviewers: `collaboration.spawn_agent` is accepted when requested with the
+configured model and effort. Policy acceptance does not establish measured execution. Actual launch
+failure, confirmed mismatch or substitution, or an unavailable capability required by the
+authenticated task goes back to the controller; no fallback is selected here. An owner-authorized
+cross-host assignment uses its authenticated messaging and result-recovery route, with route identity
+and delivery state retained in the existing operational record. Work-to-Codex implementor results
+return through the assigned dispatcher to the Work controller. Do not publish private conversation
+identifiers.
 
-Configure and confirm each worker separately through its supported role-appropriate launch
-route. For each separately configured builder, implementor, and reviewer, proceed when the
-supported role-appropriate launch route accepts the requested environment/model/effort and reports
-no mismatch or substitution.
-
-Record requested environment/model/effort separately from host-confirmed settings. Record
-requested settings and launch evidence separately from owner selection, available host-confirmed
-settings, and provider-effective telemetry. Before dependent work, persist each worker's requested
-settings, launch evidence, available host-confirmed settings, and any unverified telemetry
-disposition in the existing external checkpoint.
-
-When effective telemetry is unavailable, record it as unverified: missing telemetry proves neither
-compliance nor mismatch and is not a capacity failure. Unavailable host confirmation or effective
-telemetry remains unverified; it is not evidence of verified compliance. Do not infer mode, model
-or effort from tools, a selector, app name or backing metadata, or inherit confirmation from the
-controller or another worker.
-
-If host confirmation is genuinely mandatory for a worker under its authenticated task requirements
-and remains unresolved, return to the controller before dependent work; do not infer that
-requirement from telemetry availability. A rejected configuration, confirmed mismatch or
-substitution, or unavailable required route blocks dependent work and returns to the controller.
-No fallback is selected here. Do not silently substitute an environment, model or effort. Reuse an
-accepted route only while its route and configuration remain unchanged.
-
-For an owner-authorized cross-host assignment, verify the selected host route's messaging and
-result-recovery capability before relying on it. Keep the route identity in the existing
-operational record, not this durable map; reuse the verified route until relevant inputs or
-delivery changes or fails, then recheck. If direct messaging is unavailable, use only the
-selected manual route. Work-to-Codex implementor results return to the assigned Codex dispatcher,
-who relays them to the Work controller and records controller consumption. Native child results
-return to their parent. Use supported blocking completion for active assignments unless the exact
-idle-wake route is verified. A terminal result already delivered can be consumed immediately;
-that result needs no separate idle-wake proof. Sending or backing metadata alone proves neither
-consumption nor idle wake-up. Do not publish private conversation identifiers.
-
-The adopted [serial assignment and role rules](../engineering/workflow/shared/start-an-issue.md#execute-serially),
+The selected [serial assignment](../engineering/workflow/shared/start-an-issue.md#execute-serially),
 [Work-to-Codex handoff](../engineering/workflow/shared/start-an-issue.md#work-to-codex-implementation-handoff),
-[task inputs and return destination](../engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs),
+[role inputs](../engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs),
+[optional maintenance route](../engineering/workflow/shared/start-an-issue.md#optional-maintenance-route),
 [execution settings](../engineering/workflow/shared/start-an-issue.md#execution-routing-models-and-efforts),
-[task-branch publication rules](../engineering/workflow/shared/start-an-issue.md#publish-the-task-branch-and-handoffs),
-[additional-assignment limits](../engineering/workflow/shared/start-an-issue.md#additional-assignments-and-orientation),
-[waiting and recovery rules](../engineering/workflow/shared/start-an-issue.md#wait-recover-and-resume),
+[branch publication](../engineering/workflow/shared/start-an-issue.md#publish-the-task-branch-and-handoffs),
+[additional assignment limits](../engineering/workflow/shared/start-an-issue.md#additional-assignments-and-orientation),
+[waiting and recovery](../engineering/workflow/shared/start-an-issue.md#wait-recover-and-resume),
 [model-capacity recovery](../engineering/workflow/shared/start-an-issue.md#handle-model-capacity),
-[bounded correction and evidence-reuse rules](../engineering/workflow/shared/start-an-issue.md#diagnose-blockers-and-recover),
-[worker return rules](../engineering/workflow/shared/worker-instructions.md#shared-worker-rules),
-[builder duties](../engineering/workflow/shared/worker-instructions.md#capsule-builder),
-[implementor duties](../engineering/workflow/shared/worker-instructions.md#implementor),
-[independent-review duties](../engineering/workflow/shared/worker-instructions.md#independent-reviewer),
-[Codex dispatcher duties](../engineering/workflow/shared/worker-instructions.md#codex-dispatcher)
-own the normal sequence, assignment limits, bounded correction, waits and evidence reuse. The
-map keeps only Nutrition's actor, permission, model and route bindings.
+[blocker recovery](../engineering/workflow/shared/start-an-issue.md#diagnose-blockers-and-recover),
+[evidence eligibility](../engineering/workflow/shared/start-an-issue.md#evidence-eligibility-and-corrections),
+and [worker role rules](../engineering/workflow/shared/worker-instructions.md#role-index) are canonical.
+The [Shared worker rules](../engineering/workflow/shared/worker-instructions.md#shared-worker-rules),
+[builder](../engineering/workflow/shared/worker-instructions.md#capsule-builder),
+[implementor](../engineering/workflow/shared/worker-instructions.md#implementor),
+[independent reviewer](../engineering/workflow/shared/worker-instructions.md#independent-reviewer),
+and [Codex dispatcher](../engineering/workflow/shared/worker-instructions.md#codex-dispatcher)
+sections define their assigned duties.
+Nutrition-specific actor/model requests, owner authority, permission, profile floors, qualification,
+secret controls, and approval/integration boundaries remain here and in the linked project contracts.
 
 ## Standards and checks
 
@@ -193,7 +176,19 @@ Use [AGENTS.md](../AGENTS.md), the [session contract](operations/session-contrac
 the [testing guide](operations/testing.md#main-qualification-profiles), and Nutrition's
 [authority contract](../engineering/workflow/AUTHORITY.md#current-interfaces). These current
 project owners govern domain/security standards, session closeout, selected tests, task interfaces,
-profile floors and protected acceptance.
+secret scanning, profile floors and protected acceptance.
+
+For task-selected command evidence, use the authored mode of the existing
+[`scripts/run-review.sh`](../scripts/run-review.sh):
+`./scripts/run-review.sh --commands /absolute/path/request.json --attempt UNIQUE-ID`. The request
+binds this repository, full expected HEAD, unique attempt, direct argv steps, repository-relative
+working directories, explicit nonsecret environment overrides, earlier-step prerequisites and
+mandatory/advisory designations. It uses the output root in `NUTRITION_REVIEW_OUTPUT_DIR` or the
+runner default; attempts are exclusive and output must resolve outside this repository. The
+[testing guide's authored-command section](operations/testing.md#authored-command-review-attempts)
+contains the request shape and explains child inputs, source observations, logs/hashes and failure
+eligibility. Treat a run result as command evidence only; controller acceptance, independent review,
+approval and integration remain separate.
 
 Before dispatch, the controller runs the read-only public record check:
 `./scripts/task validate-record --task-record engineering/tasks/TASK-ID.md --route normal`

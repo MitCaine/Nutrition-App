@@ -47,7 +47,7 @@ Controller: inspect task and relevant source; resolve actual gaps
     |
 Implementor: permitted edits + relevant tests
     | return changes, candidate/ref if authorized, results and gaps
-Controller: inspect full diff/scope; capture exact candidate if needed
+Controller: authenticate candidate/scope/gates; prepare independent review
     |
 Independent reviewer: read candidate, task, standards and real test evidence
     | concise evidence-backed verdict and actionable findings
@@ -181,40 +181,16 @@ reconcile completion and cleanup before an authorized recovery rather than repea
 same full review under a known inadequate limit. Host-enforced hard limits must
 be reported and handled through a supported route, not bypassed.
 
-Routine evidence reads, role clarification, handoff validation, cancellation,
-cleanup and authorized in-scope recovery are included in the task authorization.
-Do not ask the owner again just to discover why an assigned role stopped.
-Request new authority only for a concrete uncovered scope/permission/disclosure
-or reserved action. Respect host denials and actual project limits.
-
-When a blocker appears, hold edits and consequential actions. Perform one bounded
-read-only sweep of related task/runtime/command/delivery prerequisites within
-existing authority; return supported blockers together with unknown/unchecked
-items. Uninspected evidence is not failed authentication. Opening progress is
-nonterminal. Follow the [daily last-resort recovery rule](start-an-issue.md#wait-recover-and-resume)
-before STOP_REPLAN, replan, scope expansion or broader-authority requests: verify
-exact source, controlling requirements and existing authorized routes; prefer
-bounded correction and valid work reuse. STOP_REPLAN is not an opening
-acknowledgement. Confirmed violations or explicit owner stops halt
-execution immediately; read-only diagnosis may continue if permitted.
-
-If a stop is already terminal, preserve it. A diagnostic-only follow-up can
-explain that attempt without resuming it. Correct ordinary in-scope defects under
-the existing task authority, preserving useful code. Replan only for actual
-changes to objective, scope, base or authority. Do not reset existing allowances
-or invent unlimited retries. Lost replies require checking actual operation state
-before repeating a launch or integration. If main moved, compare the actual
-integration result with the reviewed candidate; changed source or merge resolution
-needs affected checks and independent review before acceptance. After compaction,
-recover the current phase, selected instructions, source, active job and pending
-obligations from the existing checkpoint. Do not launch a duplicate job or restart
-planning merely because conversation context was lost.
-
-Repeat checks when their relevant inputs change or project rules require them.
-Prior results keep their original source/command/environment identities; do not
-present reused evidence as newly executed. Retaining unchanged evidence requires
-the project's accepted equivalence policy, not an RI waiver. RI imposes no broad
-native/backend run solely because a packaging or documentation record changed.
+Use the daily [bounded diagnosis](start-an-issue.md#diagnose-blockers-and-recover),
+[evidence eligibility/correction](start-an-issue.md#evidence-eligibility-and-corrections)
+and [checkpoint recovery](start-an-issue.md#checkpoint-and-resume) rules.
+These own routine clarification authority, failed-command versus explicit-stop
+handling, full integration baseline, transitive-input equivalence and changed-source
+review. Preserve project allowances and host denials; these rules grant no bypass.
+The controller's [pre-review authentication](start-an-issue.md#complete-the-phases)
+is distinct from the normal plan check and the independent review of correctness
+and proof adequacy. RI requires no broad native/backend run solely for changed
+packaging or documentation.
 
 ## Replace an entangled adoption
 

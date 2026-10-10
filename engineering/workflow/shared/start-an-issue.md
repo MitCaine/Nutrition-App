@@ -125,26 +125,24 @@ them to new tasks.
 
 ```text
 Controller -> capsule builder -> controller checks plan
-           -> implementor    -> controller checks candidate/results
+           -> implementor    -> controller authenticates candidate/results
            -> reviewer       -> controller integrates and closes
                         findings -> bounded correction -> review
 ```
 
 ### Assign roles and supply inputs
 
-The controller owns assignment dispatch, including the bounded Codex dispatch
-delegation below. Run assignments one at a time, using fresh
-contexts by default. The normal path uses one capsule builder, one implementor
-and one independent reviewer; the [maintenance route](#optional-maintenance-route)
-omits the builder and may use the permitted direct-controller exception instead
-of an implementor assignment. Already-satisfied work may use the no-change route
-below. Workers do not recruit other workers.
+The controller assigns roles serially with fresh worker contexts by default:
+one builder, one implementor and one independent reviewer. Maintenance omits the
+builder and, where permitted, uses direct controller implementation. No-change
+work follows its disposition below. Workers cannot recruit other workers except
+for the expressly delegated Codex implementor launch.
 
-Each assignment names its immediate return destination by concrete identifier and
-the actor responsible for onward relay. Return the terminal handoff through that
-route; the relay actor confirms controller consumption. A local report or send
-acceptance does not establish delivery. Use the selected supported manual route
-when direct messaging is unavailable.
+Each handoff names a concrete immediate return destination and onward relay actor.
+That actor confirms controller consumption; a local report or send acceptance is
+not delivery. Use the selected manual relay when direct messaging is unavailable.
+Keep handoffs brief, referencing unchanged accessible inputs by authenticated
+location; no mandatory export, duplicate manifest or new record schema is implied.
 
 ### Execution routing, models and efforts
 
@@ -178,34 +176,27 @@ limits; distinguish requested settings from verified settings.
 
 ### Work-to-Codex implementation handoff
 
-Native subagents stay within their host; changing a model does not switch Work
-and Codex. For mixed routing, use an existing Codex chat as a bounded implementation
-dispatcher:
+Changing model does not switch host. For mixed routing, the owner creates or
+authorizes a reusable Codex dispatcher chat and messaging in both directions.
+Establish actual consumption and result recovery with a small harmless handoff;
+reuse that route until it changes or fails. This does not prove idle wake-up.
+Use the [waiting rules](#wait-for-completion), not another transport framework.
 
-```text
-Work controller -> Work capsule builder -> controller checks/publishes plan
-                -> Codex chat -> one Codex implementor -> Codex terminal handoff
-                -> Work controller verifies -> Work reviewer -> controller closeout
-```
+Supply the [dispatcher](worker-instructions.md#codex-dispatcher) with the exact
+task/attempt, accepted task location, branch/SHA, selected role instructions,
+implementation inputs, read/edit scopes, checks, evidence locations, Git ownership
+and return destination. It launches under the selected
+[context/fallback rules](worker-instructions.md#read-and-dispatch) and relays the
+terminal result; it does not reorient as controller, replan, review or integrate.
+Only the assigned actor edits/publishes; prevent simultaneous edits. Work
+authenticates the result before independent review. Unavailable routing requires
+an explicit decision, never substitution.
 
-The owner creates the Codex chat, or explicitly authorizes its creation, and
-authorizes messaging in both directions. Before implementation, verify both chats'
-actual messaging and result-recovery capabilities with a small harmless handoff.
-Reuse the established route until it changes or fails; sent-message acceptance
-does not prove consumption or idle wake-up. Apply the existing waiting/recovery
-rules, without polling loops or another transport framework.
-
-Use one reusable Codex dispatcher chat per project with the selected
-[dispatcher section](worker-instructions.md#codex-dispatcher). For each issue, give it the
-implementation handoff location: exact task/attempt, accepted capsule or maintenance handoff, branch/SHA,
-selected role instructions and bounded implementation inputs, read/edit scopes, checks,
-evidence locations, Git ownership and return destination. The dispatcher launches
-the implementor under the selected
-[context and fallback rules](worker-instructions.md#read-and-dispatch), then relays
-its terminal result; it does not repeat controller orientation, replan, review or
-integrate. Only the assigned actor edits/publishes;
-prevent simultaneous edits. Work authenticates the result before independent
-review. Unavailable routing requires an explicit decision, not substitution.
+After confirmed consumption of the dispatcher's terminal result, the controller
+sends only a bounded correction, the next implementation assignment, or necessary
+delivery, stop or recovery instructions. Keep qualification, review, integration,
+closeout and queue progress in controller records. Use the existing consumption
+verification; this adds no acknowledgment round or stage.
 
 ### Additional assignments and orientation
 
@@ -244,11 +235,10 @@ original issue or decision history.” Name stable headings, not line numbers;
 use a section-bounded read where supported, since an anchor alone does not limit
 loaded context.
 
-Before builder dispatch, supply it with the original issue and required
-orientation sources, their selected identities/locations, confirmed requirements
-and unresolved questions. A controller summary alone is insufficient. Each role
-reads its complete directed role/task inputs before acting; inaccessible material is
-a reported gap, not permission to guess.
+Before builder dispatch, supply original required orientation sources with selected
+identities/locations, confirmed requirements and unresolved questions. A summary
+cannot replace them. Workers read their complete assigned inputs before acting;
+inaccessible material is a gap, not permission to guess.
 
 ### Publish the task branch and handoffs
 
@@ -267,7 +257,7 @@ or main integration; main changes remain behind acceptance. If a project control
 blocks this sequence, resolve that explicit conflict before dispatch rather than
 silently substitute a local-only workflow. No subagent pushes to main.
 
-### Complete the phases
+### Command readiness
 
 Before establishing or changing inputs to a required downstream gate, verify
 its applicable source, history, authorization and configuration constraints.
@@ -293,6 +283,8 @@ costly qualification. On failure, report before further expensive checks unless
 the assignment requires collecting independent results. This grants no frozen
 candidate edits or omission of required checks.
 
+### Complete the phases
+
 For maintenance, the controller verifies the brief handoff against intake and
 project controls, then follows steps 3–6; under the permitted direct-controller
 exception it performs step 3 itself and still obtains fresh review in step 5.
@@ -316,22 +308,20 @@ Steps 1–2 apply to the normal route.
    relevant checks. Return source/branch identity, changes, results/skips and gaps.
    Commit/push only when the map grants that action. Keep useful work for corrections.
    Follow the worker instructions for alternate execution paths and their tests.
-4. **Controller:** inspect the full diff, scope, documentation and criterion evidence;
-   capture/publish the exact candidate when assigned that responsibility and verify
-   the remote branch matches it. Supply the reviewer with that source, the full
-   diff, accepted capsule or maintenance handoff, original requirements, standards
-   and actual test/log evidence. Use the project's existing
-   source-capture and evidence route; this instruction does not itself require
-   a new export, manifest, upload or local copy.
-   Checks must use a stable, identifiable source snapshot. Verify the tested source
-   and actual workflow/check identity; a matching check name alone is insufficient.
-   Evaluate each required gate's actual exit status and result, including failures
-   and skips; an aggregate command exit code does not establish that every gate
-   passed. Resolve failed required gates through the existing correction route
-   before acceptance.
+4. **Controller:** authenticate the exact published candidate, authorized scope,
+   required check completion/results, evidence identity and unresolved blockers.
+   Capture/publish when assigned and verify the remote ref. This is readiness for
+   independent review, not a second substantive review of implementation
+   correctness or test adequacy; those belong to the reviewer. Act on any concrete
+   defect noticed. Supply the full integration diff, accepted task, original
+   requirements, standards and actual evidence through the existing project route;
+   no new export, manifest, upload or local copy is required. Apply
+   [evidence eligibility](#evidence-eligibility-and-corrections). The normal plan
+   check in step 2 remains unchanged.
 5. **Independent reviewer:** remain read-only and review the full change, not just
-   RI declarations or a summary; return concise evidence-backed
-   dispositions for every criterion and applicable standard. Check docs too.
+   RI declarations or a summary. Assess implementation correctness against original
+   requirements, affected contracts, full diff and proof adequacy; return concise
+   dispositions for every criterion and applicable standard, including docs.
    Missing evidence already due cannot pass. For post-installation obligations,
    assess the implementation/check plan now; installed proof remains due at closeout.
 6. **Controller:** have the selected implementation actor address in-scope findings,
@@ -381,7 +371,10 @@ branch as merged or invent a product change merely to clean it up.
 
 ### Wait for completion
 
-- **Native subagents:** use the supported event-based blocking wait. Result
+- **Native subagents:** use the supported event-based blocking wait. Ordinary wait
+  expiry means continue waiting; delivery failure or a task deadline permits bounded
+  reconciliation of authoritative job state, terminal evidence and cleanup before
+  retry, never an unfinished-work inspection or monitoring loop. Result
   delivery to an active parent does not prove an idle parent will start a new turn.
   End the turn only with verified idle wake-up for that controller/host route.
 - **External jobs:** use native delivery or the [queue skill](skill-templates/capsule-queue/SKILL.md)
@@ -442,6 +435,14 @@ recovery source, changed execution inputs, required checks and return destinatio
 Reference unchanged instructions/evidence by authenticated accessible location;
 repeat only to resolve ambiguity. Workers still read their required role-specific inputs.
 
+### Evidence eligibility and corrections
+
+Checks must use a stable, identifiable source snapshot. Authenticate tested source,
+command/workflow and evidence identity; a matching name or aggregate exit code
+does not establish that every required gate passed. A source or relevant-input
+change during a check makes its result ineligible. Evaluate each gate's actual exit/result,
+including failures/skips; resolve failed required gates before acceptance.
+
 After correction, the controller selects reruns from changed inputs and the
 project's accepted evidence-equivalence policy. Preserve eligible results under
 their original source/command/environment identities; never label them newly
@@ -453,11 +454,7 @@ When a reported pass conflicts with a later result, compare source, command,
 working directory, toolchain and configuration. Record the demonstrated cause or
 remaining uncertainty; do not reuse the earlier pass without establishing its
 eligibility. A successful repetition alone does not explain the discrepancy.
-Changed integration source needs affected checks/review. An ordinary blocking-wait
-interval expiring means continue waiting. A reported delivery failure or task
-deadline permits bounded reconciliation of authoritative assignment state and
-cleanup before retrying; it does not authorize unfinished-work inspection or a
-monitoring loop.
+Changed integration source needs affected checks/review.
 
 ### Handle model capacity
 
@@ -486,6 +483,8 @@ active-assignment state and retained terminal evidence before selecting the next
 action. Preserve history and record the reconciliation; do not repeat completed
 work merely because the checkpoint is stale. This grants no additional writer
 or dispatch authority.
+After a lost response, establish the actual operation state before repeating a
+launch or integration; an uncertain reply is not proof that the action failed.
 
 If fresh agents cannot be created or freed,
 last-resort idle-context reuse is permitted with a complete handoff. The candidate
