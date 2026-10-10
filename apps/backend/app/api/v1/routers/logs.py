@@ -38,6 +38,7 @@ from app.services.log_day_completion_service import (
 )
 from app.services.log_service import (
     HistoryRangeError,
+    LogCreateReplay,
     LogEditConflictError,
     LogIdempotencyConflictError,
     LogMutationPayloadConflictError,
@@ -106,9 +107,15 @@ def create_log(
     payload: DailyLogCreateRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> DailyLogResponse:
+) -> DailyLogResponse | JSONResponse:
     try:
-        return DailyLogResponse.model_validate(_service(db).create_log(user.id, payload))
+        result = _service(db).create_log(user.id, payload)
+        if isinstance(result, LogCreateReplay):
+            return JSONResponse(
+                content=result.snapshot,
+                status_code=status.HTTP_201_CREATED,
+            )
+        return DailyLogResponse.model_validate(result)
     except LogContractError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.detail()) from exc
     except AuthoritativeTimeZoneRequiredError as exc:
@@ -121,7 +128,7 @@ def create_log(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.detail(),
         ) from exc
-    except LogIdempotencyConflictError as exc:
+    except (LogIdempotencyConflictError, LogMutationResultUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": str(exc)},

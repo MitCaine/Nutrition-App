@@ -9,7 +9,8 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
+from pydantic import ValidationError
 
 from app.domain.log_contracts import MAX_NOTE_CODE_POINTS, normalize_meal, normalize_note
 from app.domain.nutrition import NutrientDataStatus, NutrientSnapshot
@@ -59,6 +60,7 @@ from app.services.create_idempotency import (
     CreateIdempotencyCoordinator,
     CreateOperationIdempotencyConflictError,
     CreateOperationResultUnavailableError,
+    is_create_idempotency_conflict,
 )
 
 
@@ -92,23 +94,6 @@ def _creation_fingerprint(payload: DailyLogCreateRequest) -> str:
 
 def _canonical_decimal(value: Decimal) -> str:
     return format(value.normalize(), "f")
-
-
-def _matching_idempotent_log(log: DailyLog, fingerprint: str | None) -> DailyLog:
-    if log.client_request_fingerprint != fingerprint:
-        raise LogIdempotencyConflictError(LogIdempotencyConflictError.message)
-    return log
-
-
-def _is_idempotency_unique_conflict(exc: IntegrityError) -> bool:
-    diagnostic = getattr(exc.orig, "diag", None)
-    if getattr(diagnostic, "constraint_name", None) == "uq_daily_logs_user_client_request":
-        return True
-    message = str(exc.orig).lower()
-    return (
-        "daily_logs.user_id, daily_logs.client_request_id" in message
-        or "uq_daily_logs_user_client_request" in message
-    )
 
 
 class LogEditConflictError(ValueError):
@@ -213,6 +198,18 @@ class LogMutationReplay:
     def id(self) -> UUID:
         """Expose the affected resource identity for service-level callers."""
 
+        return self.log_id
+
+
+class LogCreateReplay:
+    """A retained create response returned without reading mutable Log state."""
+
+    def __init__(self, snapshot: dict, log_id: UUID):
+        self.snapshot = snapshot
+        self.log_id = log_id
+
+    @property
+    def id(self) -> UUID:
         return self.log_id
 
 
@@ -370,54 +367,188 @@ class LogService:
     def _after_complete_invalidation(self, _logged_dates: set[date]) -> None:
         """Test seam after Complete deletion and before the surrounding commit."""
 
-    def create_log(self, user_id: UUID, payload: DailyLogCreateRequest) -> DailyLog:
-        # Revalidate at the authoritative service boundary for callers that do
-        # not arrive through Pydantic request parsing before consulting mutable
-        # calendar state. Calendar revision is deliberately absent from the
-        # create fingerprint, so exact accepted retries remain replayable.
+    def _find_create_receipt(
+        self,
+        user_id: UUID,
+        client_request_id: UUID,
+        fingerprint: str,
+    ) -> CreateOperationIdempotency | None:
+        try:
+            return self.mutation_receipts.find(
+                user_id,
+                "log.create",
+                client_request_id,
+                fingerprint,
+            )
+        except CreateOperationIdempotencyConflictError as exc:
+            raise LogIdempotencyConflictError(LogIdempotencyConflictError.message) from exc
+
+    def _replay_create_receipt(
+        self,
+        receipt: CreateOperationIdempotency,
+    ) -> LogCreateReplay:
+        try:
+            snapshot = self.mutation_receipts.replay_snapshot(receipt)
+            DailyLogResponse.model_validate(snapshot)
+        except (CreateOperationResultUnavailableError, ValidationError) as exc:
+            raise LogMutationResultUnavailableError(
+                LogMutationResultUnavailableError.message
+            ) from exc
+        return LogCreateReplay(snapshot, receipt.resource_id)
+
+    def _lock_owned_create_log(
+        self,
+        user_id: UUID,
+        client_request_id: UUID,
+    ) -> DailyLog | None:
+        statement = (
+            select(DailyLog)
+            .where(
+                DailyLog.user_id == user_id,
+                DailyLog.client_request_id == client_request_id,
+            )
+            .options(selectinload(DailyLog.snapshots), selectinload(DailyLog.food_item))
+            .execution_options(populate_existing=True)
+            .with_for_update()
+        )
+        return self.db.scalars(statement).first()
+
+    def _retain_legacy_create_identity(self, user_id: UUID, log: DailyLog) -> None:
+        """Fence a surviving pre-receipt create before an authorized Log mutation."""
+
+        if log.client_request_id is None or log.client_request_fingerprint is None:
+            return
+        existing_id = self.db.scalar(
+            select(CreateOperationIdempotency.id).where(
+                CreateOperationIdempotency.user_id == user_id,
+                CreateOperationIdempotency.operation == "log.create",
+                CreateOperationIdempotency.client_request_id == log.client_request_id,
+            )
+        )
+        if existing_id is not None:
+            return
+        try:
+            self.mutation_receipts.reserve(
+                user_id,
+                "log.create",
+                log.client_request_id,
+                log.client_request_fingerprint,
+                log.id,
+            )
+        except IntegrityError as exc:
+            if not is_create_idempotency_conflict(exc):
+                raise
+            self.db.rollback()
+            receipt = self.db.scalar(
+                select(CreateOperationIdempotency).where(
+                    CreateOperationIdempotency.user_id == user_id,
+                    CreateOperationIdempotency.operation == "log.create",
+                    CreateOperationIdempotency.client_request_id == log.client_request_id,
+                )
+            )
+            if receipt is None:
+                raise
+            if (
+                receipt.resource_id != log.id
+                or receipt.request_fingerprint != log.client_request_fingerprint
+            ):
+                raise LogMutationPayloadConflictError(
+                    LogMutationPayloadConflictError.message
+                ) from exc
+            raise LogMutationResultUnavailableError(
+                LogMutationResultUnavailableError.message
+            ) from exc
+
+    def create_log(
+        self,
+        user_id: UUID,
+        payload: DailyLogCreateRequest,
+    ) -> DailyLog | LogCreateReplay:
+        """Create one Log and retain its exact response in the owned transaction."""
         try:
             normalize_meal(payload.meal_type)
             normalize_note(payload.notes)
             fingerprint = _creation_fingerprint(payload) if payload.client_request_id else None
-        except Exception:
-            self.db.rollback()
-            raise
-        if payload.client_request_id is not None:
-            existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
-            if existing is not None:
-                return _matching_idempotent_log(existing, fingerprint)
+            if payload.client_request_id is not None:
+                receipt = self._find_create_receipt(
+                    user_id,
+                    payload.client_request_id,
+                    fingerprint,
+                )
+                if receipt is not None:
+                    return self._replay_create_receipt(receipt)
 
-            if payload.calendar_revision is not None:
-                try:
-                    # Serialize the identity recheck with the same owner row
-                    # lock used by calendar changes. A request that waited
-                    # behind an accepted create can then replay its committed
-                    # result before stale calendar eligibility is evaluated.
+                if payload.calendar_revision is not None:
+                    # Keep the established owner/calendar-before-Log lock order.
+                    # A retry rechecks durable authority after waiting here.
                     self.logs.lock_owner_for_update(user_id)
-                except Exception:
-                    self.db.rollback()
-                    raise
-                existing = self.logs.get_by_client_request_id(
+                    receipt = self._find_create_receipt(
+                        user_id,
+                        payload.client_request_id,
+                        fingerprint,
+                    )
+                    if receipt is not None:
+                        replay = self._replay_create_receipt(receipt)
+                        self.db.rollback()
+                        return replay
+
+                legacy_log = self._lock_owned_create_log(
                     user_id,
                     payload.client_request_id,
                 )
-                if existing is not None:
-                    return _matching_idempotent_log(existing, fingerprint)
+                # An edit/delete may have installed the legacy fence while this
+                # request waited for the owned DailyLog row.
+                receipt = self._find_create_receipt(
+                    user_id,
+                    payload.client_request_id,
+                    fingerprint,
+                )
+                if receipt is not None:
+                    replay = self._replay_create_receipt(receipt)
+                    self.db.rollback()
+                    return replay
+                if legacy_log is not None:
+                    if legacy_log.client_request_fingerprint != fingerprint:
+                        raise LogIdempotencyConflictError(
+                            LogIdempotencyConflictError.message
+                        )
+                    raise LogMutationResultUnavailableError(
+                        LogMutationResultUnavailableError.message
+                    )
 
-        if payload.calendar_revision is None:
-            require_authoritative_time_zone(self.db, user_id)
-        else:
-            try:
+            if payload.calendar_revision is None:
+                require_authoritative_time_zone(self.db, user_id)
+            else:
                 CalendarService(self.db).validate_mutation_context(
                     user_id,
                     payload.calendar_revision,
                     payload.logged_date,
                 )
-            except Exception:
-                self.db.rollback()
-                raise
 
-        try:
+            log_id = uuid4()
+            receipt = None
+            if payload.client_request_id is not None:
+                try:
+                    receipt = self.mutation_receipts.reserve(
+                        user_id,
+                        "log.create",
+                        payload.client_request_id,
+                        fingerprint,
+                        log_id,
+                    )
+                except IntegrityError as exc:
+                    if not is_create_idempotency_conflict(exc):
+                        raise
+                    self.db.rollback()
+                    receipt = self._find_create_receipt(
+                        user_id,
+                        payload.client_request_id,
+                        fingerprint,
+                    )
+                    if receipt is None:
+                        raise
+                    return self._replay_create_receipt(receipt)
+
             # E4-02 mark-Complete serializes through the first Log on a date.
             # Take that same anchor before source locks so a create and a
             # concurrent Complete assertion have one ordering authority.
@@ -429,7 +560,7 @@ class LogService:
                     raise LogSourceUnavailableError(LogSourceUnavailableError.message) from exc
                 raise
             if food.is_recipe or food.source_type == "recipe":
-                log = self._create_recipe_log(user_id, food, payload)
+                log = self._create_recipe_log(user_id, food, payload, log_id)
             else:
                 # Mutable Food resolver inputs must be loaded after the Food row
                 # lock so servings and nutrients describe one committed generation.
@@ -440,11 +571,16 @@ class LogService:
                         raise LogSourceUnavailableError(LogSourceUnavailableError.message) from exc
                     raise
                 self._after_mutable_food_lock(food)
-                log = self._create_food_log(user_id, food, payload)
+                log = self._create_food_log(user_id, food, payload, log_id)
             log.client_request_id = payload.client_request_id
             log.client_request_fingerprint = fingerprint
             created = self.logs.add(log)
             self._after_snapshot_creation(created)
+            if receipt is not None:
+                self.mutation_receipts.complete(
+                    receipt,
+                    DailyLogResponse.model_validate(created).model_dump(mode="json"),
+                )
             if payload.calendar_revision is not None:
                 CalendarService(self.db).validate_mutation_context(
                     user_id,
@@ -454,14 +590,6 @@ class LogService:
             self._invalidate_complete_dates(user_id, {created.logged_date})
             self.db.commit()
             return created
-        except IntegrityError as exc:
-            self.db.rollback()
-            if payload.client_request_id is None or not _is_idempotency_unique_conflict(exc):
-                raise
-            existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
-            if existing is None:
-                raise
-            return _matching_idempotent_log(existing, fingerprint)
         except Exception:
             self.db.rollback()
             raise
@@ -496,7 +624,9 @@ class LogService:
         user_id: UUID,
         food: FoodItem,
         payload: DailyLogCreateRequest,
+        log_id: UUID | None = None,
     ) -> DailyLog:
+        log_id = log_id or uuid4()
         self._validate_food_source_precondition(food, payload)
         try:
             resolved = resolve_nutrition(
@@ -510,7 +640,7 @@ class LogService:
                 raise LogSourceAmountChangedError(LogSourceAmountChangedError.message) from exc
             raise
         log = DailyLog(
-            id=uuid4(),
+            id=log_id,
             user_id=user_id,
             food_item_id=food.id,
             food_name_snapshot=food.name,
@@ -535,7 +665,9 @@ class LogService:
         user_id: UUID,
         selected_food: FoodItem,
         payload: DailyLogCreateRequest,
+        log_id: UUID | None = None,
     ) -> DailyLog:
+        log_id = log_id or uuid4()
         # Recipe publication uses the repository-wide Food-then-Recipe lock
         # order.  Re-read the compatibility projection under its row lock
         # before deriving the Recipe identity so a concurrent publication or
@@ -633,7 +765,7 @@ class LogService:
             else None
         )
         log = DailyLog(
-            id=uuid4(),
+            id=log_id,
             user_id=user_id,
             food_item_id=food.id,
             food_name_snapshot=revision.published_name,
@@ -1117,21 +1249,47 @@ class LogService:
         operation: str,
         client_request_id: UUID,
     ) -> DailyLogMutationStatusResponse:
-        """Read a receipt without changing domain state.
-
-        A missing receipt is a confirmed non-commit under the transaction model:
-        reservations and domain writes commit atomically, so no row means the
-        intent did not commit. An incomplete row is retained as unresolved.
-        """
+        """Read mutation authority without changing domain state."""
 
         if operation == "create":
-            log = self.logs.get_by_client_request_id(user_id, client_request_id)
+            receipt = self.db.scalar(
+                select(CreateOperationIdempotency).where(
+                    CreateOperationIdempotency.user_id == user_id,
+                    CreateOperationIdempotency.operation == "log.create",
+                    CreateOperationIdempotency.client_request_id == client_request_id,
+                )
+            )
+            if receipt is not None:
+                if receipt.response_snapshot is None or receipt.completed_at is None:
+                    return DailyLogMutationStatusResponse(
+                        operation=operation,
+                        client_request_id=client_request_id,
+                        status="unresolved",
+                        log_id=receipt.resource_id,
+                    )
+                try:
+                    result = DailyLogResponse.model_validate(receipt.response_snapshot)
+                except ValidationError:
+                    return DailyLogMutationStatusResponse(
+                        operation=operation,
+                        client_request_id=client_request_id,
+                        status="unresolved",
+                        log_id=receipt.resource_id,
+                    )
+                return DailyLogMutationStatusResponse(
+                    operation=operation,
+                    client_request_id=client_request_id,
+                    status="confirmed_success",
+                    log_id=receipt.resource_id,
+                    result=result,
+                )
+
+            legacy_log = self.logs.get_by_client_request_id(user_id, client_request_id)
             return DailyLogMutationStatusResponse(
                 operation=operation,
                 client_request_id=client_request_id,
-                status="confirmed_success" if log is not None else "confirmed_non_commit",
-                log_id=log.id if log is not None else None,
-                result=DailyLogResponse.model_validate(log) if log is not None else None,
+                status="unresolved",
+                log_id=legacy_log.id if legacy_log is not None else None,
             )
 
         receipt = self.db.scalar(
@@ -1196,9 +1354,10 @@ class LogService:
         if normalized not in {"create", "update", "delete"}:
             # A request identity is normally unique within one operation. If
             # callers omit operation, prefer an existing terminal record in a
-            # stable order and otherwise report a non-commit create status.
+            # stable order. An unknown create remains unresolved because an
+            # uncommitted receipt is not visible to this read-only query.
             create = self._mutation_status(user_id, "create", client_request_id)
-            if create.status == "confirmed_success":
+            if create.status == "confirmed_success" or create.log_id is not None:
                 return create
             for candidate in ("update", "delete"):
                 status = self._mutation_status(user_id, candidate, client_request_id)
@@ -1283,6 +1442,7 @@ class LogService:
                     user_id,
                     {source_logged_date, destination_logged_date},
                 )
+            self._retain_legacy_create_identity(user_id, log)
             before_snapshot_signature = _snapshot_signature(log)
             if payload.client_request_id is not None:
                 try:
@@ -1790,6 +1950,7 @@ class LogService:
                     user_id,
                     intent.calendar_revision,
                 )
+            self._retain_legacy_create_identity(user_id, log)
             if intent.client_request_id is not None:
                 try:
                     receipt = self.mutation_receipts.reserve(

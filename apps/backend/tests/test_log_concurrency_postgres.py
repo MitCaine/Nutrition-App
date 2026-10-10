@@ -6,7 +6,7 @@ from importlib import import_module
 import os
 import time
 from threading import Event, Thread, get_ident
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from alembic.operations import Operations
@@ -36,6 +36,7 @@ from app.schemas.log import (
     DailyLogCompleteRequest,
     DailyLogCreateRequest,
     DailyLogDeleteRequest,
+    DailyLogResponse,
     DailyLogUpdateRequest,
 )
 from app.schemas.food import (
@@ -150,6 +151,12 @@ def _gh271_daily_log_target(factory, label: str) -> tuple:
         )
         serving_id = food.serving_definitions[0].id
         return user_id, food.id, serving_id
+
+
+def _create_result_snapshot(result) -> dict:
+    if isinstance(result, DailyLog):
+        return DailyLogResponse.model_validate(result).model_dump(mode="json")
+    return result.snapshot
 
 
 def _recipe_create_target(factory) -> tuple:
@@ -3793,13 +3800,7 @@ def test_postgres_create_retry_controls_after_calendar_change(
 
     with factory() as db:
         original = LogService(db).create_log(user_id, payload())
-        original_result = (
-            original.id,
-            tuple(
-                (snapshot.id, snapshot.nutrient_id, snapshot.amount, snapshot.unit)
-                for snapshot in original.snapshots
-            ),
-        )
+        original_result = _create_result_snapshot(original)
         LogDayCompletionService(db).mark_complete(
             user_id,
             DailyLogCompleteRequest(
@@ -3820,13 +3821,7 @@ def test_postgres_create_retry_controls_after_calendar_change(
 
     with factory() as db:
         replay = LogService(db).create_log(user_id, payload())
-        replay_result = (
-            replay.id,
-            tuple(
-                (snapshot.id, snapshot.nutrient_id, snapshot.amount, snapshot.unit)
-                for snapshot in replay.snapshots
-            ),
-        )
+        replay_result = _create_result_snapshot(replay)
         assert replay_result == original_result
         assert db.get(DailyLogDayCompletion, (user_id, logged_date)) is not None
 
@@ -3843,7 +3838,7 @@ def test_postgres_create_retry_controls_after_calendar_change(
             .select_from(DailyLogNutrientSnapshot)
             .join(DailyLog, DailyLog.id == DailyLogNutrientSnapshot.daily_log_id)
             .where(DailyLog.user_id == user_id)
-        ) == len(original_result[1])
+        ) == len(original_result["snapshots"])
         assert db.get(DailyLogDayCompletion, (user_id, logged_date)) is not None
 
 
@@ -3996,13 +3991,7 @@ def test_postgres_create_retry_waits_for_accepted_calendar_boundary_then_recheck
 
                 service._after_snapshot_creation = pause_before_commit
                 created = service.create_log(user_id, payload())
-                original_result.append({
-                    "id": created.id,
-                    "snapshots": tuple(
-                        (snapshot.id, snapshot.nutrient_id, snapshot.amount, snapshot.unit)
-                        for snapshot in created.snapshots
-                    ),
-                })
+                original_result.append(_create_result_snapshot(created))
         except BaseException as exc:
             worker_errors.append(exc)
 
@@ -4014,13 +4003,7 @@ def test_postgres_create_retry_waits_for_accepted_calendar_boundary_then_recheck
                 service = LogService(db)
                 service._after_mutable_food_lock = lambda _food: retry_food_loaded.set()
                 created = service.create_log(user_id, payload())
-                retry_result.append({
-                    "id": created.id,
-                    "snapshots": tuple(
-                        (snapshot.id, snapshot.nutrient_id, snapshot.amount, snapshot.unit)
-                        for snapshot in created.snapshots
-                    ),
-                })
+                retry_result.append(_create_result_snapshot(created))
         except BaseException as exc:
             worker_errors.append(exc)
 
@@ -4068,5 +4051,405 @@ def test_postgres_create_retry_waits_for_accepted_calendar_boundary_then_recheck
         assert db.scalar(
             select(func.count())
             .select_from(DailyLogNutrientSnapshot)
-            .where(DailyLogNutrientSnapshot.daily_log_id == original_result[0]["id"])
+            .where(
+                DailyLogNutrientSnapshot.daily_log_id
+                == UUID(original_result[0]["id"])
+            )
         ) == len(original_result[0]["snapshots"])
+
+
+def test_postgres_create_receipt_wait_replays_commit_and_rejects_changed_payload(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _gh271_daily_log_target(
+        factory,
+        "GH-277 Receipt Commit Wait",
+    )
+    request_id = uuid4()
+    logged_date = date(2026, 7, 13)
+
+    def payload(quantity: str = "1") -> DailyLogCreateRequest:
+        return DailyLogCreateRequest(
+            client_request_id=request_id,
+            food_item_id=food_id,
+            logged_date=logged_date,
+            amount_quantity=Decimal(quantity),
+            amount_unit="serving",
+            serving_definition_id=serving_id,
+        )
+
+    reservation_ready = Event()
+    release_winner = Event()
+    retry_started = {"same": Event(), "changed": Event()}
+    pids: dict[str, int] = {}
+    outcomes: dict[str, list[object]] = {"winner": [], "same": [], "changed": []}
+
+    def run_winner() -> None:
+        try:
+            with factory() as db:
+                service = LogService(db)
+                reserve = service.mutation_receipts.reserve
+
+                def hold_reservation(
+                    reserve_user_id,
+                    operation,
+                    client_request_id,
+                    fingerprint,
+                    resource_id,
+                ):
+                    receipt = reserve(
+                        reserve_user_id,
+                        operation,
+                        client_request_id,
+                        fingerprint,
+                        resource_id,
+                    )
+                    if operation == "log.create":
+                        reservation_ready.set()
+                        if not release_winner.wait(timeout=10):
+                            raise AssertionError("create reservation barrier was not released")
+                    return receipt
+
+                service.mutation_receipts.reserve = hold_reservation
+                outcomes["winner"].append(_create_result_snapshot(service.create_log(user_id, payload())))
+        except BaseException as exc:
+            outcomes["winner"].append(exc)
+
+    def run_duplicate(kind: str, quantity: str) -> None:
+        try:
+            with factory() as db:
+                pids[kind] = int(db.scalar(text("SELECT pg_backend_pid()")))
+                service = LogService(db)
+                reserve = service.mutation_receipts.reserve
+
+                def observe_reservation(
+                    reserve_user_id,
+                    operation,
+                    client_request_id,
+                    fingerprint,
+                    resource_id,
+                ):
+                    if operation == "log.create":
+                        retry_started[kind].set()
+                    return reserve(
+                        reserve_user_id,
+                        operation,
+                        client_request_id,
+                        fingerprint,
+                        resource_id,
+                    )
+
+                service.mutation_receipts.reserve = observe_reservation
+                result = service.create_log(user_id, payload(quantity))
+                outcomes[kind].append(_create_result_snapshot(result))
+        except BaseException as exc:
+            outcomes[kind].append(exc)
+
+    winner = Thread(target=run_winner)
+    same_retry = Thread(target=run_duplicate, args=("same", "1"))
+    changed_retry = Thread(target=run_duplicate, args=("changed", "2"))
+    winner.start()
+    try:
+        assert reservation_ready.wait(timeout=10), "winner did not flush its create receipt"
+        same_retry.start()
+        changed_retry.start()
+        assert retry_started["same"].wait(timeout=10), "matching retry did not reach reservation"
+        assert retry_started["changed"].wait(timeout=10), "changed retry did not reach reservation"
+
+        blocked: dict[str, bool] = {"same": False, "changed": False}
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not all(blocked.values()):
+            for kind in blocked:
+                if blocked[kind]:
+                    continue
+                with factory() as observer:
+                    blocked[kind] = bool(
+                        observer.scalar(
+                            text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"),
+                            {"pid": pids[kind]},
+                        )
+                    )
+            if not all(blocked.values()):
+                time.sleep(0.01)
+        assert blocked == {"same": True, "changed": True}, (
+            "duplicate sessions did not wait on the uncommitted unique create reservation"
+        )
+    finally:
+        release_winner.set()
+        winner.join(timeout=10)
+        if same_retry.ident is not None:
+            same_retry.join(timeout=10)
+        if changed_retry.ident is not None:
+            changed_retry.join(timeout=10)
+
+    assert not winner.is_alive()
+    assert not same_retry.is_alive()
+    assert not changed_retry.is_alive()
+    assert len(outcomes["winner"]) == 1
+    assert len(outcomes["same"]) == 1
+    assert len(outcomes["changed"]) == 1
+    assert isinstance(outcomes["winner"][0], dict)
+    assert outcomes["same"][0] == outcomes["winner"][0]
+    assert isinstance(outcomes["changed"][0], LogIdempotencyConflictError)
+
+    with factory() as db:
+        receipt = db.scalar(
+            select(CreateOperationIdempotency).where(
+                CreateOperationIdempotency.user_id == user_id,
+                CreateOperationIdempotency.operation == "log.create",
+                CreateOperationIdempotency.client_request_id == request_id,
+            )
+        )
+        assert receipt is not None
+        assert receipt.resource_id == UUID(outcomes["winner"][0]["id"])
+        assert receipt.response_snapshot == outcomes["winner"][0]
+        assert receipt.completed_at is not None
+        assert db.scalar(
+            select(func.count()).select_from(DailyLog).where(DailyLog.user_id == user_id)
+        ) == 1
+        assert db.scalar(
+            select(func.count())
+            .select_from(DailyLogNutrientSnapshot)
+            .join(DailyLog, DailyLog.id == DailyLogNutrientSnapshot.daily_log_id)
+            .where(DailyLog.user_id == user_id)
+        ) == len(outcomes["winner"][0]["snapshots"])
+
+
+def test_postgres_rolled_back_create_reservation_releases_one_valid_retry(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _gh271_daily_log_target(
+        factory,
+        "GH-277 Receipt Rollback Wait",
+    )
+    request_id = uuid4()
+    payload = DailyLogCreateRequest(
+        client_request_id=request_id,
+        food_item_id=food_id,
+        logged_date=date(2026, 7, 13),
+        amount_quantity=Decimal("1"),
+        amount_unit="serving",
+        serving_definition_id=serving_id,
+    )
+    reservation_ready = Event()
+    release_winner = Event()
+    retry_started = Event()
+    retry_pid: list[int] = []
+    winner_outcome: list[BaseException] = []
+    retry_outcome: list[object] = []
+
+    def rollback_winner() -> None:
+        try:
+            with factory() as db:
+                service = LogService(db)
+                reserve = service.mutation_receipts.reserve
+
+                def hold_reservation(
+                    reserve_user_id,
+                    operation,
+                    client_request_id,
+                    fingerprint,
+                    resource_id,
+                ):
+                    receipt = reserve(
+                        reserve_user_id,
+                        operation,
+                        client_request_id,
+                        fingerprint,
+                        resource_id,
+                    )
+                    if operation == "log.create":
+                        reservation_ready.set()
+                        if not release_winner.wait(timeout=10):
+                            raise AssertionError("rollback reservation barrier was not released")
+                    return receipt
+
+                service.mutation_receipts.reserve = hold_reservation
+                service._after_snapshot_creation = lambda _log: (_ for _ in ()).throw(
+                    RuntimeError("injected winner rollback")
+                )
+                service.create_log(user_id, payload)
+        except BaseException as exc:
+            winner_outcome.append(exc)
+
+    def retry_create() -> None:
+        try:
+            with factory() as db:
+                retry_pid.append(int(db.scalar(text("SELECT pg_backend_pid()"))))
+                service = LogService(db)
+                reserve = service.mutation_receipts.reserve
+
+                def observe_reservation(
+                    reserve_user_id,
+                    operation,
+                    client_request_id,
+                    fingerprint,
+                    resource_id,
+                ):
+                    if operation == "log.create":
+                        retry_started.set()
+                    return reserve(
+                        reserve_user_id,
+                        operation,
+                        client_request_id,
+                        fingerprint,
+                        resource_id,
+                    )
+
+                service.mutation_receipts.reserve = observe_reservation
+                retry_outcome.append(_create_result_snapshot(service.create_log(user_id, payload)))
+        except BaseException as exc:
+            retry_outcome.append(exc)
+
+    first = Thread(target=rollback_winner)
+    second = Thread(target=retry_create)
+    first.start()
+    try:
+        assert reservation_ready.wait(timeout=10), "first writer did not flush its receipt"
+        second.start()
+        assert retry_started.wait(timeout=10), "retry did not reach reservation"
+        deadline = time.monotonic() + 10
+        waiting = False
+        while time.monotonic() < deadline:
+            with factory() as observer:
+                waiting = bool(
+                    observer.scalar(
+                        text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"),
+                        {"pid": retry_pid[0]},
+                    )
+                )
+            if waiting:
+                break
+            time.sleep(0.01)
+        assert waiting, "retry did not wait on the uncommitted create reservation"
+    finally:
+        release_winner.set()
+        first.join(timeout=10)
+        if second.ident is not None:
+            second.join(timeout=10)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert len(winner_outcome) == 1
+    assert isinstance(winner_outcome[0], RuntimeError)
+    assert str(winner_outcome[0]) == "injected winner rollback"
+    assert len(retry_outcome) == 1
+    assert isinstance(retry_outcome[0], dict)
+
+    with factory() as db:
+        receipt = db.scalar(
+            select(CreateOperationIdempotency).where(
+                CreateOperationIdempotency.user_id == user_id,
+                CreateOperationIdempotency.operation == "log.create",
+                CreateOperationIdempotency.client_request_id == request_id,
+            )
+        )
+        assert receipt is not None
+        assert receipt.response_snapshot == retry_outcome[0]
+        assert receipt.resource_id == UUID(retry_outcome[0]["id"])
+        assert db.scalar(
+            select(func.count()).select_from(DailyLog).where(DailyLog.user_id == user_id)
+        ) == 1
+        assert db.scalar(
+            select(func.count())
+            .select_from(DailyLogNutrientSnapshot)
+            .join(DailyLog, DailyLog.id == DailyLogNutrientSnapshot.daily_log_id)
+            .where(DailyLog.user_id == user_id)
+        ) == len(retry_outcome[0]["snapshots"])
+
+
+def test_postgres_create_receipt_log_and_complete_failures_roll_back_atomically(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _gh271_daily_log_target(
+        factory,
+        "GH-277 Receipt Atomicity",
+    )
+    logged_date = date(2026, 7, 13)
+    with factory() as db:
+        anchor = LogService(db).create_log(
+            user_id,
+            DailyLogCreateRequest(
+                food_item_id=food_id,
+                logged_date=logged_date,
+                amount_quantity=Decimal("1"),
+                amount_unit="serving",
+                serving_definition_id=serving_id,
+            ),
+        )
+        anchor_id = anchor.id
+        anchor_snapshot_count = len(anchor.snapshots)
+        LogDayCompletionService(db).mark_complete(
+            user_id,
+            DailyLogCompleteRequest(
+                client_request_id=uuid4(),
+                calendar_revision=0,
+                logged_date=logged_date,
+            ),
+        )
+
+    class FailAfterCompleteInvalidation(LogService):
+        def _after_complete_invalidation(self, _logged_dates: set[date]) -> None:
+            raise RuntimeError("injected failure after Complete invalidation")
+
+    failure_modes = ("after_snapshots", "after_receipt_completion", "after_complete_invalidation")
+    for failure_mode in failure_modes:
+        request_id = uuid4()
+        payload = DailyLogCreateRequest(
+            client_request_id=request_id,
+            calendar_revision=0,
+            food_item_id=food_id,
+            logged_date=logged_date,
+            amount_quantity=Decimal("1"),
+            amount_unit="serving",
+            serving_definition_id=serving_id,
+        )
+        with factory() as db:
+            if failure_mode == "after_complete_invalidation":
+                service = FailAfterCompleteInvalidation(db)
+            else:
+                service = LogService(db)
+            if failure_mode == "after_snapshots":
+                service._after_snapshot_creation = lambda _log: (_ for _ in ()).throw(
+                    RuntimeError("injected failure after snapshots")
+                )
+            elif failure_mode == "after_receipt_completion":
+                complete = service.mutation_receipts.complete
+
+                def fail_after_receipt_completion(receipt, response_snapshot):
+                    complete(receipt, response_snapshot)
+                    raise RuntimeError("injected failure after receipt completion")
+
+                service.mutation_receipts.complete = fail_after_receipt_completion
+
+            expected_message = {
+                "after_snapshots": "injected failure after snapshots",
+                "after_receipt_completion": "injected failure after receipt completion",
+                "after_complete_invalidation": "injected failure after Complete invalidation",
+            }[failure_mode]
+            with pytest.raises(RuntimeError, match=expected_message):
+                service.create_log(user_id, payload)
+
+        with factory() as db:
+            assert db.get(DailyLog, anchor_id) is not None
+            assert db.get(DailyLogDayCompletion, (user_id, logged_date)) is not None
+            assert db.scalar(
+                select(CreateOperationIdempotency).where(
+                    CreateOperationIdempotency.user_id == user_id,
+                    CreateOperationIdempotency.operation == "log.create",
+                    CreateOperationIdempotency.client_request_id == request_id,
+                )
+            ) is None
+            assert db.scalar(
+                select(func.count())
+                .select_from(DailyLog)
+                .where(DailyLog.user_id == user_id, DailyLog.logged_date == logged_date)
+            ) == 1
+            assert db.scalar(
+                select(func.count())
+                .select_from(DailyLogNutrientSnapshot)
+                .where(DailyLogNutrientSnapshot.daily_log_id == anchor_id)
+            ) == anchor_snapshot_count

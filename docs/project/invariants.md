@@ -136,6 +136,22 @@ Exact replay returns the committed response. Payload-changing reuse conflicts. R
 indefinitely because expiring an accepted request ID would eventually grant permission to create a
 duplicate.
 
+Request-bearing Daily Log creates retain an owner-scoped `log.create` receipt independently of the
+Daily Log row. The receipt binds the request UUID and canonical fingerprint to the original Log UUID
+and JSON-mode response, including Decimal strings and nutrient snapshot identities. The receipt,
+Log, snapshots, and any required Complete invalidation commit together. Later Log edits or deletion,
+Food or Recipe changes, and calendar revisions do not replace the accepted response; deleting the
+Log does not expire its receipt.
+
+A surviving pre-receipt Log with a stored request UUID and fingerprint still fences recreation. Its
+original response cannot be recovered from the mutable row, so an exact retry remains unresolved
+with HTTP 409 and a changed payload remains a payload conflict. Before an authorized edit or delete
+can remove that legacy identity, the service retains an incomplete `log.create` receipt in the same
+transaction; it does not invent response bytes. A pre-installation Log already deleted before this
+fence existed has no surviving request identity and is an explicit historical coverage limit, not a
+reconstruction or backfill target. An absent in-flight receipt does not establish that a concurrent
+request failed to commit, so create status remains unresolved when no durable outcome is visible.
+
 ## Why an online-first design?
 
 The heading is retained as a stable historical anchor; the active mobile architecture is now

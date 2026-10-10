@@ -6,13 +6,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import TEST_USER_ID
 from app.models.create_idempotency import CreateOperationIdempotency
-from app.models.log import DailyLog, DailyLogDayCompletion
-from app.schemas.log import DailyLogUpdateRequest
+from app.models.log import DailyLog, DailyLogDayCompletion, DailyLogNutrientSnapshot
+from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
 from app.services.log_service import LogService
 from tests.support.recipes import create_recipe as _create_recipe, publish_recipe as _publish
 from tests.support.foods import create_food, food_payload
@@ -100,6 +100,86 @@ def test_create_clears_existing_complete_in_same_date(db_session: Session, clien
 
     assert not _is_complete(db_session, SOURCE_DATE)
     assert len(LogService(db_session).list_logs(TEST_USER_ID, SOURCE_DATE)) == 2
+
+
+def test_create_replay_preserves_complete_reasserted_after_original_commit(
+    db_session: Session,
+    client: TestClient,
+) -> None:
+    food = create_food(client, "E4-03 Create Replay")
+    calendar = _calendar(client)
+    payload = {
+        "client_request_id": str(uuid4()),
+        "calendar_revision": calendar["calendar_revision"],
+        "food_item_id": food["id"],
+        "logged_date": SOURCE_DATE.isoformat(),
+        "amount_quantity": "1",
+        "amount_unit": "serving",
+        "serving_definition_id": food["serving_definitions"][0]["id"],
+    }
+    first = client.post("/api/v1/logs", json=payload)
+    assert first.status_code == 201, first.text
+    _set_complete(db_session, SOURCE_DATE)
+
+    replay = client.post("/api/v1/logs", json=payload)
+
+    assert replay.status_code == 201, replay.text
+    assert replay.json() == first.json()
+    assert _is_complete(db_session, SOURCE_DATE)
+    assert db_session.scalar(
+        select(func.count())
+        .select_from(CreateOperationIdempotency)
+        .where(
+            CreateOperationIdempotency.user_id == TEST_USER_ID,
+            CreateOperationIdempotency.operation == "log.create",
+            CreateOperationIdempotency.client_request_id == UUID(payload["client_request_id"]),
+        )
+    ) == 1
+
+
+def test_create_receipt_log_snapshots_and_complete_roll_back_together(
+    db_session: Session,
+    client: TestClient,
+) -> None:
+    food = create_food(client, "E4-03 Create Rollback")
+    anchor = _create_log(client, food)
+    _set_complete(db_session, SOURCE_DATE)
+    request_id = uuid4()
+    calendar = _calendar(client)
+    payload = DailyLogCreateRequest(
+        client_request_id=request_id,
+        calendar_revision=calendar["calendar_revision"],
+        food_item_id=UUID(food["id"]),
+        logged_date=SOURCE_DATE,
+        amount_quantity=Decimal("1"),
+        amount_unit="serving",
+        serving_definition_id=UUID(food["serving_definitions"][0]["id"]),
+    )
+
+    with pytest.raises(RuntimeError, match="injected failure"):
+        _FailAfterCompleteInvalidation(db_session).create_log(TEST_USER_ID, payload)
+
+    db_session.expire_all()
+    assert db_session.get(DailyLog, UUID(anchor["id"])) is not None
+    assert db_session.scalar(
+        select(func.count())
+        .select_from(DailyLog)
+        .where(DailyLog.user_id == TEST_USER_ID, DailyLog.client_request_id == request_id)
+    ) == 0
+    assert db_session.scalar(
+        select(func.count())
+        .select_from(DailyLogNutrientSnapshot)
+        .join(DailyLog, DailyLog.id == DailyLogNutrientSnapshot.daily_log_id)
+        .where(DailyLog.user_id == TEST_USER_ID)
+    ) == len(anchor["snapshots"])
+    assert db_session.scalar(
+        select(CreateOperationIdempotency).where(
+            CreateOperationIdempotency.user_id == TEST_USER_ID,
+            CreateOperationIdempotency.operation == "log.create",
+            CreateOperationIdempotency.client_request_id == request_id,
+        )
+    ) is None
+    assert _is_complete(db_session, SOURCE_DATE)
 
 
 def test_metadata_preserves_complete_while_move_clears_both_dates(
