@@ -82,6 +82,18 @@ also revalidate the current candidate-bound qualification, verification, review 
 authority before persisting a transition. Finalize/cancel/cleanup intents use the same
 read-modify-write contract and preserve newer fields, stops and history.
 
+Qualification also holds an issue-scoped process-held qualification ownership lock, separate
+from the checkpoint transaction lock, from operation persistence through hosted work and cleanup.
+The persisted binding is valid only for its supported local host and controller-state location.
+Reconciliation takes the same lock and fails without checkpoint or ref changes while a live
+holder owns it (`QUALIFICATION_OWNER_ACTIVE`). Missing, legacy or unknown bindings require an
+explicit controller disposition. `./scripts/task qualify-reconcile ISSUE --candidate-root PATH`
+discovers the existing workflow run and never dispatches; a no matching run leaves the operation
+unresolved with its ref evidence retained and reports non-success. A running run is left for later
+reconciliation. Finished evidence must pass the exact workflow, candidate, current-authorization
+and dedicated-App checks before terminal state or ref cleanup is applied. Reconciliation rechecks
+the latest checkpoint before cleanup and preserves `STOP_REPLAN` or superseding authority.
+
 For a previously attached capsule, retain its full nonterminal bytes, legal state/history,
 separate candidate C, full recovery R and terminal T identities. Existing guarded finalizers
 and `task_closeout.py` remain recovery tools. A terminal update has its own authorization,

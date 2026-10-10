@@ -7,6 +7,7 @@ import fcntl
 import hashlib
 import json
 import os
+import platform
 import re
 import secrets
 import subprocess
@@ -51,6 +52,9 @@ WORKFLOW_MODE_BLOCK_PATTERN = re.compile(
     re.DOTALL,
 )
 WORKFLOW_MODE_REASON_MAX_LENGTH = 500
+QUALIFICATION_OWNERSHIP_PROTOCOL = "local-process-flock-v1"
+_QUALIFICATION_OWNERSHIP_ISSUER = object()
+_ACTIVE_QUALIFICATION_OWNERSHIP: dict[object, dict[str, Any]] = {}
 
 
 class IssueAuthorizationTransport(Protocol):
@@ -453,6 +457,168 @@ def checkpoint_lock(
         try:
             yield
         finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _qualification_ownership_lock_path(
+    state_dir: Path,
+    issue_number: int,
+) -> Path:
+    resolved_state_dir = state_dir.resolve()
+    lock_key = hashlib.sha256(
+        f"{resolved_state_dir}:{issue_number}".encode("utf-8")
+    ).hexdigest()
+    return resolved_state_dir / (
+        f".nutrition-task-qualification-owner-{lock_key}.lock"
+    )
+
+
+class QualificationOwnershipLease:
+    """Process-held ownership for one issue's long qualification operation."""
+
+    def __init__(
+        self,
+        state_dir: Path,
+        issue_number: int,
+        *,
+        _lock_handle: Any = None,
+        _lock_path: Path | None = None,
+        _ownership_token: object | None = None,
+        _issuer: object | None = None,
+    ) -> None:
+        self.state_dir = state_dir.resolve()
+        self.issue_number = issue_number
+        self._lock_handle = (
+            _lock_handle
+            if _issuer is _QUALIFICATION_OWNERSHIP_ISSUER
+            else None
+        )
+        self._lock_path = (
+            _lock_path.resolve()
+            if _issuer is _QUALIFICATION_OWNERSHIP_ISSUER and _lock_path is not None
+            else None
+        )
+        self._ownership_token = (
+            _ownership_token
+            if _issuer is _QUALIFICATION_OWNERSHIP_ISSUER
+            else None
+        )
+        self._owner_pid = os.getpid()
+        self.active = False
+        self.binding: dict[str, Any] = {}
+        if _issuer is _QUALIFICATION_OWNERSHIP_ISSUER:
+            host = platform.node()
+            if not host:
+                raise TaskControllerError(
+                    "QUALIFICATION_OWNERSHIP_DOMAIN_UNESTABLISHED: local host identity is unavailable"
+                )
+            self.binding = {
+                "protocol": QUALIFICATION_OWNERSHIP_PROTOCOL,
+                "domain_sha256": hashlib.sha256(
+                    f"{host}:{self.state_dir}:{issue_number}".encode("utf-8")
+                ).hexdigest(),
+            }
+
+    def require_active(self, state_dir: Path, issue_number: int) -> None:
+        token = self._ownership_token
+        record = _ACTIVE_QUALIFICATION_OWNERSHIP.get(token)
+        try:
+            expected_lock_path = _qualification_ownership_lock_path(
+                self.state_dir,
+                self.issue_number,
+            )
+            lock_fd = self._lock_handle.fileno()
+            lock_stat = os.fstat(lock_fd)
+            lock_identity = (lock_stat.st_dev, lock_stat.st_ino)
+            actual_lock_path = Path(self._lock_handle.name).resolve()
+            resolved_state_dir = state_dir.resolve()
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+            record = None
+            expected_lock_path = None
+            lock_fd = -1
+            lock_identity = None
+            actual_lock_path = None
+            resolved_state_dir = None
+        if (
+            not self.active
+            or self._owner_pid != os.getpid()
+            or self.state_dir != resolved_state_dir
+            or self.issue_number != issue_number
+            or not isinstance(record, dict)
+            or record.get("lease_id") != id(self)
+            or record.get("owner_pid") != self._owner_pid
+            or record.get("lock_handle") is not self._lock_handle
+            or record.get("lock_fd") != lock_fd
+            or record.get("lock_identity") != lock_identity
+            or self._lock_path != expected_lock_path
+            or actual_lock_path != expected_lock_path
+            or record.get("lock_path") != expected_lock_path
+            or record.get("state_dir") != self.state_dir
+            or record.get("issue_number") != self.issue_number
+            or record.get("binding") != self.binding
+        ):
+            raise TaskControllerError("QUALIFICATION_OWNERSHIP_REQUIRED")
+
+
+@contextlib.contextmanager
+def qualification_ownership_lock(
+    state_dir: Path,
+    issue_number: int,
+):
+    """Hold the supported local-host issue lock across qualification side effects."""
+    if type(issue_number) is not int or issue_number < 1:
+        raise TaskControllerError("CHECKPOINT_ISSUE_NUMBER_INVALID")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    resolved_state_dir = state_dir.resolve()
+    lock_path = _qualification_ownership_lock_path(resolved_state_dir, issue_number)
+
+    try:
+        lock = lock_path.open("a+", encoding="utf-8")
+    except OSError as exc:
+        raise TaskControllerError(
+            "QUALIFICATION_OWNERSHIP_DOMAIN_UNESTABLISHED: local lock file is unavailable"
+        ) from exc
+
+    with lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise TaskControllerError(
+                "QUALIFICATION_OWNER_ACTIVE: another controller still holds the issue-scoped qualification lock; retry after it exits"
+            ) from exc
+        except OSError as exc:
+            raise TaskControllerError(
+                "QUALIFICATION_OWNERSHIP_DOMAIN_UNESTABLISHED: local process locking is unavailable"
+            ) from exc
+
+        token = object()
+        lock_stat = os.fstat(lock.fileno())
+        lease = QualificationOwnershipLease(
+            resolved_state_dir,
+            issue_number,
+            _lock_handle=lock,
+            _lock_path=lock_path,
+            _ownership_token=token,
+            _issuer=_QUALIFICATION_OWNERSHIP_ISSUER,
+        )
+        _ACTIVE_QUALIFICATION_OWNERSHIP[token] = {
+            "lease_id": id(lease),
+            "owner_pid": os.getpid(),
+            "lock_handle": lock,
+            "lock_fd": lock.fileno(),
+            "lock_identity": (lock_stat.st_dev, lock_stat.st_ino),
+            "lock_path": lock_path,
+            "state_dir": resolved_state_dir,
+            "issue_number": issue_number,
+            "binding": dict(lease.binding),
+        }
+        lease.active = True
+        try:
+            yield lease
+        finally:
+            lease.active = False
+            _ACTIVE_QUALIFICATION_OWNERSHIP.pop(token, None)
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
@@ -1084,6 +1250,9 @@ class CandidateRefTransport(Protocol):
     def delete_candidate_ref(
         self,
         ref_name: str,
+        expected_sha: str | None = None,
+        *,
+        before_delete: Callable[[], None] | None = None,
     ) -> None:
         ...
 
@@ -1424,7 +1593,31 @@ class GitCandidateRefTransport:
     def delete_candidate_ref(
         self,
         ref_name: str,
+        expected_sha: str | None = None,
+        *,
+        before_delete: Callable[[], None] | None = None,
     ) -> None:
+        remote_ref = f"refs/heads/{ref_name}"
+        observed = git(
+            self.repo,
+            "ls-remote",
+            "--heads",
+            "origin",
+            remote_ref,
+        )
+        if not observed:
+            if before_delete is not None:
+                before_delete()
+            return
+
+        observed_sha = observed.split(None, 1)[0]
+        if expected_sha is not None and observed_sha != expected_sha:
+            raise TaskControllerError("CANDIDATE_REF_SHA_MISMATCH")
+
+        if before_delete is not None:
+            before_delete()
+
+        lease_sha = expected_sha or observed_sha
         completed = run(
             [
                 "git",
@@ -1432,8 +1625,8 @@ class GitCandidateRefTransport:
                 str(self.repo),
                 "push",
                 "origin",
-                "--delete",
-                ref_name,
+                f"--force-with-lease={remote_ref}:{lease_sha}",
+                f":{remote_ref}",
             ],
             cwd=self.repo,
         )
@@ -1456,7 +1649,7 @@ class GitCandidateRefTransport:
             "ls-remote",
             "--heads",
             "origin",
-            f"refs/heads/{ref_name}",
+            remote_ref,
         )
 
         if residual:
@@ -1983,10 +2176,32 @@ def _qualification_operation_matches(
         "workflow",
         "expected_app_id",
         "authorization",
+        "resolved_authorization",
+        "ownership_binding",
     ):
         if observed.get(field) != operation.get(field):
             return False
     return True
+
+
+def _require_qualification_ownership_binding(
+    operation: dict[str, Any],
+    ownership: QualificationOwnershipLease,
+) -> None:
+    binding = operation.get("ownership_binding")
+    if (
+        not isinstance(binding, dict)
+        or binding.get("protocol") != QUALIFICATION_OWNERSHIP_PROTOCOL
+        or not isinstance(binding.get("domain_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", binding.get("domain_sha256", ""))
+    ):
+        raise TaskControllerError(
+            "QUALIFICATION_OWNERSHIP_PROTOCOL_UNKNOWN: operation has no supported process-lock binding; controller disposition is required"
+        )
+    if binding != ownership.binding:
+        raise TaskControllerError(
+            "QUALIFICATION_OWNERSHIP_DOMAIN_UNESTABLISHED: operation belongs to a different local host or state location"
+        )
 
 
 def _checkpoint_authorization_identity(
@@ -2014,9 +2229,12 @@ def begin_qualification_operation(
     issue_number: int,
     operation: dict[str, Any],
     *,
+    ownership: QualificationOwnershipLease,
     expected_rework_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Persist a dispatch identity before any long qualification work starts."""
+    ownership.require_active(state_dir, issue_number)
+
     def mutate(current: dict[str, Any]) -> dict[str, Any]:
         if current.get("phase") != "AUTHORIZED":
             raise TaskControllerError("QUALIFICATION_REQUIRES_AUTHORIZED_STATE")
@@ -2045,6 +2263,7 @@ def begin_qualification_operation(
         updated = json.loads(json.dumps(current))
         updated["qualification_operation"] = {
             **operation,
+            "ownership_binding": dict(ownership.binding),
             "status": "DISPATCH_PENDING",
             "candidate_ref_published": False,
             "terminal_result": None,
@@ -2052,19 +2271,29 @@ def begin_qualification_operation(
         }
         return updated
 
-    return checkpoint_transaction(state_dir, issue_number, mutate)
+    updated = checkpoint_transaction(state_dir, issue_number, mutate)
+    operation["ownership_binding"] = dict(ownership.binding)
+    return updated
 
 
 def mark_qualification_ref_published(
     state_dir: Path,
     issue_number: int,
     operation: dict[str, Any],
+    *,
+    ownership: QualificationOwnershipLease,
 ) -> dict[str, Any]:
+    ownership.require_active(state_dir, issue_number)
+
     def mutate(current: dict[str, Any]) -> dict[str, Any]:
         if current.get("phase") == "STOP_REPLAN":
             raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+        if current.get("phase") != "AUTHORIZED":
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
         if not _qualification_operation_matches(current, operation):
             raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        if _checkpoint_authorization_identity(current) != operation.get("authorization"):
+            raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
         updated = json.loads(json.dumps(current))
         updated["qualification_operation"]["status"] = "RUNNING"
         updated["qualification_operation"]["candidate_ref_published"] = True
@@ -2078,11 +2307,25 @@ def record_qualification_operation_failure(
     issue_number: int,
     operation: dict[str, Any],
     error: str,
+    *,
+    ownership: QualificationOwnershipLease,
 ) -> dict[str, Any]:
+    ownership.require_active(state_dir, issue_number)
+
     def mutate(current: dict[str, Any]) -> dict[str, Any]:
         if current.get("phase") == "STOP_REPLAN":
             raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+        if current.get("phase") != "AUTHORIZED":
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
         if not _qualification_operation_matches(current, operation):
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        if _checkpoint_authorization_identity(current) != operation.get("authorization"):
+            raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+        if current["qualification_operation"].get("status") not in {
+            "DISPATCH_PENDING",
+            "RUNNING",
+            "UNKNOWN",
+        }:
             raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
         updated = json.loads(json.dumps(current))
         updated["qualification_operation"].update({
@@ -2100,9 +2343,66 @@ def apply_qualification_terminal_result(
     operation: dict[str, Any],
     result_document: dict[str, Any],
     transport: QualificationTransport,
+    *,
+    ownership: QualificationOwnershipLease,
     candidate_repo: Path | None = None,
 ) -> dict[str, Any]:
-    """Apply a terminal qualification result only after serialized live reauth."""
+    """Fetch external authority first, then apply against the latest checkpoint."""
+    ownership.require_active(state_dir, issue_number)
+    with checkpoint_lock(state_dir, issue_number):
+        snapshot = load_state(state_dir, issue_number)
+
+    if snapshot.get("phase") == "STOP_REPLAN":
+        raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+    if snapshot.get("phase") != "AUTHORIZED":
+        raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+    if not _qualification_operation_matches(snapshot, operation):
+        raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+    _require_qualification_ownership_binding(operation, ownership)
+    if _checkpoint_authorization_identity(snapshot) != operation.get("authorization"):
+        raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+    if snapshot["qualification_operation"].get("status") not in {
+        "RUNNING",
+        "DISPATCH_PENDING",
+        "UNKNOWN",
+    }:
+        raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+
+    if candidate_repo is not None:
+        observed_candidate = git(candidate_repo, "rev-parse", "HEAD")
+        if observed_candidate != operation.get("candidate_sha"):
+            raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
+        if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
+            raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+
+    authorization = resolve_current_authorization(snapshot, transport)
+    if authorization.base_sha != operation.get("controller_main_sha"):
+        raise TaskControllerError("QUALIFICATION_BASE_CHANGED")
+    if authorization.to_dict() != operation.get("resolved_authorization"):
+        raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+
+    qualification = result_document.get("qualification")
+    if (
+        not isinstance(qualification, dict)
+        or qualification.get("candidate_sha") != operation.get("candidate_sha")
+        or qualification.get("controller_main_sha") != operation.get("controller_main_sha")
+        or qualification.get("candidate_ref") != operation.get("candidate_ref")
+        or qualification.get("dispatch_nonce") != operation.get("dispatch_nonce")
+        or qualification.get("workflow") != operation.get("workflow")
+    ):
+        raise TaskControllerError("QUALIFICATION_OPERATION_CANDIDATE_CHANGED")
+    expected_app_id = operation.get("expected_app_id")
+    if type(expected_app_id) is not int or expected_app_id < 1 or expected_app_id == 15368:
+        raise TaskControllerError("QUALIFICATION_APP_ID_INVALID")
+    if qualification.get("result") == "PASS":
+        if (
+            type(qualification.get("check_id")) is not int
+            or qualification.get("check_app_id") != expected_app_id
+        ):
+            raise TaskControllerError("QUALIFICATION_APP_ID_MISMATCH")
+    elif qualification.get("check_id") is not None and qualification.get("check_app_id") != expected_app_id:
+        raise TaskControllerError("QUALIFICATION_APP_ID_MISMATCH")
+
     def mutate(current: dict[str, Any]) -> dict[str, Any]:
         if current.get("phase") == "STOP_REPLAN":
             raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
@@ -2110,6 +2410,8 @@ def apply_qualification_terminal_result(
             raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
         if not _qualification_operation_matches(current, operation):
             raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        if _checkpoint_authorization_identity(current) != operation.get("authorization"):
+            raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
         current_operation = current["qualification_operation"]
         if current_operation.get("status") not in {
             "RUNNING",
@@ -2117,20 +2419,6 @@ def apply_qualification_terminal_result(
             "UNKNOWN",
         }:
             raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
-        if candidate_repo is not None:
-            observed_candidate = git(candidate_repo, "rev-parse", "HEAD")
-            if observed_candidate != operation.get("candidate_sha"):
-                raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
-            if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
-                raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
-        authorization = resolve_current_authorization(current, transport)
-        if authorization.base_sha != operation.get("controller_main_sha"):
-            raise TaskControllerError("QUALIFICATION_BASE_CHANGED")
-        if authorization.to_dict() != operation.get("resolved_authorization"):
-            raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
-        qualification = result_document.get("qualification")
-        if not isinstance(qualification, dict) or qualification.get("candidate_sha") != operation.get("candidate_sha"):
-            raise TaskControllerError("QUALIFICATION_OPERATION_CANDIDATE_CHANGED")
         updated = json.loads(json.dumps(current))
         updated["qualification"] = qualification
         updated["phase"] = result_document["phase"]
@@ -2149,15 +2437,37 @@ def record_qualification_cleanup(
     issue_number: int,
     operation: dict[str, Any],
     *,
+    ownership: QualificationOwnershipLease,
     removed: bool,
     error: str | None = None,
 ) -> dict[str, Any]:
+    ownership.require_active(state_dir, issue_number)
+
     def mutate(current: dict[str, Any]) -> dict[str, Any]:
+        if current.get("phase") == "STOP_REPLAN":
+            raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+        if current.get("phase") not in {"QUALIFIED", "QUALIFICATION_FAILED"}:
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
         if not _qualification_operation_matches(current, operation):
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        if _checkpoint_authorization_identity(current) != operation.get("authorization"):
+            raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+        current_operation = current["qualification_operation"]
+        if current_operation.get("status") not in {"TERMINAL", "CLEANUP_UNKNOWN"}:
             raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
         qualification = current.get("qualification")
         if not isinstance(qualification, dict):
             raise TaskControllerError("QUALIFICATION_RESULT_MISSING")
+        if (
+            qualification.get("candidate_sha") != operation.get("candidate_sha")
+            or qualification.get("candidate_ref") != operation.get("candidate_ref")
+            or qualification.get("dispatch_nonce") != operation.get("dispatch_nonce")
+            or qualification.get("controller_main_sha")
+            != operation.get("controller_main_sha")
+            or qualification.get("workflow") != operation.get("workflow")
+            or qualification.get("result") != current_operation.get("terminal_result")
+        ):
+            raise TaskControllerError("QUALIFICATION_OPERATION_CANDIDATE_CHANGED")
         updated = json.loads(json.dumps(current))
         updated["qualification"]["candidate_ref_removed"] = removed
         updated["qualification_operation"].update({
@@ -2167,6 +2477,194 @@ def record_qualification_cleanup(
         return updated
 
     return checkpoint_transaction(state_dir, issue_number, mutate)
+
+
+def _qualification_checkpoint_snapshot(
+    state_dir: Path,
+    issue_number: int,
+) -> dict[str, Any]:
+    with checkpoint_lock(state_dir, issue_number):
+        return load_state(state_dir, issue_number)
+
+
+def _validate_qualification_cleanup_state(
+    state: dict[str, Any],
+    operation: dict[str, Any],
+    *,
+    ownership: QualificationOwnershipLease,
+    expected_app_id: int,
+) -> None:
+    if (
+        type(expected_app_id) is not int
+        or expected_app_id < 1
+        or expected_app_id == 15368
+    ):
+        raise TaskControllerError("DEDICATED_QUALIFICATION_APP_REQUIRED")
+    if state.get("phase") == "STOP_REPLAN":
+        raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+    if not _qualification_operation_matches(state, operation):
+        raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+    _require_qualification_ownership_binding(operation, ownership)
+    if _checkpoint_authorization_identity(state) != operation.get("authorization"):
+        raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+    current_operation = state.get("qualification_operation")
+    if not isinstance(current_operation, dict) or current_operation.get("status") not in {
+        "TERMINAL",
+        "CLEANUP_UNKNOWN",
+    }:
+        raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+    if state.get("phase") not in {"QUALIFIED", "QUALIFICATION_FAILED"}:
+        raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+    qualification = state.get("qualification")
+    if (
+        not isinstance(qualification, dict)
+        or qualification.get("candidate_sha") != operation.get("candidate_sha")
+        or qualification.get("candidate_ref") != operation.get("candidate_ref")
+        or qualification.get("dispatch_nonce") != operation.get("dispatch_nonce")
+        or qualification.get("controller_main_sha") != operation.get("controller_main_sha")
+        or qualification.get("workflow") != operation.get("workflow")
+        or qualification.get("result") != current_operation.get("terminal_result")
+    ):
+        raise TaskControllerError("QUALIFICATION_OPERATION_CANDIDATE_CHANGED")
+    if operation.get("expected_app_id") != expected_app_id:
+        raise TaskControllerError("QUALIFICATION_APP_ID_MISMATCH")
+    if (
+        qualification.get("check_id") is not None
+        and qualification.get("check_app_id") != expected_app_id
+    ):
+        raise TaskControllerError("QUALIFICATION_APP_ID_MISMATCH")
+    if qualification.get("result") == "PASS":
+        if (
+            type(qualification.get("check_id")) is not int
+            or qualification.get("check_id") < 1
+            or qualification.get("check_app_id") != expected_app_id
+        ):
+            raise TaskControllerError("QUALIFICATION_APP_ID_MISMATCH")
+
+
+def cleanup_qualification_candidate_ref(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+    *,
+    ownership: QualificationOwnershipLease,
+    transport: QualificationTransport,
+    ref_transport: CandidateRefTransport,
+    expected_app_id: int,
+    candidate_repo: Path | None = None,
+) -> dict[str, Any]:
+    """Revalidate terminal ownership and authority before deleting the exact ref."""
+    ownership.require_active(state_dir, issue_number)
+    snapshot = _qualification_checkpoint_snapshot(state_dir, issue_number)
+    _validate_qualification_cleanup_state(
+        snapshot,
+        operation,
+        ownership=ownership,
+        expected_app_id=expected_app_id,
+    )
+    if candidate_repo is not None:
+        if git(candidate_repo, "rev-parse", "HEAD") != operation.get("candidate_sha"):
+            raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
+        if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
+            raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+
+    authorization = resolve_current_authorization(snapshot, transport)
+    if authorization.base_sha != operation.get("controller_main_sha"):
+        raise TaskControllerError("QUALIFICATION_BASE_CHANGED")
+    if authorization.to_dict() != operation.get("resolved_authorization"):
+        raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+
+    latest = _qualification_checkpoint_snapshot(state_dir, issue_number)
+    _validate_qualification_cleanup_state(
+        latest,
+        operation,
+        ownership=ownership,
+        expected_app_id=expected_app_id,
+    )
+    if _checkpoint_authorization_identity(latest) != _checkpoint_authorization_identity(snapshot):
+        raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+    if candidate_repo is not None:
+        if git(candidate_repo, "rev-parse", "HEAD") != operation.get("candidate_sha"):
+            raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
+        if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
+            raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+
+    boundary_validation_started = False
+    boundary_validation_complete = False
+
+    def revalidate_cleanup_boundary() -> None:
+        nonlocal boundary_validation_started, boundary_validation_complete
+        boundary_validation_started = True
+        ownership.require_active(state_dir, issue_number)
+        boundary_snapshot = _qualification_checkpoint_snapshot(
+            state_dir,
+            issue_number,
+        )
+        _validate_qualification_cleanup_state(
+            boundary_snapshot,
+            operation,
+            ownership=ownership,
+            expected_app_id=expected_app_id,
+        )
+        if candidate_repo is not None:
+            if git(candidate_repo, "rev-parse", "HEAD") != operation.get("candidate_sha"):
+                raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
+            if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
+                raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+
+        boundary_authorization = resolve_current_authorization(
+            boundary_snapshot,
+            transport,
+        )
+        if boundary_authorization.base_sha != operation.get("controller_main_sha"):
+            raise TaskControllerError("QUALIFICATION_BASE_CHANGED")
+        if boundary_authorization.to_dict() != operation.get("resolved_authorization"):
+            raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+
+        latest = _qualification_checkpoint_snapshot(state_dir, issue_number)
+        _validate_qualification_cleanup_state(
+            latest,
+            operation,
+            ownership=ownership,
+            expected_app_id=expected_app_id,
+        )
+        if (
+            _checkpoint_authorization_identity(latest)
+            != _checkpoint_authorization_identity(boundary_snapshot)
+        ):
+            raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+        if candidate_repo is not None:
+            if git(candidate_repo, "rev-parse", "HEAD") != operation.get("candidate_sha"):
+                raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
+            if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
+                raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+        boundary_validation_complete = True
+
+    try:
+        ref_transport.delete_candidate_ref(
+            operation["candidate_ref"],
+            operation["candidate_sha"],
+            before_delete=revalidate_cleanup_boundary,
+        )
+    except Exception as exc:
+        if boundary_validation_started and not boundary_validation_complete:
+            raise
+        record_qualification_cleanup(
+            state_dir,
+            issue_number,
+            operation,
+            ownership=ownership,
+            removed=False,
+            error=str(exc),
+        )
+        raise
+    return record_qualification_cleanup(
+        state_dir,
+        issue_number,
+        operation,
+        ownership=ownership,
+        removed=True,
+    )
 
 
 def _qualification_terminal_result(
@@ -2228,162 +2726,171 @@ def reconcile_qualification_operation(
     candidate_repo: Path | None = None,
 ) -> dict[str, Any]:
     """Reconcile one persisted qualification attempt without dispatching again."""
-    with checkpoint_lock(state_dir, issue_number):
-        state = load_state(state_dir, issue_number)
+    with qualification_ownership_lock(state_dir, issue_number) as ownership:
+        state = _qualification_checkpoint_snapshot(state_dir, issue_number)
 
-    operation = state.get("qualification_operation")
-    if not isinstance(operation, dict):
-        raise TaskControllerError("QUALIFICATION_OPERATION_MISSING")
-    if state.get("phase") == "STOP_REPLAN":
-        raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+        operation = state.get("qualification_operation")
+        if not isinstance(operation, dict):
+            raise TaskControllerError("QUALIFICATION_OPERATION_MISSING")
+        if state.get("phase") == "STOP_REPLAN":
+            raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
 
-    status = operation.get("status")
-    if status == "COMPLETE":
-        return state
-    if status not in {"UNKNOWN", "TERMINAL", "CLEANUP_UNKNOWN"}:
-        raise TaskControllerError("QUALIFICATION_OPERATION_NOT_RECONCILABLE")
-    if candidate_repo is not None:
-        if git(candidate_repo, "rev-parse", "HEAD") != operation.get("candidate_sha"):
-            raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
-        if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
-            raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+        status = operation.get("status")
+        if status == "COMPLETE":
+            return state
+        if status not in {
+            "DISPATCH_PENDING",
+            "RUNNING",
+            "UNKNOWN",
+            "TERMINAL",
+            "CLEANUP_UNKNOWN",
+        }:
+            raise TaskControllerError("QUALIFICATION_OPERATION_NOT_RECONCILABLE")
+        _require_qualification_ownership_binding(operation, ownership)
 
-    if status in {"TERMINAL", "CLEANUP_UNKNOWN"}:
-        try:
-            ref_transport.delete_candidate_ref(operation["candidate_ref"])
-        except Exception as exc:
-            record_qualification_cleanup(
+        if candidate_repo is not None:
+            if git(candidate_repo, "rev-parse", "HEAD") != operation.get("candidate_sha"):
+                raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
+            if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
+                raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+
+        if status in {"TERMINAL", "CLEANUP_UNKNOWN"}:
+            return cleanup_qualification_candidate_ref(
                 state_dir,
                 issue_number,
                 operation,
-                removed=False,
-                error=str(exc),
+                ownership=ownership,
+                transport=transport,
+                ref_transport=ref_transport,
+                expected_app_id=expected_app_id,
+                candidate_repo=candidate_repo,
             )
-            raise
-        return record_qualification_cleanup(
-            state_dir,
-            issue_number,
-            operation,
-            removed=True,
-        )
 
-    workflow = operation.get("workflow")
-    dispatch_nonce = operation.get("dispatch_nonce")
-    candidate_sha = operation.get("candidate_sha")
-    controller_main_sha = operation.get("controller_main_sha")
-    if not all(
-        isinstance(value, str) and value
-        for value in (workflow, dispatch_nonce, candidate_sha, controller_main_sha)
-    ):
-        raise TaskControllerError("QUALIFICATION_OPERATION_INVALID")
+        workflow = operation.get("workflow")
+        dispatch_nonce = operation.get("dispatch_nonce")
+        candidate_sha = operation.get("candidate_sha")
+        controller_main_sha = operation.get("controller_main_sha")
+        if (
+            not all(
+                isinstance(value, str) and value
+                for value in (workflow, dispatch_nonce, candidate_sha, controller_main_sha)
+            )
+            or operation.get("operation_id") != dispatch_nonce
+            or not isinstance(operation.get("candidate_ref"), str)
+        ):
+            raise TaskControllerError("QUALIFICATION_OPERATION_INVALID")
+        if (
+            type(expected_app_id) is not int
+            or expected_app_id < 1
+            or expected_app_id == 15368
+        ):
+            raise TaskControllerError("DEDICATED_QUALIFICATION_APP_REQUIRED")
+        if operation.get("expected_app_id") != expected_app_id:
+            raise TaskControllerError("QUALIFICATION_APP_ID_MISMATCH")
 
-    matches = [
-        item
-        for item in transport.list_workflow_runs(state["repository"], workflow)
-        if item.get("display_title")
-        == _workflow_title(state, dispatch_nonce, candidate_sha)
-    ]
-    if len(matches) > 1:
-        raise TaskControllerError("WORKFLOW_RUN_AMBIGUOUS")
-    if not matches:
-        return state
+        # Discovery is the only recovery path for abandoned pending/running work.
+        # It deliberately has no dispatch call, including when no run is found.
+        matches = [
+            item
+            for item in transport.list_workflow_runs(state["repository"], workflow)
+            if item.get("display_title")
+            == _workflow_title(state, dispatch_nonce, candidate_sha)
+        ]
+        if len(matches) > 1:
+            raise TaskControllerError("WORKFLOW_RUN_AMBIGUOUS")
+        if not matches:
+            return state
 
-    run_id = matches[0].get("id")
-    if type(run_id) is not int:
-        raise TaskControllerError("WORKFLOW_RUN_ID_INVALID")
-    run_document = transport.get_workflow_run(state["repository"], run_id)
-    _validate_workflow_identity(
-        run_document,
-        expected_title=_workflow_title(state, dispatch_nonce, candidate_sha),
-        controller_main_sha=controller_main_sha,
-    )
-    if run_document.get("status") != "completed":
-        return state
-
-    resolved_app_id = operation.get("expected_app_id", expected_app_id)
-    if type(resolved_app_id) is not int:
-        raise TaskControllerError("QUALIFICATION_APP_ID_INVALID")
-    authorization = operation.get("resolved_authorization")
-    if not isinstance(authorization, dict):
-        raise TaskControllerError("QUALIFICATION_OPERATION_AUTHORITY_INVALID")
-    expected_external_id = (
-        "nutrition-task:"
-        f"{state['issue_number']}:"
-        f"{authorization.get('identity_sha256')}:"
-        f"{candidate_sha}"
-    )
-    check = _wait_for_authoritative_check(
-        transport,
-        repository=state["repository"],
-        candidate_sha=candidate_sha,
-        expected_app_id=resolved_app_id,
-        expected_external_id=expected_external_id,
-        poll_attempts=1,
-        sleep_seconds=0,
-        sleep_fn=lambda _: None,
-    )
-    try:
-        terminal_result = _qualification_terminal_result(
-            operation,
+        run_id = matches[0].get("id")
+        if type(run_id) is not int:
+            raise TaskControllerError("WORKFLOW_RUN_ID_INVALID")
+        run_document = transport.get_workflow_run(state["repository"], run_id)
+        _validate_workflow_identity(
             run_document,
-            check,
-            resolved_app_id,
+            expected_title=_workflow_title(state, dispatch_nonce, candidate_sha),
+            controller_main_sha=controller_main_sha,
         )
-    except Exception as exc:
+        if run_document.get("status") != "completed":
+            return state
+
+        authorization = operation.get("resolved_authorization")
+        if not isinstance(authorization, dict):
+            raise TaskControllerError("QUALIFICATION_OPERATION_AUTHORITY_INVALID")
+        expected_external_id = (
+            "nutrition-task:"
+            f"{state['issue_number']}:"
+            f"{authorization.get('identity_sha256')}:"
+            f"{candidate_sha}"
+        )
+        check = _wait_for_authoritative_check(
+            transport,
+            repository=state["repository"],
+            candidate_sha=candidate_sha,
+            expected_app_id=expected_app_id,
+            expected_external_id=expected_external_id,
+            poll_attempts=1,
+            sleep_seconds=0,
+            sleep_fn=lambda _: None,
+        )
         try:
-            record_qualification_operation_failure(
+            terminal_result = _qualification_terminal_result(
+                operation,
+                run_document,
+                check,
+                expected_app_id,
+            )
+        except Exception as exc:
+            try:
+                record_qualification_operation_failure(
+                    state_dir,
+                    issue_number,
+                    operation,
+                    str(exc),
+                    ownership=ownership,
+                )
+            except TaskControllerError:
+                pass
+            raise
+
+        try:
+            apply_qualification_terminal_result(
                 state_dir,
                 issue_number,
                 operation,
-                str(exc),
+                terminal_result,
+                transport,
+                ownership=ownership,
+                candidate_repo=candidate_repo,
             )
-        except TaskControllerError:
-            pass
-        raise
+        except Exception as exc:
+            try:
+                record_qualification_operation_failure(
+                    state_dir,
+                    issue_number,
+                    operation,
+                    str(exc),
+                    ownership=ownership,
+                )
+            except TaskControllerError:
+                pass
+            raise
 
-    try:
-        apply_qualification_terminal_result(
+        return cleanup_qualification_candidate_ref(
             state_dir,
             issue_number,
             operation,
-            terminal_result,
-            transport,
+            ownership=ownership,
+            transport=transport,
+            ref_transport=ref_transport,
+            expected_app_id=expected_app_id,
             candidate_repo=candidate_repo,
         )
-    except Exception as exc:
-        try:
-            record_qualification_operation_failure(
-                state_dir,
-                issue_number,
-                operation,
-                str(exc),
-            )
-        except TaskControllerError:
-            pass
-        raise
-
-    try:
-        ref_transport.delete_candidate_ref(operation["candidate_ref"])
-    except Exception as exc:
-        record_qualification_cleanup(
-            state_dir,
-            issue_number,
-            operation,
-            removed=False,
-            error=str(exc),
-        )
-        raise
-    return record_qualification_cleanup(
-        state_dir,
-        issue_number,
-        operation,
-        removed=True,
-    )
 
 
 def qualify_task(
     state: dict[str, Any],
     *,
+    ownership: QualificationOwnershipLease,
     candidate_repo: Path,
     controller_main_sha: str,
     expected_app_id: int,
@@ -2397,9 +2904,17 @@ def qualify_task(
     operation_writer: Callable[[dict[str, Any]], None] | None = None,
     ref_published_writer: Callable[[dict[str, Any]], None] | None = None,
     terminal_writer: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
-    cleanup_writer: Callable[[dict[str, Any], bool, str | None], None] | None = None,
+    cleanup_ref_writer: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     failure_writer: Callable[[dict[str, Any], str], None] | None = None,
 ) -> dict[str, Any]:
+    ownership.require_active(ownership.state_dir, state.get("issue_number"))
+    if (
+        operation_writer is None
+        or ref_published_writer is None
+        or terminal_writer is None
+        or cleanup_ref_writer is None
+    ):
+        raise TaskControllerError("QUALIFICATION_OPERATION_WRITERS_REQUIRED")
     if state.get("phase") != "AUTHORIZED":
         raise TaskControllerError(
             "QUALIFICATION_REQUIRES_AUTHORIZED_STATE"
@@ -2582,8 +3097,7 @@ def qualify_task(
         "resolved_authorization": authorization.to_dict(),
     }
 
-    if operation_writer is not None:
-        operation_writer(operation)
+    operation_writer(operation)
 
     published = False
     updated: dict[str, Any] | None = None
@@ -2596,8 +3110,7 @@ def qualify_task(
 
         published = True
 
-        if ref_published_writer is not None:
-            ref_published_writer(operation)
+        ref_published_writer(operation)
 
         dispatch_response = (
             transport.dispatch_workflow(
@@ -2647,37 +3160,20 @@ def qualify_task(
             expected_app_id,
         )
 
-        if terminal_writer is not None:
-            updated = terminal_writer(terminal_result, operation)
-        else:
-            updated = json.loads(json.dumps(state))
-            updated["qualification"] = terminal_result["qualification"]
-            updated["phase"] = terminal_result["phase"]
+        updated = terminal_writer(terminal_result, operation)
 
     except Exception as exc:
         if failure_writer is not None:
             failure_writer(operation, str(exc))
         raise
 
-    finally:
-        if published:
-            try:
-                ref_transport.delete_candidate_ref(ref_name)
-            except Exception as exc:
-                if cleanup_writer is not None:
-                    cleanup_writer(operation, False, str(exc))
-                raise
-            else:
-                if cleanup_writer is not None:
-                    cleanup_writer(operation, True, None)
-
     if updated is None:
         raise TaskControllerError(
             "QUALIFICATION_RESULT_MISSING"
         )
 
-    if cleanup_writer is None:
-        updated["qualification"]["candidate_ref_removed"] = True
+    if published:
+        updated = cleanup_ref_writer(operation)
 
     return updated
 
@@ -4015,91 +4511,84 @@ def command_qualify(
         configured_qualification_app_id()
     )
 
-    def begin_operation(operation: dict[str, Any]) -> None:
-        begin_qualification_operation(
-            args.state_dir,
-            args.issue_number,
-            operation,
-            expected_rework_state={
-                "rework": json.loads(json.dumps(state.get("rework"))),
-                "rework_history": json.loads(
-                    json.dumps(state.get("rework_history", []))
-                ),
-            },
-        )
+    transport = GhQualificationTransport()
+    ref_transport = GitCandidateRefTransport(candidate_repo)
+    with qualification_ownership_lock(args.state_dir, args.issue_number) as ownership:
+        def begin_operation(operation: dict[str, Any]) -> None:
+            begin_qualification_operation(
+                args.state_dir,
+                args.issue_number,
+                operation,
+                ownership=ownership,
+                expected_rework_state={
+                    "rework": json.loads(json.dumps(state.get("rework"))),
+                    "rework_history": json.loads(
+                        json.dumps(state.get("rework_history", []))
+                    ),
+                },
+            )
 
-    def mark_ref_published(operation: dict[str, Any]) -> None:
-        mark_qualification_ref_published(
-            args.state_dir,
-            args.issue_number,
-            operation,
-        )
+        def mark_ref_published(operation: dict[str, Any]) -> None:
+            mark_qualification_ref_published(
+                args.state_dir,
+                args.issue_number,
+                operation,
+                ownership=ownership,
+            )
 
-    def apply_terminal(
-        result_document: dict[str, Any],
-        operation: dict[str, Any],
-    ) -> dict[str, Any]:
-        return apply_qualification_terminal_result(
-            args.state_dir,
-            args.issue_number,
-            operation,
-            result_document,
-            GhQualificationTransport(),
+        def apply_terminal(
+            result_document: dict[str, Any],
+            operation: dict[str, Any],
+        ) -> dict[str, Any]:
+            return apply_qualification_terminal_result(
+                args.state_dir,
+                args.issue_number,
+                operation,
+                result_document,
+                transport,
+                ownership=ownership,
+                candidate_repo=candidate_repo,
+            )
+
+        def cleanup_ref(operation: dict[str, Any]) -> dict[str, Any]:
+            return cleanup_qualification_candidate_ref(
+                args.state_dir,
+                args.issue_number,
+                operation,
+                ownership=ownership,
+                transport=transport,
+                ref_transport=ref_transport,
+                expected_app_id=expected_app_id,
+                candidate_repo=candidate_repo,
+            )
+
+        def mark_failure(operation: dict[str, Any], error: str) -> None:
+            try:
+                record_qualification_operation_failure(
+                    args.state_dir,
+                    args.issue_number,
+                    operation,
+                    error,
+                    ownership=ownership,
+                )
+            except TaskControllerError:
+                # Preserve a newer terminal state or STOP_REPLAN outcome.
+                pass
+
+        updated = qualify_task(
+            state,
+            ownership=ownership,
             candidate_repo=candidate_repo,
+            controller_main_sha=controller_main_sha,
+            expected_app_id=expected_app_id,
+            transport=transport,
+            ref_transport=ref_transport,
+            operation_writer=begin_operation,
+            ref_published_writer=mark_ref_published,
+            terminal_writer=apply_terminal,
+            cleanup_ref_writer=cleanup_ref,
+            failure_writer=mark_failure,
         )
-
-    def mark_cleanup(
-        operation: dict[str, Any],
-        removed: bool,
-        error: str | None,
-    ) -> None:
-        try:
-            record_qualification_cleanup(
-                args.state_dir,
-                args.issue_number,
-                operation,
-                removed=removed,
-                error=error,
-            )
-        except TaskControllerError:
-            # A newer stop or operation owns the checkpoint; retain it intact.
-            pass
-
-    def mark_failure(operation: dict[str, Any], error: str) -> None:
-        try:
-            record_qualification_operation_failure(
-                args.state_dir,
-                args.issue_number,
-                operation,
-                error,
-            )
-        except TaskControllerError:
-            # Preserve a newer terminal state or STOP_REPLAN outcome.
-            pass
-
-    updated = qualify_task(
-        state,
-        candidate_repo=candidate_repo,
-        controller_main_sha=(
-            controller_main_sha
-        ),
-        expected_app_id=(
-            expected_app_id
-        ),
-        transport=(
-            GhQualificationTransport()
-        ),
-        ref_transport=(
-            GitCandidateRefTransport(
-                candidate_repo
-            )
-        ),
-        operation_writer=begin_operation,
-        ref_published_writer=mark_ref_published,
-        terminal_writer=apply_terminal,
-        cleanup_writer=mark_cleanup,
-        failure_writer=mark_failure,
-    )
     if updated.get("qualification", {}).get("candidate_ref_removed") is not True:
         updated = load_state(args.state_dir, args.issue_number)
 
@@ -5652,6 +6141,7 @@ def build_parser() -> argparse.ArgumentParser:
     qualify_reconcile = subparsers.add_parser(
         "qualify-reconcile",
         help="Reconcile a persisted qualification attempt without dispatching again.",
+        description="Reconcile a persisted qualification attempt without dispatching again.",
     )
     qualify_reconcile.add_argument(
         "issue_number",

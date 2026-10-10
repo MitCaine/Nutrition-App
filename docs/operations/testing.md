@@ -874,6 +874,26 @@ invoke rework until the owner explicitly continues. The separate fresh-authorize
 uses `prepare` with current matching owner authorization and a separately selected state
 location, preserving the existing checkpoint and its consumed allowances.
 
+Qualification recovery holds a separate issue-scoped process-held qualification ownership lock
+from before operation persistence through dispatch, polling, terminal application and ref cleanup.
+The lock is distinct from the short checkpoint transaction lock, so unrelated checkpoint writes
+can proceed during hosted calls. The operating system releases ownership when the controller
+process exits. Its lock file is stored under the canonical controller-state directory, so different
+`TMPDIR` settings still address the same issue lock. Reconciliation takes the same lock; a live
+holder returns `QUALIFICATION_OWNER_ACTIVE` without changing the checkpoint or candidate ref. Its
+persisted binding identifies the supported local host and controller-state location. Missing, legacy,
+unknown or different-domain bindings fail closed and require an explicit controller disposition.
+
+After the interrupted process exits, run
+`./scripts/task qualify-reconcile ISSUE --candidate-root PATH`. This command discovers the hosted
+run for the persisted operation and never dispatches. A no matching run leaves operation and ref
+evidence unchanged and returns a non-success result; a still-running run remains available for a
+later reconciliation. A completed run is accepted only after exact workflow/candidate identity,
+current authorization and the dedicated App's exact-candidate check are revalidated. The command
+then records the terminal outcome and safely cleans up that operation's exact candidate ref.
+Repeat the same command after another interruption. A missing run or released process lock alone
+does not authorize a fresh qualification attempt.
+
 `Main qualification` is valid only when its exact SHA, name, conclusion, authorization identity,
 and producing App match the controller's trusted configuration.
 `NUTRITION_QUALIFICATION_APP_INTEGRATION_ID` must identify the dedicated qualification App; the

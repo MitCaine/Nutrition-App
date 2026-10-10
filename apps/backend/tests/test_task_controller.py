@@ -4,9 +4,14 @@ import contextlib
 import importlib.util
 import io
 import json
+import multiprocessing
+import os
+import select
+import signal
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +64,133 @@ def load_task_module():
 TASK = load_task_module()
 # Explicit historical fixtures do not make these modules standard startup dependencies.
 from lib.legacy_ri import candidate_evidence as LEGACY_EVIDENCE  # noqa: E402
+
+
+def qualify_with_owner(
+    state: dict[str, Any],
+    *,
+    state_dir: Path,
+    candidate_repo: Path,
+    controller_main_sha: str,
+    expected_app_id: int,
+    transport,
+    ref_transport,
+    **kwargs,
+):
+    """Run the persisted qualification path while holding its process lock."""
+    issue_number = state["issue_number"]
+    TASK.state_path(state_dir, issue_number).write_text(
+        json.dumps(state) + "\n",
+        encoding="utf-8",
+    )
+    with TASK.qualification_ownership_lock(state_dir, issue_number) as ownership:
+        def begin(operation):
+            TASK.begin_qualification_operation(
+                state_dir,
+                issue_number,
+                operation,
+                ownership=ownership,
+                expected_rework_state={
+                    "rework": json.loads(json.dumps(state.get("rework"))),
+                    "rework_history": json.loads(
+                        json.dumps(state.get("rework_history", []))
+                    ),
+                },
+            )
+
+        def mark_published(operation):
+            TASK.mark_qualification_ref_published(
+                state_dir,
+                issue_number,
+                operation,
+                ownership=ownership,
+            )
+
+        def apply_terminal(result, operation):
+            return TASK.apply_qualification_terminal_result(
+                state_dir,
+                issue_number,
+                operation,
+                result,
+                transport,
+                ownership=ownership,
+                candidate_repo=candidate_repo,
+            )
+
+        def cleanup_ref(operation):
+            return TASK.cleanup_qualification_candidate_ref(
+                state_dir,
+                issue_number,
+                operation,
+                ownership=ownership,
+                transport=transport,
+                ref_transport=ref_transport,
+                expected_app_id=expected_app_id,
+                candidate_repo=candidate_repo,
+            )
+
+        def mark_failure(operation, error):
+            try:
+                TASK.record_qualification_operation_failure(
+                    state_dir,
+                    issue_number,
+                    operation,
+                    error,
+                    ownership=ownership,
+                )
+            except TASK.TaskControllerError:
+                pass
+
+        return TASK.qualify_task(
+            state,
+            ownership=ownership,
+            candidate_repo=candidate_repo,
+            controller_main_sha=controller_main_sha,
+            expected_app_id=expected_app_id,
+            transport=transport,
+            ref_transport=ref_transport,
+            operation_writer=begin,
+            ref_published_writer=mark_published,
+            terminal_writer=apply_terminal,
+            cleanup_ref_writer=cleanup_ref,
+            failure_writer=mark_failure,
+            **kwargs,
+        )
+
+
+def begin_qualification_for_test(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+) -> dict[str, Any]:
+    with TASK.qualification_ownership_lock(state_dir, issue_number) as ownership:
+        return TASK.begin_qualification_operation(
+            state_dir,
+            issue_number,
+            operation,
+            ownership=ownership,
+        )
+
+
+def apply_qualification_for_test(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+    result_document: dict[str, Any],
+    transport,
+    *,
+    candidate_repo: Path | None = None,
+) -> dict[str, Any]:
+    with TASK.qualification_ownership_lock(state_dir, issue_number) as ownership:
+        return TASK.apply_qualification_terminal_result(
+            state_dir,
+            issue_number,
+            operation,
+            result_document,
+            transport,
+            ownership=ownership,
+            candidate_repo=candidate_repo,
+        )
 
 
 def test_retired_execution_command_cannot_create_a_checkpoint(tmp_path):
@@ -1704,8 +1836,9 @@ def test_pre_change_authorization_state_keeps_legacy_gates(
         candidate_sha=candidate,
         identity_sha256=legacy_authorization.identity_sha256,
     )
-    qualified = TASK.qualify_task(
+    qualified = qualify_with_owner(
         authorized,
+        state_dir=tmp_path / "state",
         candidate_repo=tmp_path / "repo",
         controller_main_sha=base,
         expected_app_id=424242,
@@ -2300,6 +2433,13 @@ class FakeQualificationTransport:
         self.check_count = check_count
         self.dispatch_inputs: dict | None = None
         self.dispatch_calls = 0
+        self.hosted_runs: list[dict] | None = None
+        self.workflow_lookup_error: Exception | None = None
+        self.run_lookup_error: Exception | None = None
+        self.check_lookup_error: Exception | None = None
+        self.workflow_list_calls = 0
+        self.run_get_calls = 0
+        self.check_list_calls = 0
 
     def list_issue_comments(
         self,
@@ -2368,6 +2508,13 @@ class FakeQualificationTransport:
         repository: str,
         workflow: str,
     ) -> list[dict]:
+        self.workflow_list_calls += 1
+        if self.workflow_lookup_error is not None:
+            raise self.workflow_lookup_error
+        if self.hosted_runs is not None:
+            return [dict(item) for item in self.hosted_runs]
+        if self.dispatch_inputs is None:
+            return []
         return [self._run()]
 
     def get_workflow_run(
@@ -2375,7 +2522,15 @@ class FakeQualificationTransport:
         repository: str,
         run_id: int,
     ) -> dict:
+        self.run_get_calls += 1
+        if self.run_lookup_error is not None:
+            raise self.run_lookup_error
         assert run_id == 8800
+        if self.hosted_runs is not None:
+            for run in self.hosted_runs:
+                if run.get("id") == run_id:
+                    return dict(run)
+            raise TASK.TaskControllerError("WORKFLOW_RUN_MISSING")
         return self._run()
 
     def _check(self) -> dict:
@@ -2407,6 +2562,9 @@ class FakeQualificationTransport:
         candidate_sha: str,
         app_id: int,
     ) -> list[dict]:
+        self.check_list_calls += 1
+        if self.check_lookup_error is not None:
+            raise self.check_lookup_error
         assert candidate_sha == (
             self.candidate_sha
         )
@@ -2438,6 +2596,7 @@ class FakeCandidateRefTransport:
         self.main_pushes: list[str] = []
         self.main_sha: str | None = None
         self.fail_delete_count = fail_delete_count
+        self.delete_calls: list[tuple[str, str | None]] = []
 
     def publish_candidate_ref(
         self,
@@ -2454,7 +2613,13 @@ class FakeCandidateRefTransport:
     def delete_candidate_ref(
         self,
         ref_name: str,
+        expected_sha: str | None = None,
+        *,
+        before_delete=None,
     ) -> None:
+        self.delete_calls.append((ref_name, expected_sha))
+        if before_delete is not None:
+            before_delete()
         if self.fail_delete_count:
             self.fail_delete_count -= 1
             raise TASK.TaskControllerError("CANDIDATE_REF_CLEANUP_FAILED")
@@ -2472,6 +2637,162 @@ class FakeCandidateRefTransport:
     def fetch_main(self) -> str:
         assert self.main_sha is not None
         return self.main_sha
+
+
+def read_shared_remote(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {"dispatch_count": 0, "runs": [], "refs": [], "deleted": []}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_shared_remote(path: Path, document: dict[str, Any]) -> None:
+    path.write_text(json.dumps(document, sort_keys=True) + "\n", encoding="utf-8")
+
+
+class SharedQualificationTransport(FakeQualificationTransport):
+    """File-backed hosted-run fake shared by an interrupted child and recovery."""
+
+    def __init__(
+        self,
+        *,
+        remote_path: Path,
+        dispatch_ready_fd: int | None = None,
+        block_dispatch: bool = False,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.remote_path = remote_path
+        self.dispatch_ready_fd = dispatch_ready_fd
+        self.block_dispatch = block_dispatch
+
+    def _hosted_run(self, inputs: dict[str, str]) -> dict[str, Any]:
+        return {
+            "id": 8800,
+            "event": "workflow_dispatch",
+            "head_branch": "main",
+            "head_sha": self.controller_sha,
+            "display_title": (
+                "Trusted qualification "
+                f"{inputs['task_id']} {inputs['dispatch_nonce']} {inputs['candidate_sha']}"
+            ),
+            "status": "completed",
+            "conclusion": "success",
+            "html_url": "https://github.com/owner/repo/actions/runs/8800",
+        }
+
+    def dispatch_workflow(self, repository, workflow, ref, inputs):
+        assert repository == "owner/repo"
+        assert workflow == "trusted-qualification.yml"
+        assert ref == "main"
+        self.dispatch_calls += 1
+        self.dispatch_inputs = dict(inputs)
+        remote = read_shared_remote(self.remote_path)
+        remote["dispatch_count"] += 1
+        remote["runs"].append(self._hosted_run(inputs))
+        write_shared_remote(self.remote_path, remote)
+        if self.dispatch_ready_fd is not None:
+            os.write(self.dispatch_ready_fd, b"R")
+        if self.block_dispatch:
+            time.sleep(30)
+        return {"workflow_run_id": 8800}
+
+    def list_workflow_runs(self, repository, workflow):
+        self.workflow_list_calls += 1
+        return [dict(item) for item in read_shared_remote(self.remote_path)["runs"]]
+
+    def get_workflow_run(self, repository, run_id):
+        self.run_get_calls += 1
+        for run in read_shared_remote(self.remote_path)["runs"]:
+            if run.get("id") == run_id:
+                return dict(run)
+        raise TASK.TaskControllerError("WORKFLOW_RUN_MISSING")
+
+    def list_check_runs(self, repository, candidate_sha, app_id):
+        self.check_list_calls += 1
+        return [{
+            "id": 9900,
+            "name": "Main qualification",
+            "head_sha": candidate_sha,
+            "external_id": (
+                f"nutrition-task:{self.issue_number}:"
+                f"{self.identity_sha256}:{candidate_sha}"
+            ),
+            "status": "completed",
+            "conclusion": "success",
+            "app": {"id": self.app_id, "slug": "nutrition-qualification"},
+        }]
+
+
+class SharedCandidateRefTransport:
+    def __init__(
+        self,
+        *,
+        remote_path: Path,
+        publish_ready_fd: int | None = None,
+        block_before_publish: bool = False,
+    ) -> None:
+        self.remote_path = remote_path
+        self.publish_ready_fd = publish_ready_fd
+        self.block_before_publish = block_before_publish
+        self.publish_calls = 0
+        self.delete_calls = 0
+
+    def publish_candidate_ref(self, ref_name, candidate_sha):
+        self.publish_calls += 1
+        if self.block_before_publish:
+            assert self.publish_ready_fd is not None
+            os.write(self.publish_ready_fd, b"R")
+            time.sleep(30)
+        remote = read_shared_remote(self.remote_path)
+        remote["refs"].append({"name": ref_name, "sha": candidate_sha})
+        write_shared_remote(self.remote_path, remote)
+
+    def delete_candidate_ref(self, ref_name, expected_sha=None, *, before_delete=None):
+        self.delete_calls += 1
+        remote = read_shared_remote(self.remote_path)
+        matches = [item for item in remote["refs"] if item["name"] == ref_name]
+        if matches and expected_sha is not None and any(
+            item["sha"] != expected_sha for item in matches
+        ):
+            raise TASK.TaskControllerError("CANDIDATE_REF_SHA_MISMATCH")
+        if before_delete is not None:
+            before_delete()
+        if not matches:
+            return
+        remote["refs"] = [item for item in remote["refs"] if item["name"] != ref_name]
+        remote["deleted"].append({"name": ref_name, "sha": expected_sha})
+        write_shared_remote(self.remote_path, remote)
+
+
+def _run_task_cli_in_child(argv: list[str]) -> None:
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        TASK.main(argv)
+
+
+def _check_inherited_qualification_lease(lease, state_dir: Path, issue_number: int, write_fd: int) -> None:
+    try:
+        lease.require_active(state_dir, issue_number)
+        result = "INHERITED_LEASE_ACCEPTED"
+    except TASK.TaskControllerError as exc:
+        result = str(exc)
+    os.write(write_fd, result.encode("utf-8"))
+    os.close(write_fd)
+
+
+def _hold_qualification_lock(
+    state_dir: Path,
+    issue_number: int,
+    ready,
+    release,
+    tempdir: Path | None = None,
+) -> None:
+    if tempdir is not None:
+        os.environ["TMPDIR"] = str(tempdir)
+        TASK.tempfile.tempdir = None
+        assert Path(TASK.tempfile.gettempdir()).resolve() == tempdir.resolve()
+    with TASK.qualification_ownership_lock(state_dir, issue_number):
+        ready.set()
+        release.wait(20)
 
 
 def authorized_repo_state(
@@ -2585,8 +2906,10 @@ def qualify_fixture(
 
     refs = FakeCandidateRefTransport()
 
-    updated = TASK.qualify_task(
+    state_dir = tmp_path / "state"
+    updated = qualify_with_owner(
         state,
+        state_dir=state_dir,
         candidate_repo=repo,
         controller_main_sha=base,
         expected_app_id=424242,
@@ -2608,6 +2931,162 @@ def qualify_fixture(
         transport,
         refs,
     )
+
+
+def persisted_running_qualification(tmp_path: Path):
+    repo, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="standard",
+        compatibility_reason=None,
+    )
+    state_dir = tmp_path / "controller-state"
+    state_dir.mkdir()
+    TASK.state_path(state_dir, 999).write_text(json.dumps(state) + "\n")
+    transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    operation = qualification_operation_for_test(
+        state,
+        base,
+        candidate,
+        transport,
+    )
+    begin_qualification_for_test(state_dir, 999, operation)
+    mark_operation_published_for_test(state_dir, 999, operation)
+    return repo, base, candidate, state_dir, operation, transport
+
+
+def qualification_operation_for_test(
+    state: dict[str, Any],
+    base: str,
+    candidate: str,
+    transport,
+    *,
+    dispatch_nonce: str = "dispatch-1234567890",
+) -> dict[str, Any]:
+    authorization = TASK.resolve_current_authorization(state, transport)
+    return {
+        "operation_id": dispatch_nonce,
+        "candidate_sha": candidate,
+        "candidate_ref": (
+            f"task-candidate/{state['issue_number']}/{dispatch_nonce}/{candidate[:12]}"
+        ),
+        "dispatch_nonce": dispatch_nonce,
+        "controller_main_sha": base,
+        "workflow": "trusted-qualification.yml",
+        "expected_app_id": 424242,
+        "authorization": TASK._checkpoint_authorization_identity(state),
+        "resolved_authorization": authorization.to_dict(),
+    }
+
+
+def mark_operation_published_for_test(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+) -> None:
+    with TASK.qualification_ownership_lock(state_dir, issue_number) as ownership:
+        TASK.mark_qualification_ref_published(
+            state_dir,
+            issue_number,
+            operation,
+            ownership=ownership,
+        )
+
+
+def persist_terminal_operation_for_test(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+    terminal_result: dict[str, Any],
+) -> None:
+    TASK.checkpoint_transaction(
+        state_dir,
+        issue_number,
+        lambda current: {
+            **current,
+            "phase": terminal_result["phase"],
+            "qualification": terminal_result["qualification"],
+            "qualification_operation": {
+                **current["qualification_operation"],
+                "status": "TERMINAL",
+                "terminal_result": terminal_result["qualification"]["result"],
+                "candidate_ref_published": True,
+            },
+        },
+    )
+
+
+def configure_public_qualification_command(
+    monkeypatch,
+    *,
+    base: str,
+    candidate: str,
+    state: dict[str, Any],
+    comment: dict,
+    authorization,
+    remote_path: Path,
+    ready_fd: int,
+    interrupt_at: str,
+):
+    original_git = TASK.git
+
+    def git_with_local_fetch(repo, *args):
+        if args == ("fetch", "origin", "main"):
+            return ""
+        return original_git(repo, *args)
+
+    monkeypatch.setattr(TASK, "git", git_with_local_fetch)
+    monkeypatch.setattr(TASK, "resolve_repo_root", lambda path: Path(path).resolve())
+    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_args, **_kwargs: base)
+    monkeypatch.setattr(TASK, "require_candidate_repository", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(TASK, "configured_qualification_app_id", lambda: 424242)
+    monkeypatch.setattr(TASK, "validate_candidate_scope", lambda *_args, **_kwargs: ["src/value.py"])
+    monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_args, **_kwargs: authorization)
+
+    transports = []
+    refs = []
+
+    def transport_factory():
+        transport = SharedQualificationTransport(
+            comment=comment,
+            controller_sha=base,
+            candidate_sha=candidate,
+            identity_sha256=state["authorization"]["identity_sha256"],
+            remote_path=remote_path,
+            dispatch_ready_fd=ready_fd if interrupt_at == "after_dispatch" else None,
+            block_dispatch=interrupt_at == "after_dispatch",
+        )
+        transports.append(transport)
+        return transport
+
+    def ref_factory(_repo):
+        ref_transport = SharedCandidateRefTransport(
+            remote_path=remote_path,
+            publish_ready_fd=ready_fd if interrupt_at == "before_publish" else None,
+            block_before_publish=interrupt_at == "before_publish",
+        )
+        refs.append(ref_transport)
+        return ref_transport
+
+    monkeypatch.setattr(TASK, "GhQualificationTransport", transport_factory)
+    monkeypatch.setattr(TASK, "GitCandidateRefTransport", ref_factory)
+    if interrupt_at == "after_publish":
+        original_mark = TASK.mark_qualification_ref_published
+
+        def block_after_publish(state_dir, issue_number, operation, *, ownership):
+            updated = original_mark(
+                state_dir, issue_number, operation, ownership=ownership)
+            os.write(ready_fd, b"R")
+            time.sleep(30)
+            return updated
+
+        monkeypatch.setattr(TASK, "mark_qualification_ref_published", block_after_publish)
+
+    return transports, refs
 
 
 def test_explicit_compatibility_mode_uses_its_authenticated_legacy_route(
@@ -2665,8 +3144,9 @@ def test_attached_default_requires_evidence_across_public_gates(
     )
     refs = FakeCandidateRefTransport()
     with pytest.raises(EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
-        TASK.qualify_task(
+        qualify_with_owner(
             state,
+            state_dir=tmp_path / "state",
             candidate_repo=repo,
             controller_main_sha=base,
             expected_app_id=424242,
@@ -2944,59 +3424,70 @@ def test_qualification_terminal_rejects_real_writer_stop_during_long_run(
     refs = FakeCandidateRefTransport()
     errors: list[BaseException] = []
 
-    def run_qualification() -> None:
-        def operation_writer(operation):
-            TASK.begin_qualification_operation(state_dir, 999, operation)
+    with TASK.qualification_ownership_lock(state_dir, 999) as ownership:
+        def run_qualification() -> None:
+            def operation_writer(operation):
+                TASK.begin_qualification_operation(
+                    state_dir, 999, operation, ownership=ownership)
 
-        def ref_writer(operation):
-            TASK.mark_qualification_ref_published(state_dir, 999, operation)
+            def ref_writer(operation):
+                TASK.mark_qualification_ref_published(
+                    state_dir, 999, operation, ownership=ownership)
 
-        def terminal_writer(result, operation):
-            return TASK.apply_qualification_terminal_result(
-                state_dir, 999, operation, result, transport,
-                candidate_repo=repo)
+            def terminal_writer(result, operation):
+                return TASK.apply_qualification_terminal_result(
+                    state_dir, 999, operation, result, transport,
+                    ownership=ownership, candidate_repo=repo)
 
-        def cleanup_writer(operation, removed, error):
+            def cleanup_ref(operation):
+                return TASK.cleanup_qualification_candidate_ref(
+                    state_dir, 999, operation, ownership=ownership,
+                    transport=transport, ref_transport=refs,
+                    expected_app_id=424242, candidate_repo=repo)
+
+            def failure_writer(operation, error):
+                try:
+                    TASK.record_qualification_operation_failure(
+                        state_dir, 999, operation, error, ownership=ownership)
+                except TASK.TaskControllerError:
+                    pass
+
             try:
-                TASK.record_qualification_cleanup(
-                    state_dir, 999, operation, removed=removed, error=error)
-            except TASK.TaskControllerError:
-                pass
+                TASK.qualify_task(
+                    state,
+                    ownership=ownership,
+                    candidate_repo=repo,
+                    controller_main_sha=base,
+                    expected_app_id=424242,
+                    transport=transport,
+                    ref_transport=refs,
+                    poll_attempts=2,
+                    sleep_seconds=0,
+                    sleep_fn=lambda _: None,
+                    dispatch_nonce="dispatch-1234567890",
+                    operation_writer=operation_writer,
+                    ref_published_writer=ref_writer,
+                    terminal_writer=terminal_writer,
+                    cleanup_ref_writer=cleanup_ref,
+                    failure_writer=failure_writer,
+                )
+            except BaseException as exc:  # pragma: no cover - surfaced below
+                errors.append(exc)
 
-        try:
-            TASK.qualify_task(
-                state,
-                candidate_repo=repo,
-                controller_main_sha=base,
-                expected_app_id=424242,
-                transport=transport,
-                ref_transport=refs,
-                poll_attempts=2,
-                sleep_seconds=0,
-                sleep_fn=lambda _: None,
-                dispatch_nonce="dispatch-1234567890",
-                operation_writer=operation_writer,
-                ref_published_writer=ref_writer,
-                terminal_writer=terminal_writer,
-                cleanup_writer=cleanup_writer,
-            )
-        except BaseException as exc:  # pragma: no cover - surfaced below
-            errors.append(exc)
-
-    worker = threading.Thread(target=run_qualification)
-    worker.start()
-    assert entered_dispatch.wait(5)
-    TASK.checkpoint_transaction(
-        state_dir,
-        999,
-        lambda current: {
-            **current,
-            "phase": "STOP_REPLAN",
-            "stop_reason": "intervening terminal stop",
-        },
-    )
-    release_dispatch.set()
-    worker.join(5)
+        worker = threading.Thread(target=run_qualification)
+        worker.start()
+        assert entered_dispatch.wait(5)
+        TASK.checkpoint_transaction(
+            state_dir,
+            999,
+            lambda current: {
+                **current,
+                "phase": "STOP_REPLAN",
+                "stop_reason": "intervening terminal stop",
+            },
+        )
+        release_dispatch.set()
+        worker.join(5)
 
     assert not worker.is_alive()
     assert len(errors) == 1
@@ -3009,7 +3500,7 @@ def test_qualification_terminal_rejects_real_writer_stop_during_long_run(
     assert persisted["unrelated"] == {"preserve": "during-long-run"}
     assert persisted["qualification"] is None
     assert persisted["qualification_operation"]["status"] == "RUNNING"
-    assert len(refs.deleted) == 1
+    assert refs.deleted == []
 
 
 def test_qualification_terminal_rejects_changed_live_authority(
@@ -3041,7 +3532,7 @@ def test_qualification_terminal_rejects_changed_live_authority(
         "authorization": TASK._checkpoint_authorization_identity(state),
         "resolved_authorization": resolved.to_dict(),
     }
-    TASK.begin_qualification_operation(state_dir, 999, operation)
+    begin_qualification_for_test(state_dir, 999, operation)
     TASK.checkpoint_transaction(
         state_dir,
         999,
@@ -3056,9 +3547,9 @@ def test_qualification_terminal_rejects_changed_live_authority(
 
     with pytest.raises(
         TASK.TaskControllerError,
-        match="WORKFLOW_AUTHORITY_MISMATCH|AUTHORIZATION_CURRENT_IDENTITY_MISMATCH",
+        match="QUALIFICATION_AUTHORITY_CHANGED",
     ):
-        TASK.apply_qualification_terminal_result(
+        apply_qualification_for_test(
             state_dir,
             999,
             operation,
@@ -3075,7 +3566,10 @@ def test_qualification_terminal_rejects_changed_live_authority(
     assert persisted["authorization"]["identity_sha256"] == "f" * 64
 
 
-@pytest.mark.parametrize("stale_kind", ["operation", "candidate"])
+@pytest.mark.parametrize(
+    "stale_kind",
+    ["operation", "resolved_authorization", "candidate"],
+)
 def test_qualification_terminal_rejects_stale_operation_or_candidate(
     tmp_path: Path,
     stale_kind: str,
@@ -3104,7 +3598,7 @@ def test_qualification_terminal_rejects_stale_operation_or_candidate(
         "authorization": TASK._checkpoint_authorization_identity(state),
         "resolved_authorization": TASK.resolve_current_authorization(state, transport).to_dict(),
     }
-    TASK.begin_qualification_operation(state_dir, 999, operation)
+    begin_qualification_for_test(state_dir, 999, operation)
     if stale_kind == "operation":
         TASK.checkpoint_transaction(
             state_dir,
@@ -3118,12 +3612,30 @@ def test_qualification_terminal_rejects_stale_operation_or_candidate(
             },
         )
         expected_error = "QUALIFICATION_OPERATION_STALE"
+    elif stale_kind == "resolved_authorization":
+        TASK.checkpoint_transaction(
+            state_dir,
+            999,
+            lambda current: {
+                **current,
+                "qualification_operation": {
+                    **current["qualification_operation"],
+                    "resolved_authorization": {
+                        **current["qualification_operation"][
+                            "resolved_authorization"
+                        ],
+                        "base_sha": "f" * 40,
+                    },
+                },
+            },
+        )
+        expected_error = "QUALIFICATION_OPERATION_STALE"
     else:
         commit_paths(repo, {"src/changed.py": "CHANGED = True\n"}, message="candidate drift")
         expected_error = "QUALIFICATION_CANDIDATE_CHANGED"
 
     with pytest.raises(TASK.TaskControllerError, match=expected_error):
-        TASK.apply_qualification_terminal_result(
+        apply_qualification_for_test(
             state_dir,
             999,
             operation,
@@ -3170,7 +3682,7 @@ def test_qualification_cleanup_unknown_is_reconciled_without_redispatch(
         "authorization": TASK._checkpoint_authorization_identity(state),
         "resolved_authorization": TASK.resolve_current_authorization(state, transport).to_dict(),
     }
-    TASK.begin_qualification_operation(state_dir, 999, operation)
+    begin_qualification_for_test(state_dir, 999, operation)
     TASK.checkpoint_transaction(
         state_dir,
         999,
@@ -3179,13 +3691,24 @@ def test_qualification_cleanup_unknown_is_reconciled_without_redispatch(
             "phase": "QUALIFIED",
             "qualification": {
                 "candidate_sha": candidate,
+                "controller_main_sha": base,
                 "candidate_ref": operation["candidate_ref"],
                 "candidate_ref_removed": False,
+                "dispatch_nonce": operation["dispatch_nonce"],
+                "workflow": operation["workflow"],
+                "workflow_run_id": 8800,
+                "workflow_run_url": "https://github.com/owner/repo/actions/runs/8800",
+                "workflow_conclusion": "success",
+                "check_id": 9900,
+                "check_app_id": 424242,
+                "check_conclusion": "success",
+                "check_external_id": "test-external-id",
                 "result": "PASS",
             },
             "qualification_operation": {
                 **current["qualification_operation"],
                 "status": "TERMINAL",
+                "terminal_result": "PASS",
             },
         },
     )
@@ -3245,7 +3768,7 @@ def test_unknown_qualification_reconciles_completed_run_without_redispatch(
         "authorization": TASK._checkpoint_authorization_identity(state),
         "resolved_authorization": TASK.resolve_current_authorization(state, transport).to_dict(),
     }
-    TASK.begin_qualification_operation(state_dir, 999, operation)
+    begin_qualification_for_test(state_dir, 999, operation)
     TASK.checkpoint_transaction(
         state_dir,
         999,
@@ -3311,23 +3834,9 @@ def test_qualification_operation_persists_terminal_result_and_ref_cleanup(
         check_conclusion=check_conclusion,
     )
     refs = FakeCandidateRefTransport()
-
-    def operation_writer(operation):
-        TASK.begin_qualification_operation(state_dir, 999, operation)
-
-    def ref_writer(operation):
-        TASK.mark_qualification_ref_published(state_dir, 999, operation)
-
-    def terminal_writer(result, operation):
-        return TASK.apply_qualification_terminal_result(
-            state_dir, 999, operation, result, transport, candidate_repo=repo)
-
-    def cleanup_writer(operation, removed, error):
-        TASK.record_qualification_cleanup(
-            state_dir, 999, operation, removed=removed, error=error)
-
-    updated = TASK.qualify_task(
+    updated = qualify_with_owner(
         state,
+        state_dir=state_dir,
         candidate_repo=repo,
         controller_main_sha=base,
         expected_app_id=424242,
@@ -3337,10 +3846,6 @@ def test_qualification_operation_persists_terminal_result_and_ref_cleanup(
         sleep_seconds=0,
         sleep_fn=lambda _: None,
         dispatch_nonce="dispatch-1234567890",
-        operation_writer=operation_writer,
-        ref_published_writer=ref_writer,
-        terminal_writer=terminal_writer,
-        cleanup_writer=cleanup_writer,
     )
 
     persisted = TASK.load_state(state_dir, 999)
@@ -3353,6 +3858,890 @@ def test_qualification_operation_persists_terminal_result_and_ref_cleanup(
     assert persisted["qualification_operation"]["status"] == "COMPLETE"
     assert persisted["qualification_operation"]["terminal_result"] == expected_result
     assert len(refs.published) == len(refs.deleted) == 1
+    assert refs.delete_calls == [
+        (persisted["qualification_operation"]["candidate_ref"], candidate)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("interrupt_at", "expected_status", "expected_recovered"),
+    [
+        ("before_publish", "DISPATCH_PENDING", False),
+        ("after_publish", "RUNNING", False),
+        ("after_dispatch", "RUNNING", True),
+    ],
+)
+def test_public_qualification_reconcile_recovers_real_process_interruptions(
+    tmp_path: Path,
+    monkeypatch,
+    interrupt_at: str,
+    expected_status: str,
+    expected_recovered: bool,
+) -> None:
+    context = multiprocessing.get_context("fork")
+    repo, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="standard",
+        compatibility_reason=None,
+    )
+    state_dir = tmp_path / "controller-state"
+    state["attempt_history"] = ["prior-attempt"]
+    state["unrelated"] = {"preserve": "interruption"}
+    state_dir.mkdir()
+    TASK.state_path(state_dir, 999).write_text(json.dumps(state) + "\n")
+    authority_transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    authorization = TASK.resolve_current_authorization(state, authority_transport)
+    remote_path = tmp_path / "hosted-service.json"
+    ready_read_fd, ready_write_fd = os.pipe()
+    outputs: list[dict] = []
+    monkeypatch.setattr(TASK, "emit", outputs.append)
+    transports, refs = configure_public_qualification_command(
+        monkeypatch,
+        base=base,
+        candidate=candidate,
+        state=state,
+        comment=comment,
+        authorization=authorization,
+        remote_path=remote_path,
+        ready_fd=ready_write_fd,
+        interrupt_at=interrupt_at,
+    )
+
+    argv = [
+        "--repo-root", str(repo),
+        "--state-dir", str(state_dir),
+        "qualify", "999",
+        "--candidate-root", str(repo),
+    ]
+    process = context.Process(target=_run_task_cli_in_child, args=(argv,))
+    process_started = False
+    try:
+        process.start()
+        process_started = True
+        os.close(ready_write_fd)
+        ready_write_fd = -1
+        readable, _, _ = select.select([ready_read_fd], [], [], 15)
+        assert readable, "qualification did not reach its interruption point"
+        assert os.read(ready_read_fd, 1) == b"R"
+        assert process.is_alive()
+        os.kill(process.pid, signal.SIGKILL)
+        process.join(15)
+        assert process.exitcode == -signal.SIGKILL
+    finally:
+        if process_started and process.is_alive():
+            try:
+                os.kill(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process_started:
+            process.join(15)
+            assert not process.is_alive(), "interrupted qualification child was not reaped"
+            process.close()
+        if ready_write_fd >= 0:
+            os.close(ready_write_fd)
+        os.close(ready_read_fd)
+
+    state_path = TASK.state_path(state_dir, 999)
+    interrupted_bytes = state_path.read_bytes()
+    interrupted_state = json.loads(interrupted_bytes)
+    interrupted_operation = interrupted_state["qualification_operation"]
+    assert interrupted_operation["status"] == expected_status
+    assert interrupted_operation["operation_id"] == interrupted_operation["dispatch_nonce"]
+    assert interrupted_operation["ownership_binding"]["protocol"] == "local-process-flock-v1"
+    assert interrupted_state["attempt_history"] == ["prior-attempt"]
+    assert interrupted_state["unrelated"] == {"preserve": "interruption"}
+
+    remote_before_reconcile = read_shared_remote(remote_path)
+    assert remote_before_reconcile["dispatch_count"] == int(interrupt_at == "after_dispatch")
+    assert len(remote_before_reconcile["refs"]) == int(interrupt_at != "before_publish")
+
+    reconcile_argv = [
+        "--state-dir", str(state_dir),
+        "qualify-reconcile", "999",
+        "--candidate-root", str(repo),
+    ]
+    code = TASK.main(reconcile_argv)
+    assert code == (0 if expected_recovered else 1)
+    recovered = TASK.load_state(state_dir, 999)
+    recovered_operation = recovered["qualification_operation"]
+    for field in (
+        "operation_id",
+        "candidate_sha",
+        "candidate_ref",
+        "dispatch_nonce",
+        "controller_main_sha",
+        "workflow",
+        "expected_app_id",
+        "authorization",
+        "resolved_authorization",
+        "ownership_binding",
+        "candidate_ref_published",
+    ):
+        assert recovered_operation[field] == interrupted_operation[field]
+    assert recovered["attempt_history"] == ["prior-attempt"]
+    assert recovered["unrelated"] == {"preserve": "interruption"}
+    assert recovered_operation["status"] == (
+        "COMPLETE" if expected_recovered else expected_status
+    )
+    if not expected_recovered:
+        assert state_path.read_bytes() == interrupted_bytes
+        assert recovered.get("qualification") is None
+    else:
+        assert recovered["phase"] == "QUALIFIED"
+        assert recovered["qualification"]["candidate_sha"] == candidate
+        assert recovered["qualification"]["check_app_id"] == 424242
+        assert recovered["qualification"]["candidate_ref_removed"] is True
+
+    remote_after_reconcile = read_shared_remote(remote_path)
+    assert remote_after_reconcile["dispatch_count"] == int(interrupt_at == "after_dispatch")
+    assert len(remote_after_reconcile["refs"]) == (0 if expected_recovered else int(interrupt_at != "before_publish"))
+    assert len(remote_after_reconcile["deleted"]) == int(expected_recovered)
+    assert transports[-1].dispatch_calls == 0
+    assert refs[-1].delete_calls == int(expected_recovered)
+
+    second_code = TASK.main(reconcile_argv)
+    assert second_code == (0 if expected_recovered else 1)
+    assert read_shared_remote(remote_path)["dispatch_count"] == int(interrupt_at == "after_dispatch")
+    assert len(read_shared_remote(remote_path)["deleted"]) == int(expected_recovered)
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_error"),
+    [
+        ("missing", None),
+        ("running", None),
+        ("ambiguous", "WORKFLOW_RUN_AMBIGUOUS"),
+        ("workflow_lookup_failed", "workflow listing unavailable"),
+        ("run_lookup_failed", "run lookup unavailable"),
+        ("check_lookup_failed", "check lookup unavailable"),
+    ],
+)
+def test_reconciliation_discovers_without_dispatch_and_preserves_unresolved_state(
+    tmp_path: Path,
+    outcome: str,
+    expected_error: str | None,
+) -> None:
+    repo, _base, _candidate, state_dir, operation, transport = persisted_running_qualification(tmp_path)
+    transport.dispatch_inputs = {
+        "task_id": "GH-999-P1",
+        "dispatch_nonce": operation["dispatch_nonce"],
+        "candidate_sha": operation["candidate_sha"],
+    }
+    run = transport._run()
+    if outcome == "missing":
+        transport.hosted_runs = []
+    elif outcome == "running":
+        run["status"] = "in_progress"
+        transport.hosted_runs = [run]
+    elif outcome == "ambiguous":
+        transport.hosted_runs = [run, dict(run)]
+    elif outcome == "workflow_lookup_failed":
+        transport.workflow_lookup_error = RuntimeError("workflow listing unavailable")
+    elif outcome == "run_lookup_failed":
+        transport.hosted_runs = [run]
+        transport.run_lookup_error = RuntimeError("run lookup unavailable")
+    elif outcome == "check_lookup_failed":
+        transport.hosted_runs = [run]
+        transport.check_lookup_error = RuntimeError("check lookup unavailable")
+
+    refs = FakeCandidateRefTransport()
+    state_path = TASK.state_path(state_dir, 999)
+    before = state_path.read_bytes()
+    if expected_error is not None:
+        with pytest.raises(Exception, match=expected_error):
+            TASK.reconcile_qualification_operation(
+                state_dir,
+                999,
+                transport=transport,
+                ref_transport=refs,
+                expected_app_id=424242,
+                candidate_repo=repo,
+            )
+    else:
+        recovered = TASK.reconcile_qualification_operation(
+            state_dir,
+            999,
+            transport=transport,
+            ref_transport=refs,
+            expected_app_id=424242,
+            candidate_repo=repo,
+        )
+        assert recovered["qualification_operation"]["status"] == "RUNNING"
+
+    assert state_path.read_bytes() == before
+    assert transport.dispatch_calls == 0
+    assert refs.delete_calls == []
+    assert transport.workflow_list_calls == 1
+
+
+def test_live_qualification_owner_refuses_across_tmpdir_then_recovers_same_operation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    context = multiprocessing.get_context("fork")
+    repo, base, candidate, state_dir, operation, transport = persisted_running_qualification(tmp_path)
+    remote_path = tmp_path / "hosted-service.json"
+    owner_tmpdir = tmp_path / "owner-tmp"
+    contender_tmpdir = tmp_path / "contender-tmp"
+    owner_tmpdir.mkdir()
+    contender_tmpdir.mkdir()
+    original_state = TASK.load_state(state_dir, 999)
+    original_operation = original_state["qualification_operation"]
+    identity_fields = (
+        "operation_id",
+        "candidate_sha",
+        "candidate_ref",
+        "dispatch_nonce",
+        "controller_main_sha",
+        "workflow",
+        "expected_app_id",
+        "authorization",
+        "resolved_authorization",
+        "ownership_binding",
+    )
+    transport.dispatch_inputs = {
+        "task_id": original_state["task_id"],
+        "dispatch_nonce": original_operation["dispatch_nonce"],
+        "candidate_sha": candidate,
+    }
+    hosted_run = transport._run()
+    write_shared_remote(
+        remote_path,
+        {
+            "dispatch_count": 0,
+            "runs": [hosted_run],
+            "refs": [{"name": operation["candidate_ref"], "sha": candidate}],
+            "deleted": [],
+        },
+    )
+    remote_before_refusal = remote_path.read_bytes()
+    ready = context.Event()
+    release = context.Event()
+    owner = context.Process(
+        target=_hold_qualification_lock,
+        args=(state_dir, 999, ready, release, owner_tmpdir),
+    )
+    owner.start()
+    try:
+        assert ready.wait(10)
+        monkeypatch.setenv("TMPDIR", str(contender_tmpdir))
+        monkeypatch.setattr(TASK.tempfile, "tempdir", None)
+        assert Path(TASK.tempfile.gettempdir()).resolve() == contender_tmpdir.resolve()
+        before = TASK.state_path(state_dir, 999).read_bytes()
+        outputs: list[dict] = []
+        monkeypatch.setattr(TASK, "emit", outputs.append)
+        authority = TASK.resolve_current_authorization(
+            {
+                **TASK.load_state(state_dir, 999),
+                "phase": "AUTHORIZED",
+            },
+            transport,
+        )
+        transports, refs = configure_public_qualification_command(
+            monkeypatch,
+            base=base,
+            candidate=candidate,
+            state=TASK.load_state(state_dir, 999),
+            comment=transport.comments[0],
+            authorization=authority,
+            remote_path=remote_path,
+            ready_fd=None,
+            interrupt_at="",
+        )
+
+        code = TASK.main([
+            "--state-dir", str(state_dir),
+            "qualify-reconcile", "999",
+            "--candidate-root", str(repo),
+        ])
+        assert code == 1
+        assert outputs[-1]["error"].startswith("QUALIFICATION_OWNER_ACTIVE")
+        assert TASK.state_path(state_dir, 999).read_bytes() == before
+        assert transports[-1].workflow_list_calls == 0
+        assert transports[-1].dispatch_calls == 0
+        assert refs[-1].delete_calls == 0
+        assert remote_path.read_bytes() == remote_before_refusal
+    finally:
+        release.set()
+        owner.join(15)
+        if owner.is_alive():
+            try:
+                owner.kill()
+            except ProcessLookupError:
+                pass
+            owner.join(15)
+        assert not owner.is_alive(), "live qualification owner child was not reaped"
+        owner_exitcode = owner.exitcode
+        owner.close()
+
+    assert owner_exitcode == 0
+
+    code = TASK.main([
+        "--state-dir", str(state_dir),
+        "qualify-reconcile", "999",
+        "--candidate-root", str(repo),
+    ])
+    assert code == 0
+    recovered = TASK.load_state(state_dir, 999)
+    recovered_operation = recovered["qualification_operation"]
+    for field in identity_fields:
+        assert recovered_operation[field] == original_operation[field]
+    assert recovered_operation["status"] == "COMPLETE"
+    assert recovered["qualification"]["candidate_sha"] == candidate
+    assert len(transports) == 2
+    assert transports[0].workflow_list_calls == 0
+    assert transports[0].dispatch_calls == 0
+    assert transports[1].workflow_list_calls == 1
+    assert transports[1].dispatch_calls == 0
+    assert refs[0].delete_calls == 0
+    assert refs[1].delete_calls == 1
+    remote_after_recovery = read_shared_remote(remote_path)
+    assert remote_after_recovery["dispatch_count"] == 0
+    assert remote_after_recovery["refs"] == []
+    assert remote_after_recovery["deleted"] == [
+        {"name": original_operation["candidate_ref"], "sha": candidate}
+    ]
+
+
+def test_unheld_or_expired_qualification_lease_cannot_write(tmp_path: Path) -> None:
+    repo, base, _candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="standard",
+        compatibility_reason=None,
+    )
+    state_dir = tmp_path / "state"
+    transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=git(repo, "rev-parse", "HEAD"),
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    operation = qualification_operation_for_test(
+        state,
+        base,
+        git(repo, "rev-parse", "HEAD"),
+        transport,
+    )
+    state_path = TASK.state_path(state_dir, 999)
+    before = state_path.read_bytes()
+
+    unheld = TASK.QualificationOwnershipLease(state_dir, 999)
+    unheld.active = True
+    with pytest.raises(TASK.TaskControllerError, match="QUALIFICATION_OWNERSHIP_REQUIRED"):
+        TASK.begin_qualification_operation(
+            state_dir,
+            999,
+            operation,
+            ownership=unheld,
+        )
+    assert state_path.read_bytes() == before
+
+    with TASK.qualification_ownership_lock(state_dir, 999) as lease:
+        lease.require_active(state_dir, 999)
+        lease.active = False
+        with pytest.raises(TASK.TaskControllerError, match="QUALIFICATION_OWNERSHIP_REQUIRED"):
+            lease.require_active(state_dir, 999)
+        lease.active = True
+        saved_binding = lease.binding
+        lease.binding = {"protocol": "forged"}
+        with pytest.raises(TASK.TaskControllerError, match="QUALIFICATION_OWNERSHIP_REQUIRED"):
+            lease.require_active(state_dir, 999)
+        lease.binding = saved_binding
+        saved_handle = lease._lock_handle
+        lease._lock_handle = None
+        with pytest.raises(TASK.TaskControllerError, match="QUALIFICATION_OWNERSHIP_REQUIRED"):
+            lease.require_active(state_dir, 999)
+        lease._lock_handle = saved_handle
+        lease.require_active(state_dir, 999)
+
+    lease.active = True
+    with pytest.raises(TASK.TaskControllerError, match="QUALIFICATION_OWNERSHIP_REQUIRED"):
+        lease.require_active(state_dir, 999)
+
+
+def test_fork_inherited_qualification_lease_is_rejected(tmp_path: Path) -> None:
+    context = multiprocessing.get_context("fork")
+    state_dir = tmp_path / "controller-state"
+    with TASK.qualification_ownership_lock(state_dir, 999) as lease:
+        read_fd, write_fd = os.pipe()
+        process = context.Process(
+            target=_check_inherited_qualification_lease,
+            args=(lease, state_dir, 999, write_fd),
+        )
+        process_started = False
+        try:
+            process.start()
+            process_started = True
+            os.close(write_fd)
+            readable, _, _ = select.select([read_fd], [], [], 5)
+            assert readable, "forked lease check did not return"
+            result = os.read(read_fd, 128).decode("utf-8")
+            process.join(5)
+            assert process.exitcode == 0
+            assert result == "QUALIFICATION_OWNERSHIP_REQUIRED"
+        finally:
+            if process_started and process.is_alive():
+                process.kill()
+            if process_started:
+                process.join(5)
+                assert not process.is_alive(), "forked lease child was not reaped"
+                process.close()
+            else:
+                os.close(write_fd)
+            os.close(read_fd)
+
+
+def test_competing_reconciler_is_excluded_while_checkpoint_writes_progress(
+    tmp_path: Path,
+) -> None:
+    repo, base, candidate, state_dir, operation, base_transport = persisted_running_qualification(tmp_path)
+    entered_lookup = threading.Event()
+    release_lookup = threading.Event()
+
+    class BlockingLookupTransport(FakeQualificationTransport):
+        def list_workflow_runs(self, repository, workflow):
+            self.workflow_list_calls += 1
+            entered_lookup.set()
+            assert release_lookup.wait(10)
+            return []
+
+    transport = BlockingLookupTransport(
+        comment=base_transport.comments[0],
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=TASK.load_state(state_dir, 999)["authorization"]["identity_sha256"],
+    )
+    refs = FakeCandidateRefTransport()
+    errors: list[BaseException] = []
+
+    def first_reconcile() -> None:
+        try:
+            TASK.reconcile_qualification_operation(
+                state_dir,
+                999,
+                transport=transport,
+                ref_transport=refs,
+                expected_app_id=424242,
+                candidate_repo=repo,
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    first = threading.Thread(target=first_reconcile)
+    first.start()
+    assert entered_lookup.wait(5)
+
+    write_finished = threading.Event()
+
+    def write_unrelated_checkpoint_field() -> None:
+        TASK.checkpoint_transaction(
+            state_dir,
+            999,
+            lambda current: {**current, "unrelated_during_lookup": "written"},
+        )
+        write_finished.set()
+
+    writer = threading.Thread(target=write_unrelated_checkpoint_field)
+    writer.start()
+    writer.join(5)
+    assert not writer.is_alive()
+    assert write_finished.is_set()
+
+    before_competitor = TASK.state_path(state_dir, 999).read_bytes()
+    with pytest.raises(TASK.TaskControllerError, match="QUALIFICATION_OWNER_ACTIVE"):
+        TASK.reconcile_qualification_operation(
+            state_dir,
+            999,
+            transport=transport,
+            ref_transport=refs,
+            expected_app_id=424242,
+            candidate_repo=repo,
+        )
+    assert TASK.state_path(state_dir, 999).read_bytes() == before_competitor
+    assert transport.workflow_list_calls == 1
+    assert transport.dispatch_calls == 0
+    assert refs.delete_calls == []
+
+    release_lookup.set()
+    first.join(5)
+    assert not first.is_alive()
+    assert errors == []
+    persisted = TASK.load_state(state_dir, 999)
+    assert persisted["qualification_operation"]["operation_id"] == operation["operation_id"]
+    assert persisted["qualification_operation"]["status"] == "RUNNING"
+    assert persisted["unrelated_during_lookup"] == "written"
+
+
+def test_reconciliation_rejects_completed_poll_result_after_stop(tmp_path: Path) -> None:
+    repo, base, candidate, state_dir, operation, initial_transport = persisted_running_qualification(tmp_path)
+    state = TASK.load_state(state_dir, 999)
+    entered_lookup = threading.Event()
+    release_lookup = threading.Event()
+
+    class BlockingCompletedLookup(FakeQualificationTransport):
+        def list_workflow_runs(self, repository, workflow):
+            self.workflow_list_calls += 1
+            entered_lookup.set()
+            assert release_lookup.wait(10)
+            return [dict(item) for item in self.hosted_runs or []]
+
+    transport = BlockingCompletedLookup(
+        comment=initial_transport.comments[0],
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    transport.dispatch_inputs = {
+        "task_id": state["task_id"],
+        "dispatch_nonce": operation["dispatch_nonce"],
+        "candidate_sha": candidate,
+    }
+    transport.hosted_runs = [transport._run()]
+    refs = FakeCandidateRefTransport()
+    errors: list[BaseException] = []
+
+    def reconcile() -> None:
+        try:
+            TASK.reconcile_qualification_operation(
+                state_dir,
+                999,
+                transport=transport,
+                ref_transport=refs,
+                expected_app_id=424242,
+                candidate_repo=repo,
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    worker = threading.Thread(target=reconcile)
+    worker.start()
+    assert entered_lookup.wait(5)
+    TASK.checkpoint_transaction(
+        state_dir,
+        999,
+        lambda current: {
+            **current,
+            "phase": "STOP_REPLAN",
+            "stop_reason": "stop during hosted discovery",
+        },
+    )
+    stopped_bytes = TASK.state_path(state_dir, 999).read_bytes()
+    release_lookup.set()
+    worker.join(5)
+
+    assert not worker.is_alive()
+    assert len(errors) == 1
+    assert isinstance(errors[0], TASK.TaskControllerError)
+    assert str(errors[0]) == "STOP_REPLAN_PRESERVE_ATTEMPT"
+    assert TASK.state_path(state_dir, 999).read_bytes() == stopped_bytes
+    stopped = TASK.load_state(state_dir, 999)
+    assert stopped["phase"] == "STOP_REPLAN"
+    assert stopped["qualification"] is None
+    assert stopped["qualification_operation"]["operation_id"] == operation["operation_id"]
+    assert stopped["qualification_operation"]["status"] == "RUNNING"
+    assert transport.dispatch_calls == 0
+    assert refs.delete_calls == []
+
+
+def test_cleanup_rechecks_stop_after_live_authorization_fetch(tmp_path: Path) -> None:
+    repo, base, candidate, state_dir, operation, base_transport = persisted_running_qualification(tmp_path)
+    state = TASK.load_state(state_dir, 999)
+    base_transport.dispatch_inputs = {
+        "task_id": state["task_id"],
+        "dispatch_nonce": operation["dispatch_nonce"],
+        "candidate_sha": candidate,
+    }
+    terminal = TASK._qualification_terminal_result(
+        operation,
+        base_transport._run(),
+        base_transport._check(),
+        424242,
+    )
+    persist_terminal_operation_for_test(state_dir, 999, operation, terminal)
+    entered_authorization = threading.Event()
+    release_authorization = threading.Event()
+
+    class BlockingAuthorizationTransport(FakeQualificationTransport):
+        def list_issue_comments(self, repository, issue_number):
+            entered_authorization.set()
+            assert release_authorization.wait(10)
+            return super().list_issue_comments(repository, issue_number)
+
+    transport = BlockingAuthorizationTransport(
+        comment=base_transport.comments[0],
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    refs = FakeCandidateRefTransport()
+    errors: list[BaseException] = []
+
+    def reconcile_cleanup() -> None:
+        try:
+            TASK.reconcile_qualification_operation(
+                state_dir,
+                999,
+                transport=transport,
+                ref_transport=refs,
+                expected_app_id=424242,
+                candidate_repo=repo,
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    worker = threading.Thread(target=reconcile_cleanup)
+    worker.start()
+    assert entered_authorization.wait(5)
+    TASK.checkpoint_transaction(
+        state_dir,
+        999,
+        lambda current: {
+            **current,
+            "phase": "STOP_REPLAN",
+            "stop_reason": "stop during cleanup preflight",
+        },
+    )
+    stopped_bytes = TASK.state_path(state_dir, 999).read_bytes()
+    release_authorization.set()
+    worker.join(5)
+
+    assert not worker.is_alive()
+    assert len(errors) == 1
+    assert isinstance(errors[0], TASK.TaskControllerError)
+    assert str(errors[0]) == "STOP_REPLAN_PRESERVE_ATTEMPT"
+    assert TASK.state_path(state_dir, 999).read_bytes() == stopped_bytes
+    assert refs.delete_calls == []
+    assert transport.dispatch_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("change", "expected_error"),
+    [
+        ("stop", "STOP_REPLAN_PRESERVE_ATTEMPT"),
+        ("authorization", "QUALIFICATION_AUTHORITY_CHANGED"),
+        ("operation", "QUALIFICATION_OPERATION_STALE"),
+    ],
+)
+def test_cleanup_revalidates_after_candidate_ref_lookup(
+    tmp_path: Path,
+    change: str,
+    expected_error: str,
+) -> None:
+    repo, base, candidate, state_dir, operation, base_transport = persisted_running_qualification(tmp_path)
+    state = TASK.load_state(state_dir, 999)
+    base_transport.dispatch_inputs = {
+        "task_id": state["task_id"],
+        "dispatch_nonce": operation["dispatch_nonce"],
+        "candidate_sha": candidate,
+    }
+    terminal = TASK._qualification_terminal_result(
+        operation,
+        base_transport._run(),
+        base_transport._check(),
+        424242,
+    )
+    persist_terminal_operation_for_test(state_dir, 999, operation, terminal)
+    lookup_started = threading.Event()
+    release_lookup = threading.Event()
+
+    class BlockingCandidateRefLookup(FakeCandidateRefTransport):
+        def delete_candidate_ref(
+            self,
+            ref_name,
+            expected_sha=None,
+            *,
+            before_delete=None,
+        ):
+            self.delete_calls.append((ref_name, expected_sha))
+            lookup_started.set()
+            assert release_lookup.wait(5)
+            if before_delete is not None:
+                before_delete()
+            self.deleted.append(ref_name)
+
+    refs = BlockingCandidateRefLookup()
+    errors: list[BaseException] = []
+
+    def cleanup() -> None:
+        try:
+            with TASK.qualification_ownership_lock(state_dir, 999) as ownership:
+                TASK.cleanup_qualification_candidate_ref(
+                    state_dir,
+                    999,
+                    operation,
+                    ownership=ownership,
+                    transport=base_transport,
+                    ref_transport=refs,
+                    expected_app_id=424242,
+                    candidate_repo=repo,
+                )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    worker = threading.Thread(target=cleanup)
+    worker.start()
+    try:
+        assert lookup_started.wait(5)
+        if change == "stop":
+            TASK.checkpoint_transaction(
+                state_dir,
+                999,
+                lambda current: {
+                    **current,
+                    "phase": "STOP_REPLAN",
+                    "stop_reason": "stop during candidate ref lookup",
+                },
+            )
+        elif change == "authorization":
+            TASK.checkpoint_transaction(
+                state_dir,
+                999,
+                lambda current: {
+                    **current,
+                    "authorization": {
+                        **current["authorization"],
+                        "identity_sha256": "f" * 64,
+                    },
+                },
+            )
+        else:
+            TASK.checkpoint_transaction(
+                state_dir,
+                999,
+                lambda current: {
+                    **current,
+                    "qualification_operation": {
+                        **current["qualification_operation"],
+                        "operation_id": "superseding-operation",
+                    },
+                },
+            )
+        changed_bytes = TASK.state_path(state_dir, 999).read_bytes()
+    finally:
+        release_lookup.set()
+    worker.join(5)
+
+    assert not worker.is_alive()
+    assert len(errors) == 1
+    assert isinstance(errors[0], TASK.TaskControllerError)
+    assert str(errors[0]) == expected_error
+    assert TASK.state_path(state_dir, 999).read_bytes() == changed_bytes
+    assert refs.delete_calls == [(operation["candidate_ref"], candidate)]
+    assert refs.deleted == []
+
+
+@pytest.mark.parametrize(
+    ("binding_change", "expected_error"),
+    [
+        ("legacy", "QUALIFICATION_OWNERSHIP_PROTOCOL_UNKNOWN"),
+        ("unknown_protocol", "QUALIFICATION_OWNERSHIP_PROTOCOL_UNKNOWN"),
+        ("other_domain", "QUALIFICATION_OWNERSHIP_DOMAIN_UNESTABLISHED"),
+    ],
+)
+def test_reconciliation_fails_closed_without_established_owner_domain(
+    tmp_path: Path,
+    binding_change: str,
+    expected_error: str,
+) -> None:
+    repo, _base, _candidate, state_dir, operation, transport = persisted_running_qualification(tmp_path)
+
+    def mutate(current):
+        updated = {**current, "qualification_operation": dict(current["qualification_operation"])}
+        binding = updated["qualification_operation"].get("ownership_binding")
+        if binding_change == "legacy":
+            updated["qualification_operation"].pop("ownership_binding")
+        elif binding_change == "unknown_protocol":
+            updated["qualification_operation"]["ownership_binding"] = {
+                **binding,
+                "protocol": "unknown-lock-v0",
+            }
+        else:
+            updated["qualification_operation"]["ownership_binding"] = {
+                **binding,
+                "domain_sha256": "f" * 64,
+            }
+        return updated
+
+    TASK.checkpoint_transaction(state_dir, 999, mutate)
+    before = TASK.state_path(state_dir, 999).read_bytes()
+    refs = FakeCandidateRefTransport()
+    with pytest.raises(TASK.TaskControllerError, match=expected_error):
+        TASK.reconcile_qualification_operation(
+            state_dir,
+            999,
+            transport=transport,
+            ref_transport=refs,
+            expected_app_id=424242,
+            candidate_repo=repo,
+        )
+    assert TASK.state_path(state_dir, 999).read_bytes() == before
+    assert transport.workflow_list_calls == 0
+    assert transport.dispatch_calls == 0
+    assert refs.delete_calls == []
+    assert operation["ownership_binding"]["protocol"] == "local-process-flock-v1"
+
+
+@pytest.mark.parametrize(
+    ("changed", "expected_error"),
+    [
+        ("authorization", "QUALIFICATION_AUTHORITY_CHANGED"),
+        ("candidate", "QUALIFICATION_CANDIDATE_CHANGED"),
+    ],
+)
+def test_terminal_cleanup_refuses_changed_authority_or_candidate(
+    tmp_path: Path,
+    changed: str,
+    expected_error: str,
+) -> None:
+    repo, _base, candidate, state_dir, operation, transport = persisted_running_qualification(tmp_path)
+    state = TASK.load_state(state_dir, 999)
+    transport.dispatch_inputs = {
+        "task_id": state["task_id"],
+        "dispatch_nonce": operation["dispatch_nonce"],
+        "candidate_sha": candidate,
+    }
+    terminal = TASK._qualification_terminal_result(
+        operation,
+        transport._run(),
+        transport._check(),
+        424242,
+    )
+    persist_terminal_operation_for_test(state_dir, 999, operation, terminal)
+    if changed == "authorization":
+        TASK.checkpoint_transaction(
+            state_dir,
+            999,
+            lambda current: {
+                **current,
+                "authorization": {
+                    **current["authorization"],
+                    "identity_sha256": "f" * 64,
+                },
+            },
+        )
+    else:
+        commit_paths(repo, {"src/changed.py": "CHANGED = True\n"}, message="candidate drift")
+
+    before = TASK.state_path(state_dir, 999).read_bytes()
+    refs = FakeCandidateRefTransport()
+    with pytest.raises(TASK.TaskControllerError, match=expected_error):
+        TASK.reconcile_qualification_operation(
+            state_dir,
+            999,
+            transport=transport,
+            ref_transport=refs,
+            expected_app_id=424242,
+            candidate_repo=repo,
+        )
+    assert TASK.state_path(state_dir, 999).read_bytes() == before
+    assert refs.delete_calls == []
+    assert refs.deleted == []
+    assert transport.dispatch_calls == 0
 
 
 def test_public_qualification_rejects_restored_forbidden_commit(
@@ -3402,8 +4791,9 @@ def test_public_qualification_rejects_restored_forbidden_commit(
         AuthorizationError,
         match="SCOPE_FORBIDDEN",
     ):
-        TASK.qualify_task(
+        qualify_with_owner(
             state,
+            state_dir=tmp_path / "state",
             candidate_repo=repo,
             controller_main_sha=base,
             expected_app_id=424242,
@@ -3505,8 +4895,9 @@ def test_qualify_rejects_duplicate_external_authority(
         AuthorizationError,
         match="AUTHORIZATION_AMBIGUOUS",
     ):
-        TASK.qualify_task(
+        qualify_with_owner(
             state,
+            state_dir=tmp_path / "state",
             candidate_repo=repo,
             controller_main_sha=base,
             expected_app_id=424242,
@@ -3520,7 +4911,7 @@ def test_qualify_rejects_duplicate_external_authority(
     assert refs.published == []
 
 
-def test_qualify_rejects_wrong_trusted_workflow_head_and_cleans_ref(
+def test_qualify_rejects_wrong_trusted_workflow_head_and_preserves_ref(
     tmp_path: Path,
 ) -> None:
     (
@@ -3551,8 +4942,9 @@ def test_qualify_rejects_wrong_trusted_workflow_head_and_cleans_ref(
         TASK.TaskControllerError,
         match="WORKFLOW_RUN_IDENTITY_MISMATCH",
     ):
-        TASK.qualify_task(
+        qualify_with_owner(
             state,
+            state_dir=tmp_path / "state",
             candidate_repo=repo,
             controller_main_sha=base,
             expected_app_id=424242,
@@ -3563,7 +4955,10 @@ def test_qualify_rejects_wrong_trusted_workflow_head_and_cleans_ref(
             sleep_fn=lambda _: None,
         )
 
-    assert len(refs.deleted) == 1
+    assert refs.deleted == []
+    persisted = TASK.load_state(tmp_path / "state", 999)
+    assert persisted["qualification_operation"]["status"] == "UNKNOWN"
+    assert persisted["qualification_operation"]["candidate_ref_published"] is True
 
 
 def test_qualify_rejects_duplicate_authoritative_app_checks(
@@ -3597,8 +4992,9 @@ def test_qualify_rejects_duplicate_authoritative_app_checks(
         TASK.TaskControllerError,
         match="AUTHORITATIVE_CHECK_AMBIGUOUS",
     ):
-        TASK.qualify_task(
+        qualify_with_owner(
             state,
+            state_dir=tmp_path / "state",
             candidate_repo=repo,
             controller_main_sha=base,
             expected_app_id=424242,
@@ -3609,7 +5005,9 @@ def test_qualify_rejects_duplicate_authoritative_app_checks(
             sleep_fn=lambda _: None,
         )
 
-    assert len(refs.deleted) == 1
+    assert refs.deleted == []
+    persisted = TASK.load_state(tmp_path / "state", 999)
+    assert persisted["qualification_operation"]["status"] == "UNKNOWN"
 
 
 def reviewed_qualified_fixture(
@@ -5023,7 +6421,7 @@ def test_public_standard_rework_archives_c1_and_requalifies_only_selected_c2(tmp
         "qualification": c1_qualification,
     }
     with pytest.raises(TASK.TaskControllerError, match="QUALIFICATION_OPERATION_STALE"):
-        TASK.apply_qualification_terminal_result(
+        apply_qualification_for_test(
             fixture["state_dir"], issue, c1_operation, stale_callback,
             c1_transport, candidate_repo=c1_root,
         )

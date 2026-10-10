@@ -16,6 +16,31 @@ def test_standard_mode_has_no_attachment_requirement_but_rejects_injected_attach
     with pytest.raises(task.EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
         task._require_workflow_candidate_attachment({"capsule_evidence": {}}, mode="standard", candidate_sha="a"*40)
 
+def test_qualification_reconcile_cli_and_recovery_guides(capsys, tmp_path):
+    parser = task.build_parser()
+    with pytest.raises(SystemExit) as help_result:
+        parser.parse_args(["qualify-reconcile", "--help"])
+    assert help_result.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "without dispatching again" in help_text
+    assert "--candidate-root" in help_text
+
+    args = parser.parse_args([
+        "qualify-reconcile", "275", "--candidate-root", str(tmp_path),
+    ])
+    assert args.handler is task.command_qualify_reconcile
+    assert args.issue_number == 275
+
+    testing_text = (ROOT / "docs/operations/testing.md").read_text()
+    authority_text = (ROOT / "engineering/workflow/AUTHORITY.md").read_text()
+    for guide in (testing_text, authority_text):
+        normalized = " ".join(guide.split())
+        assert "qualification ownership lock" in normalized
+        assert "QUALIFICATION_OWNER_ACTIVE" in normalized
+        assert "qualify-reconcile ISSUE --candidate-root PATH" in normalized
+        assert "never dispatches" in normalized
+        assert "no matching run" in normalized
+
 def test_retired_execution_cli_cannot_dispatch():
     with pytest.raises(SystemExit) as result:
         task.build_parser().parse_args(["execution", "999", "run", "--candidate-root", str(ROOT)])
@@ -592,7 +617,9 @@ def test_terminal_qualification_rejects_intervening_stop_without_resurrection(tm
             "schema_version": 2,
         },
     }
-    task.begin_qualification_operation(state_dir, 264, operation)
+    with task.qualification_ownership_lock(state_dir, 264) as ownership:
+        task.begin_qualification_operation(
+            state_dir, 264, operation, ownership=ownership)
     task.checkpoint_transaction(
         state_dir,
         264,
@@ -603,14 +630,16 @@ def test_terminal_qualification_rejects_intervening_stop_without_resurrection(tm
         },
     )
 
-    with pytest.raises(task.TaskControllerError, match="STOP_REPLAN_PRESERVE_ATTEMPT"):
-        task.apply_qualification_terminal_result(
-            state_dir,
-            264,
-            operation,
-            {"phase": "QUALIFIED", "qualification": {"candidate_sha": "d" * 40}},
-            object(),
-        )
+    with task.qualification_ownership_lock(state_dir, 264) as ownership:
+        with pytest.raises(task.TaskControllerError, match="STOP_REPLAN_PRESERVE_ATTEMPT"):
+            task.apply_qualification_terminal_result(
+                state_dir,
+                264,
+                operation,
+                {"phase": "QUALIFIED", "qualification": {"candidate_sha": "d" * 40}},
+                object(),
+                ownership=ownership,
+            )
 
     persisted = task.load_state(state_dir, 264)
     assert persisted["phase"] == "STOP_REPLAN"
