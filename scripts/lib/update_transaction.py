@@ -548,6 +548,34 @@ class UpdateTransaction:
         if checkout_identity(self.root) != self.state["identity"]:
             raise TransactionError("Checkout branch, HEAD or worktree changed during dependency update.")
 
+    def assert_publication_boundary(self, area: str, target: Path, before: bytes,
+                                    expected_target: os.stat_result) -> None:
+        """Authenticate registered artifacts and the original lock immediately before replacement."""
+        try:
+            target_relpath = target.relative_to(self.root).as_posix()
+        except ValueError as exc:
+            raise TransactionError("Updater publication path escapes the checkout; inspect it manually.") from exc
+        artifacts, output = self._artifact_records(area)
+        hashes = output.get("files", {}).get(target_relpath)
+        if (output.get("status") != "publishing" or set(output.get("files", {})) != {target_relpath}
+                or not hashes or hashes.get("before") != digest(before)):
+            raise TransactionError("Updater publication record does not match the lockfile boundary.")
+        if any(record["mode"] != stat.S_IMODE(expected_target.st_mode)
+               for _, record in artifacts.values()):
+            raise TransactionError("Updater artifact mode does not match the original lockfile mode.")
+        locations = self._artifact_locations(area)
+        if locations != {"staged": "sidecar", "recovery": "sidecar"}:
+            raise TransactionError("Updater publication artifacts changed location before lock replacement.")
+        actual = self._read_nofollow(target, "lockfile publication target")
+        if actual is None:
+            raise TransactionError("Lockfile disappeared at publication boundary; refusing replacement.")
+        info, data = actual
+        if (not stat.S_ISREG(info.st_mode)
+                or (info.st_dev, info.st_ino) != (expected_target.st_dev, expected_target.st_ino)
+                or stat.S_IMODE(info.st_mode) != stat.S_IMODE(expected_target.st_mode)
+                or info.st_size != len(before) or data != before):
+            raise TransactionError("Lockfile changed at publication boundary; refusing to overwrite it.")
+
     @contextmanager
     def publication_guard(self):
         """Hold Git's index lock across a single-file replacement.

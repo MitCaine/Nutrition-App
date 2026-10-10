@@ -8,6 +8,7 @@ import json
 import os
 import shlex
 import shutil
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -41,11 +42,27 @@ class StubTransaction:
 
     def publishing(self, _area, _proposals, *, artifacts=None):
         self.artifacts = artifacts or []
+        self.artifact_identities = {}
 
     def write_artifact(self, _area, path, data):
         path.write_bytes(data)
         mode = next(item[4] for item in self.artifacts if item[0] == path)
         path.chmod(mode)
+        info = path.stat(follow_symlinks=False)
+        self.artifact_identities[path] = (info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode))
+
+    def assert_publication_boundary(self, _area, target, before, expected_target):
+        info = target.stat(follow_symlinks=False)
+        if (target.read_bytes() != before
+                or (info.st_dev, info.st_ino) != (expected_target.st_dev, expected_target.st_ino)
+                or stat.S_IMODE(info.st_mode) != stat.S_IMODE(expected_target.st_mode)):
+            raise module.TransactionError("Lockfile changed at publication boundary.")
+        for path, _, _, data, mode in self.artifacts:
+            artifact_info = path.stat(follow_symlinks=False)
+            if (path.read_bytes() != data or stat.S_IMODE(artifact_info.st_mode) != mode
+                    or (artifact_info.st_dev, artifact_info.st_ino, stat.S_IMODE(artifact_info.st_mode))
+                    != self.artifact_identities[path]):
+                raise module.TransactionError("Updater publication artifact changed.")
 
     def prepare_artifact_rollback(self, _area):
         pass

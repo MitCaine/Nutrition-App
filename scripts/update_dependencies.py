@@ -68,6 +68,7 @@ def publish_single_lock(transaction: UpdateTransaction, area: str, path: Path,
         transaction.write_artifact(area, recovery, before)
         transaction.write_artifact(area, staged, after)
         transaction.assert_identity()
+        transaction.assert_publication_boundary(area, path, before, original)
         os.replace(staged, path)
         try:
             transaction.applied(area)

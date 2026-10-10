@@ -168,7 +168,10 @@ identities and transaction owner before publishing a single lock. Rerun the same
 command after an interruption: if the lock still has the recorded before bytes, the area
 remains pending; if it has the recorded after bytes, that area is recognized as applied
 and is skipped. The updater removes only artifacts that still match their transaction
-records. Missing ownership records, changed or replaced artifacts, symlinks, mode drift,
+records. Immediately before replacement, it reauthenticates both artifacts and the lock's
+original bytes, mode and filesystem identity. If the lock or either artifact changes after
+registration, publication stops before replacement and preserves the target and artifacts
+for inspection. Missing ownership records, changed or replaced artifacts, symlinks, mode drift,
 checkout identity drift and unrelated changes stop the retry for inspection; the updater
 leaves unauthenticated artifacts untouched. Do not remove or replace these files to force
 a retry.

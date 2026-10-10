@@ -373,8 +373,15 @@ os._exit(0)
 
     def reset_single_lock_fixture(self):
         state_path(self.root).unlink(missing_ok=True)
+        if self.backend_lock.is_symlink():
+            self.backend_lock.unlink()
         self.backend_lock.write_bytes(b"fastapi==1.0.0\n")
         self.backend_lock.chmod(0o640)
+        notes = self.root / "notes.txt"
+        notes.write_text("original\n")
+        notes.chmod(0o644)
+        for name in ("staged-replacement.tmp", "recovery-replacement.tmp"):
+            (self.root / name).unlink(missing_ok=True)
         for suffix in (".update-tmp", ".update-recovery"):
             self.backend_lock.with_name(self.backend_lock.name + suffix).unlink(missing_ok=True)
         git_dir = Path(self.git("rev-parse", "--absolute-git-dir"))
@@ -417,6 +424,116 @@ os._exit(0)
                 self.assertIn("already applied", repeated_output)
                 if mode != "staged":
                     self.assertIn("previously validated transaction output retained", output)
+
+    def test_hard_exit_publish_boundary_preserves_tampered_artifacts_and_target(self):
+        cases = (
+            "staged_changed",
+            "staged_replaced",
+            "staged_mode",
+            "staged_symlink",
+            "recovery_changed",
+            "recovery_replaced",
+            "target_edited",
+        )
+        for corruption in cases:
+            with self.subTest(corruption=corruption):
+                self.reset_single_lock_fixture()
+                self.backend_lock.chmod(0o640)
+                before = self.backend_lock.read_bytes()
+                after = before.replace(b"1.0.0", b"1.1.0")
+                original_info = self.backend_lock.stat(follow_symlinks=False)
+                expected_target = {
+                    "bytes": before,
+                    "device": original_info.st_dev,
+                    "inode": original_info.st_ino,
+                    "mode": stat.S_IMODE(original_info.st_mode),
+                }
+                staged = self.backend_lock.with_name(self.backend_lock.name + ".update-tmp")
+                recovery = self.backend_lock.with_name(self.backend_lock.name + ".update-recovery")
+                transaction = UpdateTransaction.begin(
+                    self.root, "backend", [], ("backend",), module.transaction_inputs(("backend",))
+                )
+                write_artifact = transaction.write_artifact
+                expected_staged = {}
+                expected_recovery = {}
+
+                def write_then_corrupt(area, artifact_path, data):
+                    write_artifact(area, artifact_path, data)
+                    if corruption.startswith("staged_") and artifact_path == staged:
+                        if corruption == "staged_changed":
+                            staged.write_bytes(b"fastapi==9.9.9\n")
+                        elif corruption == "staged_replaced":
+                            replacement = self.root / "staged-replacement.tmp"
+                            replacement.write_bytes(after)
+                            replacement.chmod(0o640)
+                            replacement.replace(staged)
+                        elif corruption == "staged_mode":
+                            staged.chmod(0o600)
+                        else:
+                            staged.unlink()
+                            staged.symlink_to(self.root / "notes.txt")
+                    elif corruption.startswith("recovery_") and artifact_path == recovery:
+                        if corruption == "recovery_changed":
+                            recovery.write_bytes(b"foreign recovery\n")
+                        else:
+                            replacement = self.root / "recovery-replacement.tmp"
+                            replacement.write_bytes(before)
+                            replacement.chmod(0o640)
+                            replacement.replace(recovery)
+                    elif corruption == "target_edited" and artifact_path == staged:
+                        self.backend_lock.write_bytes(b"intervening user edit\n")
+                        edited = self.backend_lock.stat(follow_symlinks=False)
+                        expected_target.update({
+                            "bytes": self.backend_lock.read_bytes(),
+                            "device": edited.st_dev,
+                            "inode": edited.st_ino,
+                            "mode": stat.S_IMODE(edited.st_mode),
+                        })
+                    if artifact_path == staged and (staged.exists() or staged.is_symlink()):
+                        expected_staged.update({
+                            "symlink": staged.is_symlink(),
+                            "bytes": None if staged.is_symlink() else staged.read_bytes(),
+                            "device": staged.lstat().st_dev,
+                            "inode": staged.lstat().st_ino,
+                            "mode": stat.S_IMODE(staged.lstat().st_mode),
+                        })
+                    if artifact_path == recovery and recovery.exists():
+                        expected_recovery.update({
+                            "bytes": recovery.read_bytes(),
+                            "device": recovery.lstat().st_dev,
+                            "inode": recovery.lstat().st_ino,
+                            "mode": stat.S_IMODE(recovery.lstat().st_mode),
+                        })
+
+                with patch.object(transaction, "write_artifact", side_effect=write_then_corrupt):
+                    with self.assertRaises(TransactionError):
+                        module.publish_single_lock(transaction, "backend", self.backend_lock, before, after)
+
+                target_info = self.backend_lock.stat(follow_symlinks=False)
+                self.assertEqual(self.backend_lock.read_bytes(), expected_target["bytes"])
+                self.assertEqual((target_info.st_dev, target_info.st_ino),
+                                 (expected_target["device"], expected_target["inode"]))
+                self.assertEqual(stat.S_IMODE(target_info.st_mode), expected_target["mode"])
+                self.assertTrue(staged.exists() or staged.is_symlink())
+                self.assertTrue(recovery.exists())
+                self.assertEqual(recovery.read_bytes(), expected_recovery["bytes"])
+                recovery_info = recovery.lstat()
+                self.assertEqual((recovery_info.st_dev, recovery_info.st_ino),
+                                 (expected_recovery["device"], expected_recovery["inode"]))
+                self.assertEqual(stat.S_IMODE(recovery_info.st_mode), expected_recovery["mode"])
+                if expected_staged["symlink"]:
+                    self.assertTrue(staged.is_symlink())
+                    self.assertEqual(staged.resolve(), (self.root / "notes.txt").resolve())
+                else:
+                    self.assertTrue(staged.is_file())
+                    self.assertEqual(staged.read_bytes(), expected_staged["bytes"])
+                    staged_info = staged.lstat()
+                    self.assertEqual((staged_info.st_dev, staged_info.st_ino),
+                                     (expected_staged["device"], expected_staged["inode"]))
+                    self.assertEqual(stat.S_IMODE(staged_info.st_mode), expected_staged["mode"])
+                output = transaction.state["outputs"]["backend"]
+                self.assertEqual(output["status"], "publishing")
+                self.assertEqual(output["artifact_cleanup"], "active")
 
     def test_interrupted_publication_artifact_tampering_fails_closed(self):
         for role, suffix in (("staged", ".update-tmp"), ("recovery", ".update-recovery")):
