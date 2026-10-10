@@ -18,8 +18,11 @@ Passive receipt inspection reads an existing key and fails if it is absent or in
 it never provisions a key or writes state. Historical attachment/signing/correction
 mutators remain only for separately authorized recovery. Unfinished legacy review
 has no dispatch command: request an explicit owner recovery decision instead. Keep their original source/attempt identities,
-C/R/T recovery, pending authority and consumed allowances. They do not become passing evidence
-for current standard work; #246/#256 remain paused. Public RI report execution/export is retired.
+C/R/T recovery, pending authority and consumed allowances. The original #246/#256 capsule
+attempts remain stopped under their original authority; that historical attempt state does not
+determine current status, which belongs to the live #246 and #256 issues. Their retained historical
+evidence does not become passing evidence for current standard work. Public RI report
+execution/export is retired.
 
 Retained pre-#232 schema-version-1 bindings can lack `review_obligations`.
 The public historical `lib.legacy_ri.candidate_evidence.gate` and packet reader
