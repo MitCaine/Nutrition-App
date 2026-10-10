@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, null, select
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import TEST_USER_ID
@@ -308,6 +308,13 @@ def test_legacy_delete_fence_rolls_back_and_survives_deleted_log(
     assert changed_retry.status_code == 409
     assert changed_retry.json()["detail"]["code"] == "log_idempotency_payload_conflict"
 
+    rolled_back_status = client.get(
+        f"/api/v1/logs/mutations/{failed_delete_id}",
+        params={"operation": "delete"},
+    )
+    assert rolled_back_status.status_code == 200
+    assert rolled_back_status.json()["status"] == "unresolved"
+
 
 def test_delete_replay_is_a_noop_and_status_is_authoritative(
     client: TestClient,
@@ -401,10 +408,16 @@ def test_create_status_reconciles_the_authoritative_log(client: TestClient) -> N
     assert status_without_operation.json()["result"] == created.json()
 
 
-def test_status_reports_confirmed_non_commit_and_is_owner_scoped(client: TestClient) -> None:
+def test_status_keeps_missing_outcomes_unresolved(client: TestClient) -> None:
     missing = client.get(f"/api/v1/logs/mutations/{uuid4()}", params={"operation": "update"})
     assert missing.status_code == 200
-    assert missing.json()["status"] == "confirmed_non_commit"
+    assert missing.json()["status"] == "unresolved"
+    missing_delete = client.get(
+        f"/api/v1/logs/mutations/{uuid4()}",
+        params={"operation": "delete"},
+    )
+    assert missing_delete.status_code == 200
+    assert missing_delete.json()["status"] == "unresolved"
     unknown_create = client.get(
         f"/api/v1/logs/mutations/{uuid4()}",
         params={"operation": "create"},
@@ -414,3 +427,107 @@ def test_status_reports_confirmed_non_commit_and_is_owner_scoped(client: TestCli
     unknown_without_operation = client.get(f"/api/v1/logs/mutations/{uuid4()}")
     assert unknown_without_operation.status_code == 200
     assert unknown_without_operation.json()["status"] == "unresolved"
+
+
+def test_incomplete_update_and_delete_receipts_stay_unresolved(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    resource_id = uuid4()
+    request_ids = {"update": uuid4(), "delete": uuid4()}
+    for operation, request_id in request_ids.items():
+        db_session.add(
+            CreateOperationIdempotency(
+                id=uuid4(),
+                user_id=TEST_USER_ID,
+                operation=f"log.{operation}",
+                client_request_id=request_id,
+                request_fingerprint="a" * 64,
+                resource_id=resource_id,
+                response_snapshot=null(),
+                completed_at=None,
+            )
+        )
+    db_session.commit()
+
+    for operation, request_id in request_ids.items():
+        response = client.get(
+            f"/api/v1/logs/mutations/{request_id}",
+            params={"operation": operation},
+        )
+        assert response.status_code == 200
+        assert response.json()["operation"] == operation
+        assert response.json()["status"] == "unresolved"
+        assert response.json()["log_id"] == str(resource_id)
+
+
+def test_omitted_operation_prefers_retained_outcomes_over_unknown_candidates(
+    client: TestClient,
+) -> None:
+    _food, log = _create_log(client)
+    delete_request_id = uuid4()
+    deleted = client.request(
+        "DELETE",
+        f"/api/v1/logs/{log['id']}",
+        json={
+            "client_request_id": str(delete_request_id),
+            "expected_updated_at": log["updated_at"],
+        },
+    )
+    assert deleted.status_code == 204
+
+    retained_delete = client.get(f"/api/v1/logs/mutations/{delete_request_id}")
+    assert retained_delete.status_code == 200
+    assert retained_delete.json()["operation"] == "delete"
+    assert retained_delete.json()["status"] == "confirmed_success"
+    assert retained_delete.json()["log_id"] == log["id"]
+
+    _other_food, other_log = _create_log(client)
+    update_request_id = uuid4()
+    updated = client.patch(
+        f"/api/v1/logs/{other_log['id']}",
+        json={
+            "client_request_id": str(update_request_id),
+            "expected_updated_at": other_log["updated_at"],
+            "notes": "retained update",
+        },
+    )
+    assert updated.status_code == 200
+
+    retained_update = client.get(f"/api/v1/logs/mutations/{update_request_id}")
+    assert retained_update.status_code == 200
+    assert retained_update.json()["operation"] == "update"
+    assert retained_update.json()["status"] == "confirmed_success"
+    assert retained_update.json()["result"]["notes"] == "retained update"
+
+
+def test_direct_create_validation_rejection_has_no_receipt_or_domain_write(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    request_id = uuid4()
+    logs_before = db_session.scalar(select(func.count()).select_from(DailyLog))
+    rejected = client.post(
+        "/api/v1/logs",
+        json={
+            "client_request_id": str(request_id),
+            "food_item_id": "not-a-uuid",
+            "logged_date": "2026-07-08",
+            "amount_quantity": "1",
+            "amount_unit": "serving",
+        },
+    )
+    assert rejected.status_code == 422
+    assert db_session.scalar(select(func.count()).select_from(DailyLog)) == logs_before
+    assert db_session.scalar(
+        select(func.count()).select_from(CreateOperationIdempotency).where(
+            CreateOperationIdempotency.client_request_id == request_id,
+        )
+    ) == 0
+
+    status = client.get(
+        f"/api/v1/logs/mutations/{request_id}",
+        params={"operation": "create"},
+    )
+    assert status.status_code == 200
+    assert status.json()["status"] == "unresolved"

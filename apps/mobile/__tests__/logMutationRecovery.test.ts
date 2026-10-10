@@ -1,6 +1,18 @@
 import { QueryClient } from "@tanstack/react-query";
 
-import type { DailyLog, DailyLogMutationStatus } from "../src/features/logging/api/types";
+declare const require: (moduleName: string) => {
+  readFileSync(path: string, encoding: "utf8"): string;
+};
+const { readFileSync } = require("fs");
+
+import type {
+  DailyLog,
+  DailyLogCreateInput,
+  DailyLogDeleteInput,
+  DailyLogMutationStatus,
+  DailyLogUpdateInput,
+} from "../src/features/logging/api/types";
+import { parseDailyLogMutationStatus } from "../src/features/logging/api/logResponseSchemas";
 import {
   createLogMutationRecoveryRecord as createRecoveryRecordWithDisplayContext,
   loadLogMutationRecoveryJournal as loadRecoveryJournalWithAuthority,
@@ -111,6 +123,116 @@ function status(
     result: null,
     ...overrides,
   };
+}
+
+type LogMutationOperation = "create" | "update" | "delete";
+
+type ActualPostgresStatusTrace = {
+  schema_version: 1;
+  operation: LogMutationOperation | "complete";
+  client_request_id: string;
+  owner_id: string;
+  settlement: "committed" | "rolled_back";
+  source_date: string;
+  destination_date: string | null;
+  request_payload: Record<string, unknown>;
+  writer_backend_pid: number;
+  reader_backend_pids: number[];
+  returned_before_release: boolean[];
+  status_responses: Array<{ status_code: number; body: string }>;
+};
+
+function loadActualPostgresStatusSequence(
+  operation: LogMutationOperation,
+): { trace: ActualPostgresStatusTrace; statuses: DailyLogMutationStatus[] } {
+  const tracePath = process.env.GH278_STATUS_TRACE_PATH;
+  if (!tracePath) throw new Error("GH278_STATUS_TRACE_PATH is required for coupled recovery checks");
+  const lines = readFileSync(tracePath, "utf8").split(/\r?\n/).filter(Boolean);
+  const traces = lines.map((line) => JSON.parse(line) as ActualPostgresStatusTrace);
+  const matching = traces.filter(
+    (trace) => trace.operation === operation && trace.settlement === "committed",
+  );
+  if (matching.length !== 1) {
+    throw new Error(`expected one committed PostgreSQL trace for ${operation}; found ${matching.length}`);
+  }
+  const [trace] = matching;
+  if (trace.schema_version !== 1 || trace.status_responses.length !== 3) {
+    throw new Error(`malformed PostgreSQL status trace for ${operation}`);
+  }
+  if (trace.returned_before_release.join(",") !== "true,true,false") {
+    throw new Error(`${operation} trace does not prove two reads returned before writer release`);
+  }
+  if (trace.reader_backend_pids.slice(0, 2).some((pid) => pid === trace.writer_backend_pid)) {
+    throw new Error(`${operation} trace does not identify independent reader sessions`);
+  }
+  const statuses = trace.status_responses.map(({ status_code, body }) => {
+    if (status_code !== 200 || typeof body !== "string") {
+      throw new Error(`malformed serialized ${operation} status response`);
+    }
+    return parseDailyLogMutationStatus(JSON.parse(body));
+  });
+  if (statuses.map((item) => item.status).join(",") !== "unresolved,unresolved,confirmed_success") {
+    throw new Error(`unexpected serialized PostgreSQL status sequence for ${operation}`);
+  }
+  if (statuses.some(
+    (item) => item.operation !== operation || item.client_request_id !== trace.client_request_id,
+  )) {
+    throw new Error(`serialized PostgreSQL status identity mismatch for ${operation}`);
+  }
+  return { trace, statuses };
+}
+
+function recoveryRecordFromActualPostgresTrace(
+  trace: ActualPostgresStatusTrace,
+): ReturnType<typeof createLogMutationRecoveryRecord> {
+  const { log_id: targetId, ...requestInput } = trace.request_payload;
+  if (requestInput.client_request_id !== trace.client_request_id) {
+    throw new Error(`submitted payload identity mismatch for ${trace.operation}`);
+  }
+  if (trace.operation === "create") {
+    if (typeof requestInput.logged_date !== "string") {
+      throw new Error("create trace is missing its submitted date");
+    }
+    return createLogMutationRecoveryRecord({
+      clientRequestId: trace.client_request_id,
+      mutationType: "create",
+      sourceDate: requestInput.logged_date,
+      payload: {
+        operation: "create",
+        input: requestInput as unknown as DailyLogCreateInput,
+      },
+    });
+  }
+  if (typeof targetId !== "string") throw new Error(`${trace.operation} trace is missing its log ID`);
+  if (trace.operation === "update") {
+    return createLogMutationRecoveryRecord({
+      clientRequestId: trace.client_request_id,
+      mutationType: "move",
+      targetId,
+      sourceDate: trace.source_date,
+      destinationDate: trace.destination_date,
+      payload: {
+        operation: "update",
+        log_id: targetId,
+        input: requestInput as unknown as DailyLogUpdateInput,
+      },
+    });
+  }
+  return createLogMutationRecoveryRecord({
+    clientRequestId: trace.client_request_id,
+    mutationType: "delete",
+    targetId,
+    sourceDate: trace.source_date,
+    payload: {
+      operation: "delete",
+      log_id: targetId,
+      input: requestInput as unknown as DailyLogDeleteInput,
+    },
+  });
+}
+
+async function flushRecoveryManagerMicrotasks(): Promise<void> {
+  for (let index = 0; index < 40; index += 1) await Promise.resolve();
 }
 
 test("journal persists only versioned recovery intent and preserves ordering", async () => {
@@ -663,3 +785,130 @@ test("startup reconciliation handles multiple records in stable order and cleans
   expect(calls).toEqual(["first", "second"]);
   expect(await loadLogMutationRecoveryJournal(storage)).toEqual([]);
 });
+
+const actualPostgresCoupledTest = process.env.GH278_REQUIRE_STATUS_TRACE === "1" ? test : test.skip;
+
+for (const operation of ["create", "update", "delete"] as const) {
+  actualPostgresCoupledTest(
+    `automatic ${operation} recovery consumes the actual PostgreSQL status trace after reload`,
+    async () => {
+      const { trace, statuses } = loadActualPostgresStatusSequence(operation);
+      const record = recoveryRecordFromActualPostgresTrace(trace);
+      const persistedStorage = memoryStorage();
+      await upsertLogMutationRecoveryRecord({ ...record, state: "submitted" }, persistedStorage);
+      if (!persistedStorage.value) throw new Error("submitted recovery record was not persisted");
+      const storage = memoryStorage(persistedStorage.value);
+      const queryClient = trackedQueryClient();
+      const sourceDate = trace.source_date;
+      const destinationDate = trace.destination_date;
+      const targetId = trace.request_payload.log_id;
+
+      if (operation === "create") {
+        queryClient.setQueryData(["logs", sourceDate], []);
+      } else {
+        if (typeof targetId !== "string") throw new Error(`${operation} trace is missing its target ID`);
+        queryClient.setQueryData(["logs", sourceDate], [log(targetId, sourceDate)]);
+      }
+      if (operation === "update") {
+        if (!destinationDate) throw new Error("update trace is missing its destination date");
+        queryClient.setQueryData(["logs", destinationDate], []);
+      }
+      for (const date of new Set([sourceDate, destinationDate].filter((item): item is string => Boolean(item)))) {
+        queryClient.setQueryData(["daily-summary", date], { date });
+        queryClient.setQueryData(["target-comparison", date], { date });
+        queryClient.setQueryData(["future-logs", date], []);
+      }
+      queryClient.setQueryData(["foods", "recent"], []);
+      queryClient.setQueryData(["logs", "recent-entries"], []);
+
+      const writeCalls = {
+        create: jest.fn(remoteNutritionRuntime.dailyLogs.create),
+        update: jest.fn(remoteNutritionRuntime.dailyLogs.update),
+        delete: jest.fn(remoteNutritionRuntime.dailyLogs.delete),
+        markDayComplete: jest.fn(remoteNutritionRuntime.dailyLogs.markDayComplete),
+      };
+      const dependencies = {
+        authority: TEST_AUTHORITY,
+        dailyLogs: { ...remoteNutritionRuntime.dailyLogs, ...writeCalls },
+      };
+      let statusRead = 0;
+      const statusReader = jest.fn(async (requestId: string, requestedOperation: DailyLogMutationStatus["operation"]) => {
+        statusRead += 1;
+        expect(requestId).toBe(trace.client_request_id);
+        expect(requestedOperation).toBe(operation);
+        if (statusRead === 1) throw new Error("simulated transport loss before status read");
+        const actualStatus = statuses[statusRead - 2];
+        if (!actualStatus) throw new Error("automatic poll requested more than the serialized trace provides");
+        return actualStatus;
+      });
+
+      let stop: (() => void) | undefined;
+      jest.useFakeTimers();
+      try {
+        stop = startRecoveryWithDependencies(queryClient, dependencies, {
+          storage,
+          statusReader,
+          retryDelayMs: 5,
+        });
+        await flushRecoveryManagerMicrotasks();
+        expect(statusReader).toHaveBeenCalledTimes(1);
+        expect((await loadLogMutationRecoveryJournal(storage))[0]).toEqual(
+          expect.objectContaining({ client_request_id: trace.client_request_id, state: "submitted" }),
+        );
+
+        await jest.advanceTimersByTimeAsync(5);
+        await flushRecoveryManagerMicrotasks();
+        expect(statusReader).toHaveBeenCalledTimes(2);
+        expect((await loadLogMutationRecoveryJournal(storage))[0]).toEqual(
+          expect.objectContaining({ client_request_id: trace.client_request_id, state: "submitted" }),
+        );
+
+        await jest.advanceTimersByTimeAsync(10);
+        await flushRecoveryManagerMicrotasks();
+        expect(statusReader).toHaveBeenCalledTimes(3);
+        expect((await loadLogMutationRecoveryJournal(storage))[0]).toEqual(
+          expect.objectContaining({ client_request_id: trace.client_request_id, state: "submitted" }),
+        );
+
+        await jest.advanceTimersByTimeAsync(20);
+        await flushRecoveryManagerMicrotasks();
+        expect(statusReader).toHaveBeenCalledTimes(4);
+        expect(await loadLogMutationRecoveryJournal(storage)).toEqual([]);
+        expect(statusReader.mock.calls.map((call) => call[1])).toEqual([
+          operation,
+          operation,
+          operation,
+          operation,
+        ]);
+
+        const confirmed = statuses[2];
+        if (operation === "create") {
+          if (!confirmed.result) throw new Error("create status trace has no retained result");
+          expect(queryClient.getQueryData(["logs", sourceDate])).toEqual([confirmed.result]);
+        } else if (operation === "update") {
+          if (!confirmed.result || !destinationDate) throw new Error("update trace is incomplete");
+          expect(queryClient.getQueryData(["logs", sourceDate])).toEqual([]);
+          expect(queryClient.getQueryData(["logs", destinationDate])).toEqual([confirmed.result]);
+        } else {
+          if (typeof targetId !== "string") throw new Error("delete trace is missing its target ID");
+          expect(queryClient.getQueryData(["logs", sourceDate])).toEqual([]);
+        }
+        for (const date of new Set([sourceDate, destinationDate].filter((item): item is string => Boolean(item)))) {
+          expect(queryClient.getQueryState(["logs", date])?.isInvalidated).toBe(true);
+          expect(queryClient.getQueryState(["daily-summary", date])?.isInvalidated).toBe(true);
+          expect(queryClient.getQueryState(["target-comparison", date])?.isInvalidated).toBe(true);
+          expect(queryClient.getQueryState(["future-logs", date])?.isInvalidated).toBe(true);
+        }
+        expect(queryClient.getQueryState(["foods", "recent"])?.isInvalidated).toBe(true);
+        expect(queryClient.getQueryState(["logs", "recent-entries"])?.isInvalidated).toBe(true);
+        expect(writeCalls.create).not.toHaveBeenCalled();
+        expect(writeCalls.update).not.toHaveBeenCalled();
+        expect(writeCalls.delete).not.toHaveBeenCalled();
+        expect(writeCalls.markDayComplete).not.toHaveBeenCalled();
+      } finally {
+        stop?.();
+        jest.useRealTimers();
+      }
+    },
+  );
+}

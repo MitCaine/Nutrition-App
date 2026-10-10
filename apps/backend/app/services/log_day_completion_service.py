@@ -203,7 +203,7 @@ class LogDayCompletionService:
             return DailyLogMutationStatusResponse(
                 operation="complete",
                 client_request_id=client_request_id,
-                status="confirmed_non_commit",
+                status="unresolved",
             )
         if receipt.response_snapshot is None or receipt.completed_at is None:
             return DailyLogMutationStatusResponse(

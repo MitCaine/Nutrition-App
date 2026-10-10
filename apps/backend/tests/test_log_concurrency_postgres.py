@@ -4,7 +4,9 @@ from copy import deepcopy
 from datetime import date
 from decimal import Decimal
 from importlib import import_module
+import json
 import os
+from pathlib import Path
 import time
 from threading import Event, Thread, get_ident
 from uuid import UUID, uuid4
@@ -4654,3 +4656,392 @@ def test_postgres_first_create_response_uses_committed_snapshot_after_mutation(
             first_request.join(timeout=20)
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous_overrides)
+
+
+def _read_gh278_status_http(
+    *,
+    request_id: UUID,
+    operation: str,
+    response_holder: list,
+    error_holder: list,
+    returned: Event,
+) -> Thread:
+    def request_status() -> None:
+        try:
+            with TestClient(app, raise_server_exceptions=False) as client:
+                response_holder.append(
+                    client.get(
+                        f"/api/v1/logs/mutations/{request_id}",
+                        params={"operation": operation},
+                    )
+                )
+        except BaseException as exc:  # the caller re-raises after its bounded wait
+            error_holder.append(exc)
+        finally:
+            returned.set()
+
+    thread = Thread(target=request_status, name=f"gh278-status-{operation}", daemon=True)
+    thread.start()
+    return thread
+
+
+def _record_gh278_status_trace(trace: dict) -> None:
+    output_path = os.environ.get("GH278_STATUS_TRACE_PATH")
+    if output_path is None:
+        return
+    path = Path(output_path)
+    assert path.is_absolute(), "GH278_STATUS_TRACE_PATH must be an absolute external path"
+    assert path.parent.is_dir(), "GH278 status trace parent directory must already exist"
+    with path.open("a", encoding="utf-8") as evidence:
+        evidence.write(json.dumps(trace, sort_keys=True, separators=(",", ":")))
+        evidence.write("\n")
+
+
+def _exercise_gh278_held_log_status(
+    *,
+    factory,
+    user_id: UUID,
+    request_id: UUID,
+    operation: str,
+    mutation,
+    source_date: date,
+    destination_date: date | None,
+    request_payload: dict,
+    initial_notes: str | None = None,
+    rollback: bool = False,
+) -> None:
+    """Read the real status route from another PostgreSQL session around commit/rollback."""
+
+    ready_to_commit = Event()
+    release_commit = Event()
+    writer_backend_pid: list[int] = []
+    writer_resource_id: list[UUID] = []
+    writer_results: list = []
+    writer_errors: list[BaseException] = []
+    reader_backend_pids: list[int] = []
+    reader_threads: list[Thread] = []
+    response_sequence: list = []
+    returned_before_release: list[bool] = []
+    previous_overrides = app.dependency_overrides.copy()
+
+    def override_get_db():
+        db = factory()
+        try:
+            reader_backend_pids.append(int(db.scalar(text("SELECT pg_backend_pid()"))))
+            yield db
+        finally:
+            db.close()
+
+    def override_current_user() -> User:
+        return User(id=user_id, email=f"gh278-status-{user_id}@example.test")
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_current_user
+
+    def run_mutation() -> None:
+        try:
+            with factory() as db:
+                real_commit = db.commit
+
+                def flush_then_hold_commit() -> None:
+                    db.flush()
+                    receipt = db.scalar(
+                        select(CreateOperationIdempotency).where(
+                            CreateOperationIdempotency.user_id == user_id,
+                            CreateOperationIdempotency.operation == f"log.{operation}",
+                            CreateOperationIdempotency.client_request_id == request_id,
+                        )
+                    )
+                    assert receipt is not None
+                    assert receipt.response_snapshot is not None
+                    assert receipt.completed_at is not None
+                    writer_resource_id.append(receipt.resource_id)
+                    if operation in {"create", "update"}:
+                        log = db.get(DailyLog, receipt.resource_id)
+                        assert log is not None
+                        if operation == "update":
+                            assert log.notes == "GH-278 held update"
+                    elif operation == "delete":
+                        assert db.get(DailyLog, receipt.resource_id) is None
+                    writer_backend_pid.append(int(db.scalar(text("SELECT pg_backend_pid()"))))
+                    ready_to_commit.set()
+                    if not release_commit.wait(timeout=15):
+                        raise TimeoutError("timed out waiting for GH-278 commit release")
+                    if rollback:
+                        db.rollback()
+                        raise RuntimeError("GH-278 injected rollback after flushed mutation")
+                    real_commit()
+
+                db.commit = flush_then_hold_commit
+                writer_results.append(mutation(db))
+        except BaseException as exc:  # surfaced by the assertions below
+            writer_errors.append(exc)
+
+    writer = Thread(target=run_mutation, name=f"gh278-writer-{operation}", daemon=True)
+    writer_started = False
+
+    def read_status(*, expect_before_release: bool = True) -> object:
+        response_holder: list = []
+        error_holder: list[BaseException] = []
+        returned = Event()
+        reader = _read_gh278_status_http(
+            request_id=request_id,
+            operation=operation,
+            response_holder=response_holder,
+            error_holder=error_holder,
+            returned=returned,
+        )
+        reader_threads.append(reader)
+        assert returned.wait(timeout=5), (
+            f"{operation} status HTTP request did not return within the held-writer bound"
+        )
+        reader.join(timeout=1)
+        assert not reader.is_alive(), f"{operation} status HTTP thread did not join"
+        assert not error_holder, f"{operation} status HTTP request raised: {error_holder!r}"
+        assert len(response_holder) == 1
+        assert release_commit.is_set() is (not expect_before_release), (
+            "status return ordering did not match the writer barrier"
+        )
+        returned_before_release.append(not release_commit.is_set())
+        return response_holder[0]
+
+    try:
+        with TestClient(app, raise_server_exceptions=False):
+            writer.start()
+            writer_started = True
+            if not ready_to_commit.wait(timeout=15):
+                raise AssertionError(
+                    f"{operation} writer did not flush receipt/domain work before the barrier; "
+                    f"writer_errors={writer_errors!r}"
+                )
+            assert len(writer_backend_pid) == 1
+
+            for _ in range(2):
+                response = read_status()
+                assert response.status_code == 200, response.text
+                assert response.json()["operation"] == operation
+                assert response.json()["client_request_id"] == str(request_id)
+                assert response.json()["status"] == "unresolved", response.text
+                response_sequence.append(
+                    {"status_code": response.status_code, "body": response.text}
+                )
+
+            release_commit.set()
+            writer.join(timeout=15)
+            assert not writer.is_alive(), f"{operation} writer did not join after release"
+
+            if rollback:
+                assert len(writer_errors) == 1
+                assert isinstance(writer_errors[0], RuntimeError)
+                assert "GH-278 injected rollback" in str(writer_errors[0])
+                with factory() as db:
+                    assert db.scalar(
+                        select(func.count()).select_from(CreateOperationIdempotency).where(
+                            CreateOperationIdempotency.user_id == user_id,
+                            CreateOperationIdempotency.operation == f"log.{operation}",
+                            CreateOperationIdempotency.client_request_id == request_id,
+                        )
+                    ) == 0
+                    if operation == "create":
+                        assert db.get(DailyLog, writer_resource_id[0]) is None
+                    elif operation == "update":
+                        rolled_back_log = db.get(DailyLog, writer_resource_id[0])
+                        assert rolled_back_log is not None
+                        assert rolled_back_log.notes == initial_notes
+                    else:
+                        assert db.get(DailyLog, writer_resource_id[0]) is not None
+                final_response = read_status(expect_before_release=False)
+                assert final_response.status_code == 200, final_response.text
+                assert final_response.json()["status"] == "unresolved", final_response.text
+                response_sequence.append(
+                    {"status_code": final_response.status_code, "body": final_response.text}
+                )
+            else:
+                assert not writer_errors, f"{operation} mutation failed: {writer_errors!r}"
+                assert len(writer_results) == 1
+                final_response = read_status(expect_before_release=False)
+                assert final_response.status_code == 200, final_response.text
+                assert final_response.json()["operation"] == operation
+                assert final_response.json()["client_request_id"] == str(request_id)
+                assert final_response.json()["status"] == "confirmed_success", final_response.text
+                response_sequence.append(
+                    {"status_code": final_response.status_code, "body": final_response.text}
+                )
+
+            assert returned_before_release[:2] == [True, True]
+            assert len(reader_backend_pids) >= 2
+            assert all(pid != writer_backend_pid[0] for pid in reader_backend_pids[:2])
+            assert response_sequence[0]["status_code"] == 200
+            if not rollback:
+                assert [item["status_code"] for item in response_sequence] == [200, 200, 200]
+
+            _record_gh278_status_trace(
+                {
+                    "schema_version": 1,
+                    "operation": operation,
+                    "client_request_id": str(request_id),
+                    "owner_id": str(user_id),
+                    "settlement": "rolled_back" if rollback else "committed",
+                    "source_date": source_date.isoformat(),
+                    "destination_date": (
+                        destination_date.isoformat() if destination_date is not None else None
+                    ),
+                    "request_payload": request_payload,
+                    "writer_backend_pid": writer_backend_pid[0],
+                    "reader_backend_pids": reader_backend_pids,
+                    "returned_before_release": returned_before_release,
+                    "status_responses": response_sequence,
+                }
+            )
+    finally:
+        release_commit.set()
+        if writer_started:
+            writer.join(timeout=15)
+        for reader in reader_threads:
+            reader.join(timeout=10)
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)
+        assert not writer.is_alive(), f"{operation} writer remained alive after unconditional release"
+        assert all(not reader.is_alive() for reader in reader_threads), (
+            f"{operation} status reader remained alive after writer release"
+        )
+
+
+@pytest.mark.parametrize("operation", ["create", "update", "delete"])
+def test_postgres_status_stays_unresolved_during_real_log_mutation_then_confirms(
+    postgres_sessions,
+    operation: str,
+) -> None:
+    factory = postgres_sessions
+    request_id = uuid4()
+    if operation == "create":
+        user_id, food_id, serving_id = _gh271_daily_log_target(
+            factory,
+            "GH-278 held create",
+        )
+        source_date = date(2026, 7, 14)
+        payload = DailyLogCreateRequest(
+            client_request_id=request_id,
+            food_item_id=food_id,
+            logged_date=source_date,
+            amount_quantity=Decimal("1"),
+            amount_unit="serving",
+            serving_definition_id=serving_id,
+        )
+        def mutation(db: OrmSession):
+            return LogService(db).create_log(user_id, payload)
+
+        log_id = None
+        destination_date = None
+        initial_notes = None
+    else:
+        user_id, log_id = _manual_log(factory)
+        source_date = date(2026, 7, 13)
+        initial_notes = None
+        if operation == "update":
+            destination_date = date(2026, 7, 14)
+            expected_updated_at = _log_updated_at(factory, log_id)
+            payload = DailyLogUpdateRequest(
+                client_request_id=request_id,
+                expected_updated_at=expected_updated_at,
+                logged_date=destination_date,
+                notes="GH-278 held update",
+            )
+            def mutation(db: OrmSession):
+                return LogService(db).update_log(user_id, log_id, payload)
+
+        else:
+            destination_date = None
+            expected_updated_at = _log_updated_at(factory, log_id)
+            payload = DailyLogDeleteRequest(
+                client_request_id=request_id,
+                expected_updated_at=expected_updated_at,
+            )
+            def mutation(db: OrmSession):
+                return LogService(db).delete_log(user_id, log_id, payload)
+
+
+    _exercise_gh278_held_log_status(
+        factory=factory,
+        user_id=user_id,
+        request_id=request_id,
+        operation=operation,
+        mutation=mutation,
+        source_date=source_date,
+        destination_date=destination_date,
+        request_payload=(
+            payload.model_dump(mode="json", exclude_unset=True)
+            | ({"log_id": str(log_id)} if log_id is not None else {})
+        ),
+        initial_notes=initial_notes,
+    )
+
+
+@pytest.mark.parametrize("operation", ["create", "update", "delete"])
+def test_postgres_status_stays_unresolved_during_and_after_real_log_rollback(
+    postgres_sessions,
+    operation: str,
+) -> None:
+    factory = postgres_sessions
+    request_id = uuid4()
+    if operation == "create":
+        user_id, food_id, serving_id = _gh271_daily_log_target(
+            factory,
+            "GH-278 rollback create",
+        )
+        source_date = date(2026, 7, 14)
+        payload = DailyLogCreateRequest(
+            client_request_id=request_id,
+            food_item_id=food_id,
+            logged_date=source_date,
+            amount_quantity=Decimal("1"),
+            amount_unit="serving",
+            serving_definition_id=serving_id,
+        )
+        def mutation(db: OrmSession):
+            return LogService(db).create_log(user_id, payload)
+
+        log_id = None
+        destination_date = None
+        initial_notes = None
+    else:
+        user_id, log_id = _manual_log(factory)
+        source_date = date(2026, 7, 13)
+        initial_notes = None
+        expected_updated_at = _log_updated_at(factory, log_id)
+        if operation == "update":
+            destination_date = date(2026, 7, 14)
+            payload = DailyLogUpdateRequest(
+                client_request_id=request_id,
+                expected_updated_at=expected_updated_at,
+                logged_date=destination_date,
+                notes="GH-278 held update",
+            )
+            def mutation(db: OrmSession):
+                return LogService(db).update_log(user_id, log_id, payload)
+
+        else:
+            destination_date = None
+            payload = DailyLogDeleteRequest(
+                client_request_id=request_id,
+                expected_updated_at=expected_updated_at,
+            )
+            def mutation(db: OrmSession):
+                return LogService(db).delete_log(user_id, log_id, payload)
+
+
+    _exercise_gh278_held_log_status(
+        factory=factory,
+        user_id=user_id,
+        request_id=request_id,
+        operation=operation,
+        mutation=mutation,
+        source_date=source_date,
+        destination_date=destination_date,
+        request_payload=(
+            payload.model_dump(mode="json", exclude_unset=True)
+            | ({"log_id": str(log_id)} if log_id is not None else {})
+        ),
+        initial_notes=initial_notes,
+        rollback=True,
+    )

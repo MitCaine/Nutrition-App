@@ -149,8 +149,15 @@ with HTTP 409 and a changed payload remains a payload conflict. Before an author
 can remove that legacy identity, the service retains an incomplete `log.create` receipt in the same
 transaction; it does not invent response bytes. A pre-installation Log already deleted before this
 fence existed has no surviving request identity and is an explicit historical coverage limit, not a
-reconstruction or backfill target. An absent in-flight receipt does not establish that a concurrent
-request failed to commit, so create status remains unresolved when no durable outcome is visible.
+reconstruction or backfill target.
+
+Status reads for create, update, delete, and Complete are read-only. A missing or incomplete receipt
+remains `unresolved`: absence cannot establish that the original transaction failed to commit, and a
+later read cannot prove rollback when no durable outcome remains. A complete retained receipt
+confirms success. The mobile recovery manager keeps submitted or reconciling unresolved journal
+records and polls status automatically without retransmitting the write. A direct response that
+definitively establishes request rejection may still acknowledge non-commit; that response is
+separate from a later status read that finds no receipt.
 
 ## Why an online-first design?
 

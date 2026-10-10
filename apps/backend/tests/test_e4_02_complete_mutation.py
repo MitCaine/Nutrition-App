@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, null, select
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import TEST_USER_ID
@@ -180,7 +180,7 @@ def test_complete_mutation_status_and_receipts_are_owner_scoped(db_session: Sess
     other_status = service.mutation_status(other_id, request_id)
 
     assert owner_result.logged_date == logged_date
-    assert other_status.status == "confirmed_non_commit"
+    assert other_status.status == "unresolved"
     assert other_status.completion is None
     assert service.get_completion(other_id, logged_date) is None
 
@@ -191,6 +191,85 @@ def test_complete_mutation_status_and_receipts_are_owner_scoped(db_session: Sess
     assert other_result.logged_date == logged_date
     assert service.mutation_status(owner_id, request_id).completion == owner_result
     assert service.mutation_status(other_id, request_id).completion == other_result
+
+
+def test_missing_and_incomplete_complete_receipts_stay_unresolved(
+    db_session: Session,
+) -> None:
+    owner_id = uuid4()
+    logged_date = date(2020, 1, 2)
+    log = _seed_owner_log(
+        db_session,
+        user_id=owner_id,
+        email="e4-02-incomplete@example.com",
+        logged_date=logged_date,
+    )
+    service = LogDayCompletionService(db_session)
+
+    missing = service.mutation_status(owner_id, uuid4())
+    assert missing.operation == "complete"
+    assert missing.status == "unresolved"
+
+    request_id = uuid4()
+    db_session.add(
+        CreateOperationIdempotency(
+            id=uuid4(),
+            user_id=owner_id,
+            operation=COMPLETE_OPERATION,
+            client_request_id=request_id,
+            request_fingerprint="b" * 64,
+            resource_id=log.id,
+            response_snapshot=null(),
+            completed_at=None,
+        )
+    )
+    db_session.commit()
+
+    incomplete = service.mutation_status(owner_id, request_id)
+    assert incomplete.operation == "complete"
+    assert incomplete.status == "unresolved"
+    assert incomplete.completion is None
+
+
+def test_complete_rollback_after_receipt_write_leaves_status_unresolved(
+    db_session: Session,
+) -> None:
+    owner_id = uuid4()
+    logged_date = date(2020, 1, 2)
+    _seed_owner_log(
+        db_session,
+        user_id=owner_id,
+        email="e4-02-rollback@example.com",
+        logged_date=logged_date,
+    )
+    request_id = uuid4()
+    payload = _request(db_session, owner_id, logged_date, request_id)
+    service = LogDayCompletionService(db_session)
+    complete_receipt = service.mutation_receipts.complete
+
+    def fail_after_receipt(receipt, response_snapshot) -> None:
+        complete_receipt(receipt, response_snapshot)
+        raise RuntimeError("injected after Complete receipt write")
+
+    service.mutation_receipts.complete = fail_after_receipt
+    with pytest.raises(RuntimeError, match="injected after Complete receipt write"):
+        service.mark_complete(owner_id, payload)
+
+    db_session.expire_all()
+    assert db_session.scalar(
+        select(func.count()).select_from(DailyLogDayCompletion).where(
+            DailyLogDayCompletion.user_id == owner_id,
+            DailyLogDayCompletion.logged_date == logged_date,
+        )
+    ) == 0
+    assert db_session.scalar(
+        select(func.count()).select_from(CreateOperationIdempotency).where(
+            CreateOperationIdempotency.user_id == owner_id,
+            CreateOperationIdempotency.operation == COMPLETE_OPERATION,
+            CreateOperationIdempotency.client_request_id == request_id,
+        )
+    ) == 0
+    assert service.mutation_status(owner_id, request_id).status == "unresolved"
 
 
 def test_complete_api_returns_authoritative_result_and_reconciles_status(

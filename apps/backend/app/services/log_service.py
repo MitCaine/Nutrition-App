@@ -1308,7 +1308,7 @@ class LogService:
             return DailyLogMutationStatusResponse(
                 operation=operation,
                 client_request_id=client_request_id,
-                status="confirmed_non_commit",
+                status="unresolved",
             )
         if receipt.response_snapshot is None or receipt.completed_at is None:
             return DailyLogMutationStatusResponse(
@@ -1357,18 +1357,21 @@ class LogService:
             "move": "update",
         }.get(operation or "", operation or "")
         if normalized not in {"create", "update", "delete"}:
-            # A request identity is normally unique within one operation. If
-            # callers omit operation, prefer an existing terminal record in a
-            # stable order. An unknown create remains unresolved because an
-            # uncommitted receipt is not visible to this read-only query.
-            create = self._mutation_status(user_id, "create", client_request_id)
-            if create.status == "confirmed_success" or create.log_id is not None:
-                return create
-            for candidate in ("update", "delete"):
-                status = self._mutation_status(user_id, candidate, client_request_id)
-                if status.status != "confirmed_non_commit":
+            # Prefer a retained terminal outcome across the stable create,
+            # update, delete order before returning a conservative unknown.
+            # An unresolved legacy create identity remains the fallback so
+            # operation omission cannot bypass its recreation fence.
+            statuses = {
+                candidate: self._mutation_status(user_id, candidate, client_request_id)
+                for candidate in ("create", "update", "delete")
+            }
+            for candidate in ("create", "update", "delete"):
+                status = statuses[candidate]
+                if status.status != "unresolved":
                     return status
-            return create
+            # Keep create as the stable unknown fallback; a legacy create
+            # identity continues to carry its log_id and remain fenced.
+            return statuses["create"]
         return self._mutation_status(user_id, normalized, client_request_id)
 
     def update_log(
