@@ -803,7 +803,8 @@ def _execute(args: argparse.Namespace) -> int:
             while chunk := stream.read(64 * 1024):
                 output.write(chunk)
         output.flush()
-    return int(normalized_exit or 0)
+    # A launch error has no child exit, but the shell runner must see failure.
+    return 1 if launch_error is not None else int(normalized_exit or 0)
 
 
 def _step_status(args: argparse.Namespace) -> int:

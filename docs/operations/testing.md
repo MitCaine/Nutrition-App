@@ -162,6 +162,11 @@ environment, effective child inputs, outcomes and exit codes, complete stdout/st
 existing runner logs, failures, warnings, and explicit incomplete/blocked states. Credential-like
 environment names and values are rejected from retained request inputs.
 
+If a command cannot launch (for example, it is missing or not executable), its child and command
+exit codes remain null because no process ran. The executor returns a nonzero status to the shell
+runner, which records a failed check and retains a failure-log copy with the launch diagnostic.
+Dependent steps stay blocked; a later independent success cannot clear a mandatory launch failure.
+
 Before and after observations bind HEAD, branch, index tree and entries, assume-unchanged and
 skip-worktree flags, tracked and nonignored untracked file bytes/modes/symlinks, repository and
 parent-directory modes, and Git status. Ignored runtime files are not inventoried. Any source drift

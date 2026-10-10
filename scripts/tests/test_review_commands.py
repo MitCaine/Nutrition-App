@@ -214,6 +214,77 @@ def test_failed_and_blocked_steps_remain_failed_after_later_success(
     assert not (attempt_dir / "in-progress.marker").exists()
 
 
+@pytest.mark.parametrize("command_kind", ["missing-path", "missing-name", "non-executable"])
+def test_public_cli_launch_failure_retains_null_child_exit_and_failure_logs(
+    authored_repo: Path, tmp_path: Path, command_kind: str
+):
+    output_root = tmp_path / "evidence"
+    command = tmp_path / "unlaunchable-command"
+    expected_error = "FileNotFoundError"
+    if command_kind == "non-executable":
+        command.write_text("#!/bin/sh\necho should-not-run\n", encoding="utf-8")
+        command.chmod(0o644)
+        expected_error = "PermissionError"
+    argv = ["nutrition-test-missing-command"] if command_kind == "missing-name" else [str(command)]
+    marker = tmp_path / "dependent-ran"
+    request_path = _write_request(
+        authored_repo,
+        tmp_path / "request.json",
+        "launch-failure",
+        [
+            _step("unlaunchable", argv),
+            _step(
+                "dependent",
+                [sys.executable, "-c", "from pathlib import Path; import sys; Path(sys.argv[1]).touch()", str(marker)],
+                prerequisites=["unlaunchable"],
+            ),
+            _step("later-success", [sys.executable, "-c", "print('success')"]),
+        ],
+    )
+
+    result = _run(authored_repo, request_path, "launch-failure", output_root)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert not marker.exists()
+    attempt_dir = _attempt_dir(output_root, "launch-failure")
+    results = json.loads((attempt_dir / "results.json").read_text())
+    outcomes = {step["id"]: step for step in results["authored_commands"]["steps"]}
+    failed = outcomes["unlaunchable"]
+    assert failed["status"] == "failed"
+    assert failed["exit_code"] is None
+    assert failed["child_return_code"] is None
+    assert failed["launch_error"].startswith(expected_error + ":")
+    assert failed["runner_status"] == "failed"
+    assert failed["runner_exit_code"] != 0
+    assert (attempt_dir / failed["stdout_log"]).read_bytes() == b""
+    diagnostic = failed["launch_error"] + "\n"
+    assert (attempt_dir / failed["stderr_log"]).read_text() == diagnostic
+    assert diagnostic in (attempt_dir / failed["runner_log"]).read_text()
+    failure_log = attempt_dir / "failures/unlaunchable.txt"
+    assert diagnostic in failure_log.read_text()
+    for log, digest in [("stdout_log", "stdout_sha256"), ("stderr_log", "stderr_sha256"), ("runner_log", "runner_log_sha256")]:
+        assert _sha256(attempt_dir / failed[log]) == failed[digest]
+    dependent = outcomes["dependent"]
+    assert dependent["status"] == "blocked"
+    assert dependent["exit_code"] is None
+    assert dependent.get("child_return_code") is None
+    assert dependent["blocked_by"] == ["unlaunchable"]
+    assert outcomes["later-success"]["status"] == "passed"
+    runner_outcomes = {check["id"]: check for check in results["checks"]}
+    assert runner_outcomes["unlaunchable"]["status"] == "failed"
+    assert runner_outcomes["unlaunchable"]["exit_code"] != 0
+    assert results["status"] == "failed"
+    assert results["summary"]["mandatory_gate"] == "failed"
+    assert json.loads((attempt_dir / "attempt-state.json").read_text())["status"] == "failed"
+    complete = json.loads((attempt_dir / "complete.json").read_text())
+    assert complete["status"] == "failed"
+    assert complete["results_sha256"] == _sha256(attempt_dir / "results.json")
+    assert not (attempt_dir / "in-progress.marker").exists()
+    with zipfile.ZipFile(attempt_dir / "review-bundle.zip") as bundle:
+        assert bundle.read("evidence/failures/unlaunchable.txt") == failure_log.read_bytes()
+        assert json.loads(bundle.read("evidence/results.json"))["status"] == "failed"
+
+
 def test_mandatory_document_failure_blocks_gate_while_advisory_failure_is_retained(
     authored_repo: Path, tmp_path: Path
 ):
