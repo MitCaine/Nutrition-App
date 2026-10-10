@@ -336,7 +336,9 @@ def test_failed_transaction_does_not_reserve_request_id(
     assert service.logs.get_by_client_request_id(user.id, payload.client_request_id) is None
 
     created = LogService(db_session).create_log(user.id, payload)
-    assert created.client_request_id == payload.client_request_id
+    retained = db_session.get(DailyLog, created.id)
+    assert retained is not None
+    assert retained.client_request_id == payload.client_request_id
     assert db_session.scalar(select(func.count()).select_from(DailyLog)) == 1
 
 

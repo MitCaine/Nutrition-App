@@ -576,10 +576,13 @@ class LogService:
             log.client_request_fingerprint = fingerprint
             created = self.logs.add(log)
             self._after_snapshot_creation(created)
+            resource_id = created.id
+            response_snapshot = None
             if receipt is not None:
+                response_snapshot = DailyLogResponse.model_validate(created).model_dump(mode="json")
                 self.mutation_receipts.complete(
                     receipt,
-                    DailyLogResponse.model_validate(created).model_dump(mode="json"),
+                    response_snapshot,
                 )
             if payload.calendar_revision is not None:
                 CalendarService(self.db).validate_mutation_context(
@@ -589,6 +592,8 @@ class LogService:
                 )
             self._invalidate_complete_dates(user_id, {created.logged_date})
             self.db.commit()
+            if response_snapshot is not None:
+                return LogCreateReplay(response_snapshot, resource_id)
             return created
         except Exception:
             self.db.rollback()

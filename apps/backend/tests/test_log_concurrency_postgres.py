@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date
 from decimal import Decimal
 from importlib import import_module
@@ -11,8 +12,10 @@ from uuid import UUID, uuid4
 import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
+from fastapi.testclient import TestClient
 from sqlalchemy import event, func, inspect, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.orm import Session as OrmSession
 
 from app import models  # noqa: F401
 from app.models.food import FoodFavorite, FoodItem, FoodNutrient, ServingDefinition
@@ -23,6 +26,9 @@ from app.models.recipe import Recipe, RecipeIngredient
 from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User, UserProfile
 from app.models.target import NutritionTarget
+from app.dependencies.database import get_db
+from app.dependencies.user import get_current_user
+from app.main import app
 from app.publication.recipe_revision import (
     PublishedAmountContent,
     PublishedNutrientContent,
@@ -4453,3 +4459,198 @@ def test_postgres_create_receipt_log_and_complete_failures_roll_back_atomically(
                 .select_from(DailyLogNutrientSnapshot)
                 .where(DailyLogNutrientSnapshot.daily_log_id == anchor_id)
             ) == anchor_snapshot_count
+
+
+@pytest.mark.parametrize("post_commit_mutation", ["food_deleted", "log_edited", "log_deleted"])
+def test_postgres_first_create_response_uses_committed_snapshot_after_mutation(
+    postgres_sessions,
+    monkeypatch,
+    post_commit_mutation: str,
+) -> None:
+    """The first API response must use the committed receipt after source/Log changes."""
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _gh271_daily_log_target(
+        factory,
+        f"GH-277 first response {post_commit_mutation}",
+    )
+    request_id = uuid4()
+    payload = {
+        "client_request_id": str(request_id),
+        "food_item_id": str(food_id),
+        "logged_date": "2026-10-09",
+        "amount_quantity": "1.25",
+        "amount_unit": "serving",
+        "serving_definition_id": str(serving_id),
+        "meal_type": "lunch",
+        "notes": "accepted response",
+    }
+    pause_after_commit_key = "gh277_pause_after_real_create_commit"
+    real_commit_finished = Event()
+    release_projection = Event()
+    original_commit = OrmSession.commit
+
+    def commit_then_pause_after_real_commit(session: OrmSession) -> None:
+        original_commit(session)
+        if session.info.pop(pause_after_commit_key, False):
+            real_commit_finished.set()
+            if not release_projection.wait(timeout=30):
+                raise RuntimeError("timed out waiting to release first-response projection")
+
+    monkeypatch.setattr(OrmSession, "commit", commit_then_pause_after_real_commit)
+    previous_overrides = app.dependency_overrides.copy()
+    initial_request_session_marked = False
+
+    def override_get_db():
+        nonlocal initial_request_session_marked
+        db = factory()
+        try:
+            if not initial_request_session_marked:
+                db.info[pause_after_commit_key] = True
+                initial_request_session_marked = True
+            yield db
+        finally:
+            db.close()
+
+    def override_current_user() -> User:
+        return User(id=user_id, email=f"gh277-{user_id}@example.test")
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_current_user
+
+    first_responses = []
+    first_request_errors = []
+
+    def post_first_create() -> None:
+        try:
+            with TestClient(app, raise_server_exceptions=False) as client:
+                first_responses.append(client.post("/api/v1/logs", json=payload))
+        except Exception as exc:  # surfaced separately from response assertions below
+            first_request_errors.append(exc)
+
+    first_request = Thread(target=post_first_create, name="gh277-first-create-response")
+    try:
+        first_request.start()
+        try:
+            assert real_commit_finished.wait(timeout=20), (
+                "first create did not reach the post-real-commit barrier"
+            )
+            with factory() as db:
+                receipt = db.scalar(
+                    select(CreateOperationIdempotency).where(
+                        CreateOperationIdempotency.user_id == user_id,
+                        CreateOperationIdempotency.operation == "log.create",
+                        CreateOperationIdempotency.client_request_id == request_id,
+                    )
+                )
+                assert receipt is not None
+                assert receipt.completed_at is not None
+                accepted_snapshot = deepcopy(receipt.response_snapshot)
+                resource_id = receipt.resource_id
+                assert accepted_snapshot["id"] == str(resource_id)
+                assert db.get(DailyLog, resource_id) is not None
+
+            with factory() as db:
+                if post_commit_mutation == "food_deleted":
+                    FoodService(db).soft_delete_food(user_id, food_id)
+                elif post_commit_mutation == "log_edited":
+                    LogService(db).update_log(
+                        user_id,
+                        resource_id,
+                        DailyLogUpdateRequest(notes="independent post-commit edit"),
+                    )
+                else:
+                    LogService(db).delete_log(user_id, resource_id)
+
+            with factory() as db:
+                if post_commit_mutation == "food_deleted":
+                    food = db.get(FoodItem, food_id)
+                    assert food is not None and food.deleted_at is not None
+                elif post_commit_mutation == "log_edited":
+                    edited = db.get(DailyLog, resource_id)
+                    assert edited is not None
+                    assert edited.notes == "independent post-commit edit"
+                else:
+                    assert db.get(DailyLog, resource_id) is None
+                logs_after_mutation = db.scalar(
+                    select(func.count()).select_from(DailyLog).where(DailyLog.id == resource_id)
+                )
+                snapshots_after_mutation = db.scalar(
+                    select(func.count())
+                    .select_from(DailyLogNutrientSnapshot)
+                    .where(DailyLogNutrientSnapshot.daily_log_id == resource_id)
+                )
+        finally:
+            release_projection.set()
+            first_request.join(timeout=20)
+
+        assert not first_request.is_alive(), "first create response thread did not finish"
+        assert not first_request_errors, f"first API request raised: {first_request_errors!r}"
+        assert len(first_responses) == 1, "first API request did not produce exactly one response"
+        first_response = first_responses[0]
+        try:
+            first_body = first_response.json()
+        except ValueError:
+            first_body = None
+
+        with TestClient(app, raise_server_exceptions=False) as client:
+            replay_response = client.post("/api/v1/logs", json=payload)
+        try:
+            replay_body = replay_response.json()
+        except ValueError:
+            replay_body = None
+
+        with factory() as db:
+            retained_receipt = db.scalar(
+                select(CreateOperationIdempotency).where(
+                    CreateOperationIdempotency.user_id == user_id,
+                    CreateOperationIdempotency.operation == "log.create",
+                    CreateOperationIdempotency.client_request_id == request_id,
+                )
+            )
+            assert retained_receipt is not None
+            final_snapshot = deepcopy(retained_receipt.response_snapshot)
+            final_resource_id = retained_receipt.resource_id
+            receipt_count = db.scalar(
+                select(func.count())
+                .select_from(CreateOperationIdempotency)
+                .where(
+                    CreateOperationIdempotency.user_id == user_id,
+                    CreateOperationIdempotency.operation == "log.create",
+                    CreateOperationIdempotency.client_request_id == request_id,
+                )
+            )
+            logs_after_replay = db.scalar(
+                select(func.count()).select_from(DailyLog).where(DailyLog.id == resource_id)
+            )
+            snapshots_after_replay = db.scalar(
+                select(func.count())
+                .select_from(DailyLogNutrientSnapshot)
+                .where(DailyLogNutrientSnapshot.daily_log_id == resource_id)
+            )
+
+        checks = {
+            "first_status_is_201": first_response.status_code == 201,
+            "first_body_matches_accepted_receipt": first_body == accepted_snapshot,
+            "replay_status_is_201": replay_response.status_code == 201,
+            "replay_body_matches_accepted_receipt": replay_body == accepted_snapshot,
+            "first_body_matches_replay": first_body == replay_body,
+            "receipt_snapshot_is_unchanged": final_snapshot == accepted_snapshot,
+            "resource_uuid_is_unchanged": final_resource_id == resource_id,
+            "exactly_one_create_receipt_remains": receipt_count == 1,
+            "replay_did_not_change_log_count": logs_after_replay == logs_after_mutation,
+            "replay_did_not_change_snapshot_count": (
+                snapshots_after_replay == snapshots_after_mutation
+            ),
+        }
+        assert all(checks.values()), (
+            f"post-commit mutation {post_commit_mutation!r} violated the retained first response; "
+            f"checks={checks!r}, first_status={first_response.status_code}, "
+            f"first_body={first_body!r}, replay_status={replay_response.status_code}, "
+            f"replay_body={replay_body!r}"
+        )
+    finally:
+        release_projection.set()
+        if first_request.is_alive():
+            first_request.join(timeout=20)
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)
