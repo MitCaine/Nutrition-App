@@ -190,7 +190,8 @@ contains the request shape and explains child inputs, source observations, logs/
 eligibility. Treat a run result as command evidence only; controller acceptance, independent review,
 approval and integration remain separate.
 
-Before dispatch, the controller runs the read-only public record check:
+Before implementation dispatch or direct implementation, the controller runs the
+read-only public record check:
 `./scripts/task validate-record --task-record engineering/tasks/TASK-ID.md --route normal`
 for the six-heading capsule, or explicitly `--route maintenance` for a brief maintenance handoff.
 For direct Work controller maintenance, include the selected repository root with the existing

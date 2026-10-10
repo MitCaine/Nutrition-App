@@ -873,6 +873,7 @@ def _write_results(attempt_dir: Path, result: dict[str, Any]) -> None:
         f"- Source state: **{result['authored_commands']['source_observation']['status']}**",
         f"- Result: **{result['status'].upper()}**",
         "- A terminal result requires `complete.json`; an in-progress or incomplete attempt is not a pass.",
+        "- Opt-in qualification status: unspecified; suite execution requires separately authenticated evidence.",
         "",
         "## Authored steps",
         "",
@@ -1033,13 +1034,7 @@ def _finalize(args: argparse.Namespace) -> int:
             for row in ledger
             if row["warning_count"]
         ],
-        "opt_in_qualification_not_run": [
-            "PostgreSQL concurrency and migration qualification",
-            "Control-database and Phase 5C4 infrastructure qualification",
-            "MinIO integration qualification",
-            "Performance qualification",
-            "Native iOS OCR qualification",
-        ],
+        "opt_in_qualification_status": "unspecified",
         "eligible": source_stable,
         "completion_marker_required": True,
         "authored_commands": {

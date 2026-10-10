@@ -121,6 +121,12 @@ another copy of a suite within a selected job.
 
 ### Authored command review attempts
 
+Authored results report `opt_in_qualification_status: unspecified` and omit a fixed
+list of suites allegedly not run. Command names, arguments, stdout claims and exit
+status do not establish suite qualification. Actual command outcomes and logs
+remain recorded; suite completion requires separately authenticated controller
+evidence. Ordinary built-in profile reporting remains unchanged.
+
 For a bounded review request whose checks are selected by the task, run the existing consumer
 runner from the repository root:
 

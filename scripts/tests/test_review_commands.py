@@ -177,6 +177,61 @@ def test_public_cli_retains_literal_argv_cwd_environment_and_hashes(
         assert bundle.read("evidence/results.json") == (attempt_dir / "results.json").read_bytes()
 
 
+@pytest.mark.parametrize(
+    "step_id,exit_code,designation",
+    [
+        ("unrelated-success", 0, "mandatory"),
+        ("postgresql-qualification", 0, "mandatory"),
+        ("postgresql-qualification", 9, "mandatory"),
+        ("postgresql-qualification", 9, "advisory"),
+    ],
+)
+def test_public_cli_opt_in_qualification_is_unspecified_for_harmless_commands(
+    authored_repo: Path, tmp_path: Path, step_id: str, exit_code: int, designation: str
+):
+    output_root = tmp_path / "evidence"
+    # A suite-like ID or stdout claim is command output, not qualification proof.
+    message = "harmless stub" if step_id == "unrelated-success" else '{"suite":"PostgreSQL","qualification":"passed"}'
+    request_path = _write_request(
+        authored_repo,
+        tmp_path / "request.json",
+        "qualification-unspecified",
+        [_step(step_id, [sys.executable, "-c", "import sys; print(sys.argv[1]); sys.exit(int(sys.argv[2]))", message, str(exit_code)], designation=designation)],
+    )
+
+    result = _run(authored_repo, request_path, "qualification-unspecified", output_root)
+
+    assert result.returncode == (0 if exit_code == 0 else 1), result.stdout + result.stderr
+    attempt_dir = _attempt_dir(output_root, "qualification-unspecified")
+    results = json.loads((attempt_dir / "results.json").read_text())
+    assert "opt_in_qualification_not_run" not in results
+    assert results["opt_in_qualification_status"] == "unspecified"
+    step = results["authored_commands"]["steps"][0]
+    assert step["id"] == step_id
+    assert step["exit_code"] == exit_code
+    assert step["child_return_code"] == exit_code
+    assert step["runner_exit_code"] == exit_code
+    assert step["status"] == ("passed" if exit_code == 0 else "failed")
+    assert results["summary"]["mandatory_gate"] == (
+        "failed" if exit_code != 0 and designation == "mandatory" else "passed"
+    )
+    assert (attempt_dir / step["stdout_log"]).read_text() == message + "\n"
+    for log, digest in [("stdout_log", "stdout_sha256"), ("stderr_log", "stderr_sha256"), ("runner_log", "runner_log_sha256")]:
+        assert _sha256(attempt_dir / step[log]) == step[digest]
+    if exit_code != 0:
+        assert message in (attempt_dir / f"failures/{step_id}.txt").read_text()
+    summary = (attempt_dir / "summary.md").read_text()
+    assert "Opt-in qualification status: unspecified" in summary
+    complete = json.loads((attempt_dir / "complete.json").read_text())
+    assert complete["status"] == ("passed" if exit_code == 0 else "failed")
+    assert complete["results_sha256"] == _sha256(attempt_dir / "results.json")
+    with zipfile.ZipFile(attempt_dir / "review-bundle.zip") as bundle:
+        bundled = json.loads(bundle.read("evidence/results.json"))
+        assert "opt_in_qualification_not_run" not in bundled
+        assert bundled["opt_in_qualification_status"] == "unspecified"
+        assert bundle.read("evidence/summary.md") == summary.encode()
+
+
 def test_failed_and_blocked_steps_remain_failed_after_later_success(
     authored_repo: Path, tmp_path: Path
 ):
