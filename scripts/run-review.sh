@@ -417,6 +417,9 @@ run_step() {
     local end_epoch
     local duration
     local rc
+    local command_rc
+    local tee_rc
+    local -a pipeline_status
     local severity_label
     local status
 
@@ -447,8 +450,19 @@ run_step() {
 
     set +e
     "$@" 2>&1 | tee -a "$log_file"
-    rc=${PIPESTATUS[0]}
+    pipeline_status=("${PIPESTATUS[@]}")
     set -e
+
+    command_rc="${pipeline_status[0]:-1}"
+    tee_rc="${pipeline_status[1]:-1}"
+    rc="$command_rc"
+    if [[ $RUN_AUTHORED -eq 1 && $tee_rc -ne 0 ]]; then
+        if [[ $rc -eq 0 ]]; then
+            rc="$tee_rc"
+        fi
+        printf 'Authored command log pipeline failed: command exit %s, tee exit %s.\n' \
+            "$command_rc" "$tee_rc" >> "$log_file"
+    fi
 
     end_epoch="$(date +%s)"
     duration=$((end_epoch - start_epoch))

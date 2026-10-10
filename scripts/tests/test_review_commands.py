@@ -237,6 +237,49 @@ def test_mandatory_document_failure_blocks_gate_while_advisory_failure_is_retain
     assert summary["advisory_failures"] == 1
     assert summary["mandatory_gate"] == "failed"
     assert summary["status"] == "failed"
+
+
+def test_public_cli_fails_authored_attempt_when_tee_cannot_retain_runner_log(
+    authored_repo: Path, tmp_path: Path
+):
+    output_root = tmp_path / "evidence"
+    shim_dir = tmp_path / "tee-shim"
+    shim_dir.mkdir()
+    tee_shim = shim_dir / "tee"
+    tee_shim.write_text("#!/bin/sh\ncat >/dev/null\nexit 23\n", encoding="utf-8")
+    tee_shim.chmod(0o755)
+    request_path = _write_request(
+        authored_repo,
+        tmp_path / "request.json",
+        "logger-failure",
+        [_step("successful-child", [sys.executable, "-c", "print('small output')"])],
+    )
+
+    result = _run(
+        authored_repo,
+        request_path,
+        "logger-failure",
+        output_root,
+        extra_env={"PATH": f"{shim_dir}{os.pathsep}{os.environ['PATH']}"},
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    attempt_dir = _attempt_dir(output_root, "logger-failure")
+    results = json.loads((attempt_dir / "results.json").read_text())
+    step = results["authored_commands"]["steps"][0]
+    assert step["status"] == "failed"
+    assert step["runner_status"] == "failed"
+    assert step["runner_exit_code"] == 23
+    runner_log = attempt_dir / step["runner_log"]
+    assert "Authored command log pipeline failed: command exit 0, tee exit 23." in runner_log.read_text()
+    failure_log = attempt_dir / "failures/successful-child.txt"
+    assert "Authored command log pipeline failed: command exit 0, tee exit 23." in failure_log.read_text()
+    assert step["runner_log_sha256"] == _sha256(runner_log)
+    complete = json.loads((attempt_dir / "complete.json").read_text())
+    assert complete["status"] == "failed"
+    assert complete["status"] != "passed"
+    assert json.loads((attempt_dir / "attempt-state.json").read_text())["status"] == "failed"
+    assert not (attempt_dir / "in-progress.marker").exists()
 @pytest.mark.parametrize(
     "mutation",
     ["head", "staged", "unstaged", "untracked", "mode", "directory-mode", "assume-unchanged", "skip-worktree"],
