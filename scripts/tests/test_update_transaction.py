@@ -5,6 +5,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -424,6 +425,121 @@ os._exit(0)
                 self.assertIn("already applied", repeated_output)
                 if mode != "staged":
                     self.assertIn("previously validated transaction output retained", output)
+
+    def test_hard_exit_retry_refuses_fifo_artifacts_without_waiting(self):
+        retry_code = r'''import importlib.util, sys
+from pathlib import Path
+script = Path(sys.argv[1])
+root = Path(sys.argv[2]).resolve()
+proposal_marker = Path(sys.argv[3])
+sys.path.insert(0, str(script.parent))
+import update_ri_lock
+spec = importlib.util.spec_from_file_location("fifo_retry_update_dependencies", script)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.ROOT = root
+module.BACKEND = root / "apps/backend"
+module.MOBILE = root / "apps/mobile"
+module.ensure_python = lambda *args, **kwargs: None
+module.ensure_node = lambda *args, **kwargs: None
+module.toolchain_report = lambda *args, **kwargs: None
+update_ri_lock.proposed = lambda *args, **kwargs: []
+def proposal(*args, **kwargs):
+    proposal_marker.write_text("called\n")
+    path = module.BACKEND / "requirements-dev.lock"
+    before = path.read_bytes()
+    return path, before, before.replace(b"1.0.0", b"1.1.0")
+module.backend = proposal
+sys.argv = ["update", "backend", "--apply"]
+raise SystemExit(module.main())
+'''
+        for role, suffix in (("staged", ".update-tmp"), ("recovery", ".update-recovery")):
+            with self.subTest(role=role):
+                self.reset_single_lock_fixture()
+                self.crash_real_single_lock_publisher("staged")
+                fifo = self.backend_lock.with_name(self.backend_lock.name + suffix)
+                other = self.backend_lock.with_name(
+                    self.backend_lock.name + (".update-recovery" if role == "staged" else ".update-tmp")
+                )
+                fifo.unlink()
+                os.mkfifo(fifo, 0o640)
+                fifo_info = fifo.lstat()
+                other_info = other.lstat()
+                other_bytes = other.read_bytes()
+                target_bytes = self.backend_lock.read_bytes()
+                target_info = self.backend_lock.lstat()
+                transaction_bytes = state_path(self.root).read_bytes()
+                proposal_marker = self.root / "proposal-called.txt"
+                proposal_marker.unlink(missing_ok=True)
+                process = subprocess.Popen(
+                    [sys.executable, "-c", retry_code, str(SCRIPT), str(self.root), str(proposal_marker)],
+                    cwd=self.root,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                timed_out = False
+                try:
+                    output, errors = process.communicate(timeout=2)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    process.kill()
+                    output, errors = process.communicate()
+
+                after_fifo = fifo.lstat()
+                after_other = other.lstat()
+                after_target = self.backend_lock.lstat()
+                self.assertTrue(stat.S_ISFIFO(after_fifo.st_mode))
+                self.assertEqual((after_fifo.st_dev, after_fifo.st_ino, stat.S_IMODE(after_fifo.st_mode)),
+                                 (fifo_info.st_dev, fifo_info.st_ino, stat.S_IMODE(fifo_info.st_mode)))
+                self.assertEqual((other.read_bytes(), after_other.st_dev, after_other.st_ino,
+                                  stat.S_IMODE(after_other.st_mode)),
+                                 (other_bytes, other_info.st_dev, other_info.st_ino,
+                                  stat.S_IMODE(other_info.st_mode)))
+                self.assertEqual((self.backend_lock.read_bytes(), after_target.st_dev, after_target.st_ino,
+                                  stat.S_IMODE(after_target.st_mode)),
+                                 (target_bytes, target_info.st_dev, target_info.st_ino,
+                                  stat.S_IMODE(target_info.st_mode)))
+                self.assertEqual(state_path(self.root).read_bytes(), transaction_bytes)
+                self.assertFalse(proposal_marker.exists(), output + errors)
+                self.assertFalse(timed_out, f"{role} FIFO retry timed out; stdout={output!r}; stderr={errors!r}")
+                self.assertEqual(process.returncode, 2, errors)
+                self.assertIn("is not a regular file", errors)
+                self.assertIn("inspect it manually", errors)
+
+    def test_hard_exit_fifo_descriptor_is_checked_before_read(self):
+        if not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"):
+            self.skipTest("FIFO descriptor checks require POSIX nonblocking open")
+        fifo = self.root / "apps/backend" / "updater-artifact"
+        os.mkfifo(fifo, 0o640)
+        fifo_info = fifo.lstat()
+        transaction = UpdateTransaction(self.root, {}, state_path(self.root))
+        real_open = os.open
+        opened_descriptors = []
+
+        def nonblocking_open(path, flags, *args, **kwargs):
+            if Path(path) == fifo:
+                flags |= os.O_NONBLOCK
+            descriptor = real_open(path, flags, *args, **kwargs)
+            opened_descriptors.append(descriptor)
+            return descriptor
+
+        try:
+            with patch("lib.update_transaction.os.open", side_effect=nonblocking_open), \
+                 patch("lib.update_transaction.os.fdopen", side_effect=AssertionError("descriptor read before type check")) as fdopen:
+                with self.assertRaisesRegex(TransactionError, "not a regular file"):
+                    transaction._read_nofollow(fifo, "updater publication artifact")
+                fdopen.assert_not_called()
+        finally:
+            for descriptor in opened_descriptors:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+        after_fifo = fifo.lstat()
+        self.assertTrue(stat.S_ISFIFO(after_fifo.st_mode))
+        self.assertEqual((after_fifo.st_dev, after_fifo.st_ino, stat.S_IMODE(after_fifo.st_mode)),
+                         (fifo_info.st_dev, fifo_info.st_ino, stat.S_IMODE(fifo_info.st_mode)))
 
     def test_hard_exit_publish_boundary_preserves_tampered_artifacts_and_target(self):
         cases = (

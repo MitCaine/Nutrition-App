@@ -319,21 +319,31 @@ class UpdateTransaction:
 
     def _read_nofollow(self, path: Path, description: str) -> tuple[os.stat_result, bytes] | None:
         self._assert_checkout_path(path)
+        nonblocking = getattr(os, "O_NONBLOCK", None)
+        if nonblocking is None:
+            raise TransactionError(
+                f"Cannot authenticate {description}; nonblocking file opens are unavailable; inspect it manually."
+            )
         try:
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | nonblocking)
         except FileNotFoundError:
             return None
         except OSError as exc:
             raise TransactionError(f"Cannot authenticate {description}; inspect it manually.") from exc
         try:
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode):
+                raise TransactionError(f"{description.capitalize()} is not a regular file; inspect it manually.")
             with os.fdopen(descriptor, "rb") as stream:
-                opened = os.fstat(stream.fileno())
+                descriptor = None
                 data = stream.read()
             current = os.stat(path, follow_symlinks=False)
         except OSError as exc:
             raise TransactionError(f"Cannot authenticate {description}; inspect it manually.") from exc
-        if (not stat.S_ISREG(opened.st_mode)
-                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+        if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
             raise TransactionError(f"{description.capitalize()} changed while being authenticated; inspect it manually.")
         return opened, data
 
