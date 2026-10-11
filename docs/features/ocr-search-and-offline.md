@@ -184,6 +184,10 @@ A selected file is copied to a temporary candidate and validated without modifyi
 database. Settings shows the validated candidate for explicit review. Confirming restore creates and
 revalidates a staged standalone copy, then moves that copy into the pending-restore namespace.
 Staging alone does not replace the open application database and can be canceled before restart.
+Admission checks the complete column contract for the supported schema version, including declared
+types, nullability, primary-key positions, and defaults used by runtime inserts. It does not depend
+on physical column order: supported upgrades append the serving reference columns. Backup format 1
+admits schema version 7 only; older or newer backups are rejected without migration or repair.
 Cancellation reports success only after the pending path is gone; if both the SQLite and file
 cleanup routes fail, Settings keeps the pending affordance and reports the failure so the staged
 backup remains truthfully eligible for activation.

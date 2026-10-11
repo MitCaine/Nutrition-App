@@ -4,8 +4,19 @@ import {
 } from "../src/storage/backup/localBackupValidation";
 import {
   migrateNutritionDatabase,
+  SQLITE_MIGRATIONS,
 } from "../src/storage/sqlite/migrations";
-import { SQLITE_SCHEMA_VERSION } from "../src/storage/sqlite/schema";
+import {
+  SQLITE_MIGRATION_LEDGER_TABLE,
+  SQLITE_SCHEMA_VERSION,
+  SQLITE_SEMANTIC_TABLES,
+  SQLITE_SNAPSHOT_SCOPE_TABLE,
+} from "../src/storage/sqlite/schema";
+import {
+  getLocalBackupSchemaRequirements,
+  localBackupDefaultsMatch,
+  normalizeLocalBackupDefault,
+} from "../src/storage/backup/localBackupSchema";
 import {
   LocalSQLiteTestDatabase,
   seedLocalFood,
@@ -18,6 +29,127 @@ const FOOD_ID =
   "00000000-0000-4000-8000-000000000101";
 const SERVING_ID =
   "00000000-0000-4000-8000-000000000102";
+
+const VERSION_7_TABLES = [
+  ...SQLITE_SEMANTIC_TABLES,
+  SQLITE_MIGRATION_LEDGER_TABLE,
+  SQLITE_SNAPSHOT_SCOPE_TABLE,
+];
+
+const OMITTABLE_COLUMN_CASES = [
+  ["users", "display_name"],
+  ["user_profiles", "authoritative_time_zone"],
+  ["nutrients", "display_name"],
+  ["food_items", "brand"],
+  ["food_sources", "metadata"],
+  ["food_nutrients", "confidence"],
+  ["serving_definitions", "reference_quantity"],
+  ["recipes", "notes"],
+  ["recipe_ingredients", "preparation_note"],
+  ["recipe_publication_revisions", "published_notes"],
+  ["recipe_publication_amount_definitions", "conversion_metadata"],
+  ["recipe_publication_nutrients", "diagnostic_provenance"],
+  ["daily_log_day_completions", "completed_at"],
+  ["food_favorites", "created_at"],
+  ["ocr_nutrition_confirmation_traces", "schema_version"],
+  ["nutrition_targets", "metadata"],
+  ["create_operation_idempotency", "created_at"],
+  ["nutrition_schema_migrations", "applied_at"],
+] as const;
+
+type FixtureSchemaObject = Readonly<{ name: string; sql: string }>;
+
+async function replaceTableDefinition(
+  database: LocalSQLiteTestDatabase,
+  tableName: string,
+  originalDefinition: string,
+  replacementDefinition: string,
+): Promise<void> {
+  const table = await database.getFirstAsync<{ sql: string | null }>(
+    `SELECT "sql" FROM "sqlite_master"
+     WHERE "type" = 'table' AND "name" = ?`,
+    [tableName],
+  );
+
+  if (!table?.sql || table.sql.split(originalDefinition).length !== 2) {
+    throw new Error(
+      `Could not locate one ${tableName} fixture definition to replace.`,
+    );
+  }
+
+  const associatedIndexes =
+    await database.getAllAsync<FixtureSchemaObject>(
+      `SELECT "sql" FROM "sqlite_master"
+       WHERE "type" = 'index'
+         AND "tbl_name" = ? AND "sql" IS NOT NULL
+       ORDER BY "name"`,
+      [tableName],
+    );
+  const dependentTriggers =
+    (await database.getAllAsync<FixtureSchemaObject>(
+      `SELECT "name", "sql" FROM "sqlite_master"
+       WHERE "type" = 'trigger' AND "sql" IS NOT NULL
+       ORDER BY "name"`,
+    )).filter((trigger) =>
+      trigger.sql.includes(`"${tableName}"`),
+    );
+  const currentColumns = await database.getAllAsync<{ name: string }>(
+    `PRAGMA table_info("${tableName}")`,
+  );
+  const temporaryName = `${tableName}_gh280_fixture`;
+  const createTemporaryTable = table.sql
+    .replace(
+      /^CREATE TABLE(?: IF NOT EXISTS)?\s+(?:"[^"]+"|`[^`]+`|\[[^\]]+\]|\S+)/,
+      `CREATE TABLE "${temporaryName}"`,
+    )
+    .replace(originalDefinition, replacementDefinition);
+
+  if (createTemporaryTable === table.sql) {
+    throw new Error(`Could not rebuild ${tableName} fixture schema.`);
+  }
+
+  const columnList = currentColumns
+    .map(({ name }) => `"${name.replace(/"/g, "\"\"")}"`)
+    .join(", ");
+
+  await database.execAsync("PRAGMA foreign_keys = OFF");
+  try {
+    for (const trigger of dependentTriggers) {
+      await database.execAsync(
+        `DROP TRIGGER "${trigger.name.replace(/"/g, "\"\"")}"`,
+      );
+    }
+    await database.execAsync(createTemporaryTable);
+    await database.execAsync(
+      `INSERT INTO "${temporaryName}" (${columnList})
+       SELECT ${columnList} FROM "${tableName}"`,
+    );
+    await database.execAsync(`DROP TABLE "${tableName}"`);
+    await database.execAsync(
+      `ALTER TABLE "${temporaryName}" RENAME TO "${tableName}"`,
+    );
+    for (const index of associatedIndexes) {
+      await database.execAsync(index.sql);
+    }
+    for (const trigger of dependentTriggers) {
+      await database.execAsync(trigger.sql);
+    }
+  } finally {
+    await database.execAsync("PRAGMA foreign_keys = ON");
+  }
+}
+
+async function seedFoodWithBrand(
+  database: LocalSQLiteTestDatabase,
+  brand = "Example Brand",
+): Promise<void> {
+  await database.runAsync(
+    `INSERT INTO "food_items"
+      ("id", "user_id", "name", "brand", "source_type", "is_recipe")
+     VALUES (?, ?, 'Brand fixture food', ?, 'manual', 0)`,
+    [FOOD_ID, OWNER_ID, brand],
+  );
+}
 
 async function createValidArtifact(
   ownerId = OWNER_ID,
@@ -38,6 +170,45 @@ async function createValidArtifact(
     `PRAGMA application_id = ${NUTRITION_BACKUP_APPLICATION_ID}`,
   );
 
+  return database;
+}
+
+async function createPopulatedSupportedUpgradeArtifact():
+Promise<LocalSQLiteTestDatabase> {
+  const database = new LocalSQLiteTestDatabase();
+  await migrateNutritionDatabase(
+    database.asExpoDatabase(),
+    SQLITE_MIGRATIONS.slice(0, 2),
+  );
+
+  // Recreate a supported v2 layout: migration 003 appended these nullable
+  // reference fields to populated databases while fresh installs have them in
+  // their baseline position.
+  await database.execAsync(
+    `ALTER TABLE "serving_definitions" DROP COLUMN "reference_quantity";
+     ALTER TABLE "serving_definitions" DROP COLUMN "reference_unit";
+     ALTER TABLE "serving_definitions" DROP COLUMN "reference_gram_weight";`,
+  );
+  await seedLocalOwner(database, OWNER_ID);
+  await database.runAsync(
+    `INSERT INTO "user_profiles" ("user_id") VALUES (?)`,
+    [OWNER_ID],
+  );
+  await seedLocalFood(database, {
+    id: FOOD_ID,
+    ownerId: OWNER_ID,
+    servingId: SERVING_ID,
+    gramWeight: "28.000000",
+  });
+  await database.runAsync(
+    `UPDATE "food_items" SET "brand" = 'Example Brand' WHERE "id" = ?`,
+    [FOOD_ID],
+  );
+
+  await migrateNutritionDatabase(database.asExpoDatabase());
+  await database.execAsync(
+    `PRAGMA application_id = ${NUTRITION_BACKUP_APPLICATION_ID}`,
+  );
   return database;
 }
 
@@ -67,6 +238,418 @@ describe("local backup validation", () => {
       expect(summary.rowCounts.serving_definitions).toBe(1);
       expect(summary.rowCounts.nutrients).toBeGreaterThan(0);
       expect(summary.totalRows).toBeGreaterThan(4);
+    } finally {
+      database.close();
+    }
+  });
+
+  test("rejects a current backup missing nullable food_items.brand before owner and value checks", async () => {
+    const database = await createValidArtifact();
+
+    try {
+      // This is otherwise a valid, empty current-version artifact: its format
+      // marker, migration ledger, integrity guards, owner, and profile remain
+      // intact. The missing nullable runtime column is the selected defect.
+      await database.execAsync(
+        `ALTER TABLE "food_items" DROP COLUMN "brand"`,
+      );
+
+      await expect(
+        validateLocalBackupDatabase(
+          database.asExpoDatabase(),
+        ),
+      ).rejects.toMatchObject({
+        code: "backup_schema_invalid",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  test("keeps an inspectable complete version-7 contract for every runtime, ledger, and scope table", async () => {
+    const database = await createValidArtifact();
+
+    try {
+      const requirements =
+        getLocalBackupSchemaRequirements(SQLITE_SCHEMA_VERSION);
+      expect(SQLITE_SCHEMA_VERSION).toBe(7);
+      expect(getLocalBackupSchemaRequirements(6)).toBeUndefined();
+      expect(getLocalBackupSchemaRequirements(8)).toBeUndefined();
+      expect(Object.keys(requirements ?? {}).sort()).toEqual(
+        [...VERSION_7_TABLES].sort(),
+      );
+
+      let totalColumns = 0;
+      for (const table of VERSION_7_TABLES) {
+        const expected = requirements?.[table];
+        expect(expected).toBeDefined();
+
+        const actual = await database.getAllAsync<{
+          name: string;
+          type: string;
+          notnull: number;
+          dflt_value: string | null;
+          pk: number;
+        }>(`PRAGMA table_info("${table}")`);
+
+        const projectedActual = actual
+          .map((column) => ({
+            name: column.name,
+            declaredType: column.type.trim().replace(/\s+/g, " ").toUpperCase(),
+            notNull: column.notnull === 1,
+            primaryKeyPosition: column.pk,
+            defaultSql: column.dflt_value === null
+              ? null
+              : normalizeLocalBackupDefault(column.dflt_value),
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name));
+        const projectedExpected = (expected ?? [])
+          .map((column) => ({
+            name: column.name,
+            declaredType: column.declaredType,
+            notNull: column.notNull,
+            primaryKeyPosition: column.primaryKeyPosition,
+            defaultSql: column.defaultSql === null
+              ? null
+              : normalizeLocalBackupDefault(column.defaultSql),
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name));
+
+        expect(projectedActual).toEqual(projectedExpected);
+        totalColumns += expected?.length ?? 0;
+      }
+
+      expect(totalColumns).toBe(199);
+      await expect(
+        validateLocalBackupDatabase(database.asExpoDatabase()),
+      ).resolves.toMatchObject({ schemaVersion: 7 });
+    } finally {
+      database.close();
+    }
+  });
+
+  test("accepts the populated supported upgrade schema with appended serving columns", async () => {
+    const database = await createPopulatedSupportedUpgradeArtifact();
+
+    try {
+      const columns = await database.getAllAsync<{ name: string }>(
+        `PRAGMA table_info("serving_definitions")`,
+      );
+      const names = columns.map(({ name }) => name);
+
+      expect(names.indexOf("reference_quantity")).toBeGreaterThan(
+        names.indexOf("is_user_confirmed"),
+      );
+      expect(
+        await database.getFirstAsync<{ brand: string }>(
+          `SELECT "brand" FROM "food_items" WHERE "id" = ?`,
+          [FOOD_ID],
+        ),
+      ).toEqual({ brand: "Example Brand" });
+      await expect(
+        validateLocalBackupDatabase(database.asExpoDatabase()),
+      ).resolves.toMatchObject({
+        schemaVersion: 7,
+        ownerId: OWNER_ID,
+        rowCounts: { food_items: 1 },
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  test.each(OMITTABLE_COLUMN_CASES)(
+    "rejects a current schema missing required column %s.%s",
+    async (table, column) => {
+      const database = await createValidArtifact();
+
+      try {
+        // These columns have no remaining table-level dependency in their
+        // selected fixtures, so SQLite can remove the one target while
+        // retaining all rows and unrelated indexes/triggers.
+        await database.execAsync(
+          `ALTER TABLE "${table}" DROP COLUMN "${column}"`,
+        );
+
+        await expect(
+          validateLocalBackupDatabase(database.asExpoDatabase()),
+        ).rejects.toMatchObject({
+          code: "backup_schema_invalid",
+          message: expect.stringContaining(column),
+        });
+      } finally {
+        database.close();
+      }
+    },
+  );
+
+  test("rejects a declared TEXT-affinity near-miss and preserves unrelated Food rows and guards", async () => {
+    const database = await createValidArtifact();
+
+    try {
+      await seedFoodWithBrand(database);
+      await replaceTableDefinition(
+        database,
+        "food_items",
+        `"brand" TEXT,`,
+        `"brand" VARCHAR,`,
+      );
+
+      expect(
+        await database.getFirstAsync<{ brand: string }>(
+          `SELECT "brand" FROM "food_items" WHERE "id" = ?`,
+          [FOOD_ID],
+        ),
+      ).toEqual({ brand: "Example Brand" });
+      expect(
+        await database.getFirstAsync<{ present: number }>(
+          `SELECT 1 AS "present" FROM "sqlite_master"
+           WHERE "type" = 'index' AND "name" = 'ix_food_items_active_source_identity'`,
+        ),
+      ).toEqual({ present: 1 });
+
+      await expect(
+        validateLocalBackupDatabase(database.asExpoDatabase()),
+      ).rejects.toMatchObject({
+        code: "backup_schema_invalid",
+        message: expect.stringContaining("brand"),
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  test("rejects an INTEGER-affinity near-miss for an INTEGER runtime flag", async () => {
+    const database = await createValidArtifact();
+
+    try {
+      await seedFoodWithBrand(database);
+      await replaceTableDefinition(
+        database,
+        "food_items",
+        `"is_recipe" INTEGER NOT NULL DEFAULT 0`,
+        `"is_recipe" INT NOT NULL DEFAULT 0`,
+      );
+
+      const flag = (
+        await database.getAllAsync<{ name: string; type: string }>(
+          `PRAGMA table_info("food_items")`,
+        )
+      ).find((column) => column.name === "is_recipe");
+      expect(flag?.type).toBe("INT");
+
+      await expect(
+        validateLocalBackupDatabase(database.asExpoDatabase()),
+      ).rejects.toMatchObject({
+        code: "backup_schema_invalid",
+        message: expect.stringContaining("is_recipe"),
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  test("rejects strengthened and weakened nullability while preserving existing rows", async () => {
+    const strengthened = await createValidArtifact();
+    try {
+      await seedFoodWithBrand(strengthened);
+      await replaceTableDefinition(
+        strengthened,
+        "food_items",
+        `"brand" TEXT,`,
+        `"brand" TEXT NOT NULL,`,
+      );
+      await expect(
+        validateLocalBackupDatabase(strengthened.asExpoDatabase()),
+      ).rejects.toMatchObject({
+        code: "backup_schema_invalid",
+        message: expect.stringContaining("brand"),
+      });
+      expect(
+        await strengthened.getFirstAsync<{ brand: string }>(
+          `SELECT "brand" FROM "food_items" WHERE "id" = ?`,
+          [FOOD_ID],
+        ),
+      ).toEqual({ brand: "Example Brand" });
+    } finally {
+      strengthened.close();
+    }
+
+    const weakened = await createValidArtifact();
+    try {
+      await replaceTableDefinition(
+        weakened,
+        "users",
+        `"email" TEXT NOT NULL UNIQUE,`,
+        `"email" TEXT UNIQUE,`,
+      );
+      await expect(
+        validateLocalBackupDatabase(weakened.asExpoDatabase()),
+      ).rejects.toMatchObject({
+        code: "backup_schema_invalid",
+        message: expect.stringContaining("email"),
+      });
+      expect(
+        await weakened.getFirstAsync<{ id: string }>(
+          `SELECT "id" FROM "users" WHERE "id" = ?`,
+          [OWNER_ID],
+        ),
+      ).toEqual({ id: OWNER_ID });
+    } finally {
+      weakened.close();
+    }
+  });
+
+  test("rejects missing ledger primary keys and changed scope key positions and nullability", async () => {
+    const missingLedgerPrimaryKey = await createValidArtifact();
+    try {
+      await replaceTableDefinition(
+        missingLedgerPrimaryKey,
+        SQLITE_MIGRATION_LEDGER_TABLE,
+        `"version" INTEGER PRIMARY KEY NOT NULL`,
+        `"version" INTEGER NOT NULL`,
+      );
+      await expect(
+        validateLocalBackupDatabase(missingLedgerPrimaryKey.asExpoDatabase()),
+      ).rejects.toMatchObject({
+        code: "backup_schema_invalid",
+        message: expect.stringContaining("version"),
+      });
+    } finally {
+      missingLedgerPrimaryKey.close();
+    }
+
+    const reversedScopeKey = await createValidArtifact();
+    try {
+      await replaceTableDefinition(
+        reversedScopeKey,
+        SQLITE_SNAPSHOT_SCOPE_TABLE,
+        `PRIMARY KEY ("user_id", "daily_log_id")`,
+        `PRIMARY KEY ("daily_log_id", "user_id")`,
+      );
+      await expect(
+        validateLocalBackupDatabase(reversedScopeKey.asExpoDatabase()),
+      ).rejects.toMatchObject({
+        code: "backup_schema_invalid",
+        message: expect.stringContaining("user_id"),
+      });
+    } finally {
+      reversedScopeKey.close();
+    }
+
+    const nullableScopeKey = await createValidArtifact();
+    try {
+      await replaceTableDefinition(
+        nullableScopeKey,
+        SQLITE_SNAPSHOT_SCOPE_TABLE,
+        `"user_id" TEXT NOT NULL,`,
+        `"user_id" TEXT,`,
+      );
+      await expect(
+        validateLocalBackupDatabase(nullableScopeKey.asExpoDatabase()),
+      ).rejects.toMatchObject({
+        code: "backup_schema_invalid",
+        message: expect.stringContaining("user_id"),
+      });
+    } finally {
+      nullableScopeKey.close();
+    }
+  });
+
+  test("rejects absent, NULL, changed string, numeric, and expression defaults", async () => {
+    const cases = [
+      {
+        table: "user_profiles",
+        original: `"energy_estimation_context" TEXT NOT NULL DEFAULT 'general_adult',`,
+        replacement: `"energy_estimation_context" TEXT NOT NULL,`,
+        column: "energy_estimation_context",
+      },
+      {
+        table: "food_items",
+        original: `"brand" TEXT,`,
+        replacement: `"brand" TEXT DEFAULT NULL,`,
+        column: "brand",
+      },
+      {
+        table: "user_profiles",
+        original: `"energy_estimation_context" TEXT NOT NULL DEFAULT 'general_adult',`,
+        replacement: `"energy_estimation_context" TEXT NOT NULL DEFAULT 'athlete',`,
+        column: "energy_estimation_context",
+      },
+      {
+        table: "user_profiles",
+        original: `"calendar_revision" INTEGER NOT NULL DEFAULT 0`,
+        replacement: `"calendar_revision" INTEGER NOT NULL DEFAULT 1`,
+        column: "calendar_revision",
+      },
+      {
+        table: "users",
+        original: `strftime('%f','now'),4,3) = '000'`,
+        replacement: `strftime('%f','now'),4,3) = '001'`,
+        column: "created_at",
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const database = await createValidArtifact();
+      try {
+        await replaceTableDefinition(
+          database,
+          testCase.table,
+          testCase.original,
+          testCase.replacement,
+        );
+        await expect(
+          validateLocalBackupDatabase(database.asExpoDatabase()),
+        ).rejects.toMatchObject({
+          code: "backup_schema_invalid",
+          message: expect.stringContaining(testCase.column),
+        });
+      } finally {
+        database.close();
+      }
+    }
+  });
+
+  test("normalizes only harmless type/default spelling and preserves default literals and expressions", async () => {
+    const database = await createValidArtifact();
+
+    try {
+      await replaceTableDefinition(
+        database,
+        "food_items",
+        `"brand" TEXT,`,
+        `"brand" text,`,
+      );
+      await replaceTableDefinition(
+        database,
+        "user_profiles",
+        `"calendar_revision" INTEGER NOT NULL DEFAULT 0`,
+        `"calendar_revision" INTEGER NOT NULL DEFAULT (( 0 ))`,
+      );
+
+      await expect(
+        validateLocalBackupDatabase(database.asExpoDatabase()),
+      ).resolves.toMatchObject({ schemaVersion: 7 });
+
+      const canonical =
+        "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END";
+      const spaced =
+        " ( ( case when substr ( strftime( '%f','now' ), 4,3 ) = '000' then strftime('%Y-%m-%dT%H:%M:%SZ','now') else strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' end ) ) ";
+
+      expect(normalizeLocalBackupDefault(spaced)).toBe(
+        normalizeLocalBackupDefault(canonical),
+      );
+      expect(localBackupDefaultsMatch(null, "NULL")).toBe(false);
+      expect(localBackupDefaultsMatch("'0'", "0")).toBe(false);
+      expect(localBackupDefaultsMatch("'general_adult'", "'athlete'")).toBe(false);
+      expect(localBackupDefaultsMatch("0", "1")).toBe(false);
+      expect(
+        localBackupDefaultsMatch(
+          "CASE WHEN 1 = 1 THEN 'now' ELSE 'later' END",
+          "CASE WHEN 1 = 1 THEN 'today' ELSE 'later' END",
+        ),
+      ).toBe(false);
     } finally {
       database.close();
     }

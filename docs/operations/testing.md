@@ -507,6 +507,17 @@ SQLite qualification when the change affects backup copy coherence, schema compa
 replacement/rollback, or restart-time activation. A mocked filesystem/database test alone cannot
 prove safe replacement of the real local authority.
 
+Backup admission has an explicit version-7 column contract for the nineteen semantic tables, the
+migration ledger, and the snapshot-replacement scope table. It checks declared type, nullability,
+primary-key position, and insert-semantic defaults while ignoring column order. Backup format 1
+continues to accept schema version 7 only; admission does not migrate or repair a candidate. The
+focused Node `node:sqlite` fixtures exercise that schema logic, and Jest lifecycle mocks exercise
+control flow. Neither is native backup evidence. The `ios-native` profile proves generated-project
+compilation and OCR host regressions; it does not prove backup admission, file replacement, rollback,
+or restart visibility. Those claims require a task-specific app using real Expo SQLite and file APIs,
+physical simulator database files, and application termination/relaunch with retained exact-source
+and simulator evidence.
+
 The local backup Jest suites are lifecycle fixtures: they deliberately inject SQLite/file deletion
 failures, no-op deletion, rename failures, replacement rollback, and retained consumed paths to
 prove control flow and UI state. Cancellation is a success only when the pending file is absent;

@@ -14,6 +14,11 @@ import {
   parseIanaTimeZone,
   parseUuid,
 } from "../../shared/exact/canonicalValues";
+import {
+  getLocalBackupSchemaRequirements,
+  localBackupDefaultsMatch,
+  type LocalBackupColumnRequirement,
+} from "./localBackupSchema";
 
 export const NUTRITION_BACKUP_FORMAT_VERSION = 1;
 
@@ -55,7 +60,12 @@ export type LocalBackupValidationSummary = Readonly<{
 type ValidationMode = "artifact" | "active";
 
 type TableInfoRow = Readonly<{
+  cid: number;
   name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
 }>;
 
 type MigrationLedgerRow = Readonly<{
@@ -151,10 +161,102 @@ async function tableColumns(
   database: SQLiteDatabase,
   table: string,
 ): Promise<readonly string[]> {
-  const rows = await database.getAllAsync<TableInfoRow>(
+  const rows = await tableColumnInfo(database, table);
+  return rows.map((row) => row.name);
+}
+
+async function tableColumnInfo(
+  database: SQLiteDatabase,
+  table: string,
+): Promise<readonly TableInfoRow[]> {
+  return database.getAllAsync<TableInfoRow>(
     `PRAGMA table_info(${quoteIdentifier(table)})`,
   );
-  return rows.map((row) => row.name);
+}
+
+function normalizeDeclaredType(type: string): string {
+  return type.trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+function matchesColumnRequirement(
+  actual: TableInfoRow,
+  expected: LocalBackupColumnRequirement,
+): boolean {
+  return (
+    normalizeDeclaredType(actual.type) ===
+      normalizeDeclaredType(expected.declaredType) &&
+    actual.notnull === (expected.notNull ? 1 : 0) &&
+    actual.pk === expected.primaryKeyPosition &&
+    localBackupDefaultsMatch(actual.dflt_value, expected.defaultSql)
+  );
+}
+
+async function assertVersionedColumnSchema(
+  database: SQLiteDatabase,
+  expectedTables: ReadonlySet<string>,
+): Promise<void> {
+  const requirements =
+    getLocalBackupSchemaRequirements(SQLITE_SCHEMA_VERSION);
+  const contractTables = Object.keys(requirements ?? {});
+
+  if (
+    !requirements ||
+    contractTables.length !== expectedTables.size ||
+    contractTables.some((table) => !expectedTables.has(table))
+  ) {
+    fail(
+      "backup_schema_invalid",
+      "The supported backup column contract is incomplete.",
+    );
+  }
+
+  for (const table of contractTables) {
+    const expectedColumns = requirements[table];
+    if (!expectedColumns) {
+      fail(
+        "backup_schema_invalid",
+        `The supported backup column contract is incomplete for ${table}.`,
+      );
+    }
+
+    let actualColumns: readonly TableInfoRow[];
+    try {
+      actualColumns = await tableColumnInfo(database, table);
+    } catch {
+      fail(
+        "backup_schema_invalid",
+        `The backup column schema for ${table} is unreadable.`,
+      );
+    }
+
+    const actualByName = new Map(
+      actualColumns.map((column) => [column.name, column]),
+    );
+
+    for (const expected of expectedColumns) {
+      const actual = actualByName.get(expected.name);
+      if (!actual) {
+        fail(
+          "backup_schema_invalid",
+          `The backup table ${table} is missing required column ${expected.name}.`,
+        );
+      }
+
+      if (!matchesColumnRequirement(actual, expected)) {
+        fail(
+          "backup_schema_invalid",
+          `The backup table ${table} has an incompatible definition for column ${expected.name}.`,
+        );
+      }
+    }
+
+    if (actualByName.size !== expectedColumns.length) {
+      fail(
+        "backup_schema_invalid",
+        `The backup table ${table} contains an unexpected column.`,
+      );
+    }
+  }
 }
 
 async function assertFormat(
@@ -265,6 +367,8 @@ async function assertExpectedSchemaObjects(
       "The backup contains an unexpected or incomplete Nutrition App table set.",
     );
   }
+
+  await assertVersionedColumnSchema(database, expectedTables);
 
   const triggerRows = await database.getAllAsync<{ name: string }>(
     `SELECT "name" FROM "sqlite_master" WHERE "type" = 'trigger'`,
