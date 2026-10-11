@@ -135,6 +135,18 @@ type FoodRecord = Readonly<{
   recipeId: string | null;
 }>;
 
+type FoodListData = {
+  servings: ServingRow[];
+  nutrients: NutrientRow[];
+  link: RecipeLinkRow | null;
+  trace: boolean;
+  sourceExists: boolean;
+  favorite: boolean;
+};
+
+// Leave room for the owner binding within SQLite's conservative parameter limit.
+const FOOD_LIST_CHUNK_SIZE = 900;
+
 type ReceiptRow = Readonly<{
   id: string;
   request_fingerprint: string;
@@ -613,12 +625,15 @@ export class LocalFoodsRuntime implements FoodsRuntime {
          ORDER BY LOWER("name"), "id"`,
         [this.ownerId, query?.trim() || null, query?.trim() ? `%${query.trim()}%` : null, query?.trim() ? `%${query.trim()}%` : null],
       );
+      const loaded = await this.loadListData(rows);
       const result: Food[] = [];
       for (const row of rows) {
         try {
-          const record = await this.loadRecord(this.database, row);
+          const data = loaded.get(row.id);
+          if (!data) throw invalidStoredFood();
+          const record = await this.loadRecord(this.database, row, "read", data);
           if (record.projection === "invalid") continue;
-          result.push(await this.toFood(this.database, record));
+          result.push(await this.toFood(this.database, record, "read", data));
         } catch (error) {
           if (error instanceof LocalRuntimeError && error.code === "recipe_projection_integrity_invalid") {
             continue;
@@ -1490,6 +1505,61 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     }
   }
 
+  private async loadListData(rows: readonly FoodRow[]): Promise<Map<string, FoodListData>> {
+    const result = new Map<string, FoodListData>();
+    for (let offset = 0; offset < rows.length; offset += FOOD_LIST_CHUNK_SIZE) {
+      const ids = rows.slice(offset, offset + FOOD_LIST_CHUNK_SIZE).map((row) => row.id);
+      const placeholders = ids.map(() => "?").join(", ");
+      const params = [this.ownerId, ...ids];
+      const servings = await this.database.getAllAsync<ServingRow>(
+        `SELECT "child".* FROM "serving_definitions" AS "child"
+         JOIN "food_items" AS "parent" ON "parent"."id" = "child"."food_item_id"
+         WHERE "parent"."user_id" = ? AND "child"."food_item_id" IN (${placeholders})
+         ORDER BY "child"."label", "child"."id"`, params,
+      );
+      const nutrients = await this.database.getAllAsync<NutrientRow>(
+        `SELECT "child".* FROM "food_nutrients" AS "child"
+         JOIN "food_items" AS "parent" ON "parent"."id" = "child"."food_item_id"
+         WHERE "parent"."user_id" = ? AND "child"."food_item_id" IN (${placeholders})
+         ORDER BY "child"."nutrient_id", "child"."id"`, params,
+      );
+      const links = await this.database.getAllAsync<RecipeLinkRow>(
+        `SELECT "id", "user_id", "published_food_item_id", "active_publication_revision_id", "deleted_at"
+         FROM "recipes" WHERE "user_id" = ? AND "published_food_item_id" IN (${placeholders})
+         ORDER BY "id"`, params,
+      );
+      const provenance = await this.database.getAllAsync<{
+        id: string; trace: number; source_exists: number;
+      }>(
+        `SELECT "food"."id",
+           EXISTS (SELECT 1 FROM "ocr_nutrition_confirmation_traces" AS "trace"
+                   WHERE "trace"."food_item_id" = "food"."id" AND "trace"."user_id" = "food"."user_id") AS "trace",
+           EXISTS (SELECT 1 FROM "food_items" AS "source"
+                   WHERE "source"."id" = "food"."source_id" AND "source"."user_id" = "food"."user_id") AS "source_exists"
+         FROM "food_items" AS "food" WHERE "food"."user_id" = ? AND "food"."id" IN (${placeholders})`, params,
+      );
+      const favorites = await this.database.getAllAsync<{ food_item_id: string }>(
+        `SELECT "food_item_id" FROM "food_favorites"
+         WHERE "user_id" = ? AND "food_item_id" IN (${placeholders})`, params,
+      );
+      for (const row of provenance) result.set(row.id, {
+        servings: [], nutrients: [], link: null,
+        trace: row.trace === 1, sourceExists: row.source_exists === 1, favorite: false,
+      });
+      for (const row of servings) result.get(row.food_item_id)?.servings.push(row);
+      for (const row of nutrients) result.get(row.food_item_id)?.nutrients.push(row);
+      for (const row of links) {
+        const data = row.published_food_item_id === null ? undefined : result.get(row.published_food_item_id);
+        if (data && data.link === null) data.link = row;
+      }
+      for (const row of favorites) {
+        const data = result.get(row.food_item_id);
+        if (data) data.favorite = true;
+      }
+    }
+    return result;
+  }
+
   private async loadRecordById(
     transaction: SQLiteDatabase,
     id: string,
@@ -1511,6 +1581,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     transaction: SQLiteDatabase,
     row: FoodRow,
     context: FoodOperationContext = "read",
+    loaded?: FoodListData,
   ): Promise<FoodRecord> {
     if (row.user_id !== this.ownerId) throw foodNotFound(context);
     parsePersistedUuid(row.id, context);
@@ -1518,12 +1589,12 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     if (!isZeroOrOne(row.is_recipe)) throw invalidStoredFood(context);
     readInstant(row.updated_at, context);
     if (row.deleted_at !== null) readInstant(row.deleted_at, context);
-    const servings = await transaction.getAllAsync<ServingRow>(
+    const servings = loaded ? loaded.servings : await transaction.getAllAsync<ServingRow>(
       `SELECT "id", "food_item_id", "label", "quantity", "unit", "gram_weight", "reference_quantity", "reference_unit", "reference_gram_weight", "is_default", "source", "is_user_confirmed"
        FROM "serving_definitions" WHERE "food_item_id" = ? ORDER BY "label", "id"`,
       [row.id],
     );
-    const nutrients = await transaction.getAllAsync<NutrientRow>(
+    const nutrients = loaded ? loaded.nutrients : await transaction.getAllAsync<NutrientRow>(
       `SELECT "id", "food_item_id", "nutrient_id", "amount", "unit", "basis", "data_status", "source", "is_user_confirmed",
               "original_amount", "original_unit", "original_text"
        FROM "food_nutrients" WHERE "food_item_id" = ? ORDER BY "nutrient_id", "id"`,
@@ -1594,7 +1665,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
         throw invalidStoredFood(context);
       }
     }
-    const link = await transaction.getFirstAsync<RecipeLinkRow>(
+    const link = loaded ? loaded.link : await transaction.getFirstAsync<RecipeLinkRow>(
       `SELECT "id", "user_id", "published_food_item_id", "active_publication_revision_id", "deleted_at"
        FROM "recipes" WHERE "published_food_item_id" = ? AND "user_id" = ?
        ORDER BY "id" LIMIT 1`,
@@ -1632,21 +1703,22 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     transaction: SQLiteDatabase,
     record: FoodRecord,
     context: FoodOperationContext = "read",
+    loaded?: FoodListData,
   ): Promise<Food> {
     if (record.projection === "invalid") throw projectionError("read", context);
     const managed = record.projection === "managed";
     const sourceKind: Food["source_kind"] = managed
       ? "recipe"
-      : await this.sourceKind(transaction, record);
+      : await this.sourceKind(transaction, record, loaded);
     const presentedSourceId = record.row.source_type === "manual"
       && record.row.source_id !== null
       && sourceKind === "legacy"
       ? null
       : record.row.source_id;
-    const favorite = !managed && Boolean(await transaction.getFirstAsync<{ present: number }>(
+    const favorite = !managed && (loaded ? loaded.favorite : Boolean(await transaction.getFirstAsync<{ present: number }>(
       `SELECT 1 AS "present" FROM "food_favorites" WHERE "food_item_id" = ? AND "user_id" = ?`,
       [record.row.id, this.ownerId],
-    ));
+    )));
     return {
       id: parsePersistedUuid(record.row.id, context),
       name: record.row.name,
@@ -1701,8 +1773,8 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     };
   }
 
-  private async sourceKind(transaction: SQLiteDatabase, record: FoodRecord): Promise<Food["source_kind"]> {
-    const trace = await transaction.getFirstAsync<{ present: number }>(
+  private async sourceKind(transaction: SQLiteDatabase, record: FoodRecord, loaded?: FoodListData): Promise<Food["source_kind"]> {
+    const trace = loaded ? loaded.trace : await transaction.getFirstAsync<{ present: number }>(
       `SELECT 1 AS "present" FROM "ocr_nutrition_confirmation_traces"
        WHERE "food_item_id" = ? AND "user_id" = ? LIMIT 1`,
       [record.row.id, this.ownerId],
@@ -1714,7 +1786,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
         const sourceId = parseUuid(record.row.source_id);
         if (sourceId !== record.row.source_id || sourceId === record.row.id) return "legacy";
         if (sourceId !== record.row.id) {
-          const source = await transaction.getFirstAsync<{ id: string }>(
+          const source = loaded ? loaded.sourceExists : await transaction.getFirstAsync<{ id: string }>(
             `SELECT "id" FROM "food_items" WHERE "id" = ? AND "user_id" = ?`,
             [sourceId, this.ownerId],
           );

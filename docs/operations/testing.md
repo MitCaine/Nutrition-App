@@ -72,6 +72,17 @@ public readers. Response-decimal conversion preserves fine scales and derived to
 persisted numeric bounds. Node SQLite fixture evidence does not establish native lifecycle
 behavior or a supported mutation path producing malformed rows.
 
+### Saved Food list hydration
+
+`localFoodsBatch.test.ts` uses file-backed Node SQLite and independently expected full responses
+for mixed provenance, favorites, Recipe projections and owner/filter/error controls. The list
+hydrates selected IDs in groups of at most 900, using five owner-scoped related-record queries
+per group; response validators and ordering remain shared with single-Food reads. Empty lists
+perform only the catalog read. Query-count controls cover 900/901 and multiple groups; no timing
+threshold or native bridge performance claim is made. Run alongside `localFoodsRuntime.test.ts`,
+`savedFoodsContract.test.ts`, USDA and Recipe publication/dependency contracts. These tests do not
+qualify Expo connection lifecycle or physical-device latency.
+
 ### Nested Recipe selected amounts
 
 Run `npm test -- --runInBand --runTestsByPath __tests__/nestedRecipeSelectedAmount.test.ts __tests__/localRecipePublicationRuntime.test.ts`

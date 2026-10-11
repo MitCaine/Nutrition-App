@@ -180,6 +180,27 @@ class FoodSQLiteFake {
   }
 
   async getAllAsync<T>(source: string, params: readonly unknown[] = []): Promise<T[]> {
+    if (source.includes('IN (')) {
+      const owner = String(params[0]);
+      const ids = new Set(params.slice(1).map(String));
+      const selected = this.state.foods.filter((row) => row.user_id === owner && ids.has(row.id));
+      const selectedIds = new Set(selected.map((row) => row.id));
+      if (source.includes('FROM "serving_definitions" AS "child"')) return this.state.servings
+        .filter((row) => selectedIds.has(row.food_item_id))
+        .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id)) as T[];
+      if (source.includes('FROM "food_nutrients" AS "child"')) return this.state.nutrients
+        .filter((row) => selectedIds.has(row.food_item_id))
+        .sort((a, b) => a.nutrient_id.localeCompare(b.nutrient_id) || a.id.localeCompare(b.id)) as T[];
+      if (source.includes('FROM "recipes"')) return this.state.recipes
+        .filter((row) => row.user_id === owner && row.published_food_item_id !== null && ids.has(row.published_food_item_id))
+        .sort((a, b) => a.id.localeCompare(b.id)) as T[];
+      if (source.includes('AS "source_exists"')) return selected.map((row) => ({
+        id: row.id, trace: 0,
+        source_exists: this.state.foods.some((food) => food.id === row.source_id && food.user_id === owner) ? 1 : 0,
+      })) as T[];
+      if (source.includes('FROM "food_favorites"')) return this.state.favorites
+        .filter((row) => row.user_id === owner && ids.has(row.food_item_id)) as T[];
+    }
     if (source.includes('JOIN "daily_logs"')) {
       const owner = String(params[0]);
       const limit = Number(params[1]);
