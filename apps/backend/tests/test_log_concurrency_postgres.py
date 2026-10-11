@@ -2156,30 +2156,86 @@ def test_postgres_food_recipe_integrity_migration_repairs_defaults_and_round_tri
 
 
 def _run_update(
-    factory, user_id, log_id, payload, *, locked=None, release=None, fail=False, result=None
+    factory, user_id, log_id, payload, *, locked=None, release=None, fail=False,
+    result=None, backend_pid=None, started=None,
 ):
-    with factory() as db:
-        service = LogService(db)
-        if locked is not None:
+    try:
+        with factory() as db:
+            if backend_pid is not None:
+                backend_pid.append(db.scalar(text("SELECT pg_backend_pid()")))
+            if started is not None:
+                started.set()
+            service = LogService(db)
+            if locked is not None:
 
-            def after_lock(_revision):
-                locked.set()
-                assert release.wait(5)
+                def after_lock(_revision):
+                    locked.set()
+                    assert release.wait(10), "holder was not released"
 
-            service._after_edit_revision_lookup = after_lock
-        if fail:
+                service._after_edit_revision_lookup = after_lock
+            if fail:
 
-            def fail_after_replacement(_log):
-                raise RuntimeError("forced rollback after replacement")
+                def fail_after_replacement(_log):
+                    raise RuntimeError("forced rollback after replacement")
 
-            service._after_edit_snapshot_regeneration = fail_after_replacement
-        try:
+                service._after_edit_snapshot_regeneration = fail_after_replacement
             service.update_log(user_id, log_id, DailyLogUpdateRequest(**payload))
             if result is not None:
                 result.append("committed")
-        except Exception as exc:  # assertions inspect the expected failure in the caller.
-            if result is not None:
-                result.append(exc)
+    except Exception as exc:  # assertions inspect the expected failure in the caller.
+        if result is None:
+            raise
+        result.append(exc)
+
+
+def _run_observed_waiter(factory, user_id, log_id, contender_payload, *, rollback=False):
+    """Release only after PostgreSQL identifies this holder as the blocker."""
+    locked, release, arrived = Event(), Event(), Event()
+    holder_pid, contender_pid, holder_result, contender_result = [], [], [], []
+    holder = Thread(
+        target=_run_update,
+        args=(factory, user_id, log_id, {"amount_quantity": Decimal("2")}),
+        kwargs={"locked": locked, "release": release, "fail": rollback,
+                "result": holder_result, "backend_pid": holder_pid},
+    )
+    contender = Thread(
+        target=_run_update,
+        args=(factory, user_id, log_id, contender_payload),
+        kwargs={"result": contender_result, "backend_pid": contender_pid, "started": arrived},
+    )
+    holder.start()
+    try:
+        assert locked.wait(5), ("holder did not acquire Log lock", holder_result)
+        contender.start()
+        assert arrived.wait(5), ("contender did not reach its session", contender_result)
+        assert holder_pid[0] != contender_pid[0]
+        blockers = []
+        deadline = time.monotonic() + 5
+        with factory() as observer:
+            while time.monotonic() < deadline:
+                blockers = observer.scalar(
+                    text("SELECT pg_blocking_pids(:pid)"), {"pid": contender_pid[0]},
+                )
+                if holder_pid[0] in blockers:
+                    break
+                time.sleep(0.01)
+        assert holder_pid[0] in blockers, ("PostgreSQL did not observe holder contention",
+                                         holder_pid, contender_pid, blockers, contender_result)
+        assert not contender_result
+    finally:
+        release.set()
+        holder.join(10)
+        if contender.ident is not None:
+            contender.join(10)
+        assert not holder.is_alive(), "holder did not terminate"
+        assert not contender.is_alive(), "contender did not terminate"
+    assert contender_result == ["committed"]
+    if rollback:
+        assert len(holder_result) == 1
+        assert isinstance(holder_result[0], RuntimeError)
+        assert str(holder_result[0]) == "forced rollback after replacement"
+    else:
+        assert holder_result == ["committed"]
 
 
 def _assert_coherent(
@@ -2212,81 +2268,25 @@ def _assert_coherent(
 def test_second_quantity_patch_waits_then_uses_latest_committed_state(postgres_sessions) -> None:
     factory = postgres_sessions
     user_id, log_id = _revision_log(factory)
-    locked, release = Event(), Event()
-    first_result, second_result = [], []
-    first = Thread(
-        target=_run_update,
-        args=(factory, user_id, log_id, {"amount_quantity": Decimal("2")}),
-        kwargs={"locked": locked, "release": release, "result": first_result},
-    )
-    first.start()
-    assert locked.wait(5)
-    second = Thread(
-        target=_run_update,
-        args=(factory, user_id, log_id, {"amount_quantity": Decimal("3")}),
-        kwargs={"result": second_result},
-    )
-    second.start()
-    Event().wait(0.2)
-    assert not second_result
-    release.set()
-    first.join(5)
-    second.join(5)
-    assert first_result == second_result == ["committed"]
-    _assert_coherent(factory, user_id, log_id, Decimal("3"))
+    _run_observed_waiter(factory, user_id, log_id, {"amount_quantity": Decimal("3")})
+    _assert_coherent(factory, user_id, log_id, Decimal("3"),
+                     daily_total=Decimal("300"), snapshot_amount=Decimal("300"))
 
 
 def test_metadata_patch_waits_for_nutrition_and_preserves_latest_amount(postgres_sessions) -> None:
     factory = postgres_sessions
     user_id, log_id = _revision_log(factory)
-    locked, release = Event(), Event()
-    first = Thread(
-        target=_run_update,
-        args=(factory, user_id, log_id, {"amount_quantity": Decimal("2")}),
-        kwargs={"locked": locked, "release": release},
-    )
-    first.start()
-    assert locked.wait(5)
-    second = Thread(
-        target=_run_update,
-        args=(factory, user_id, log_id, {"notes": "latest metadata"}),
-    )
-    second.start()
-    release.set()
-    first.join(5)
-    second.join(5)
-    _assert_coherent(factory, user_id, log_id, Decimal("2"), "latest metadata")
+    _run_observed_waiter(factory, user_id, log_id, {"notes": "latest metadata"})
+    _assert_coherent(factory, user_id, log_id, Decimal("2"), "latest metadata",
+                     daily_total=Decimal("200"), snapshot_amount=Decimal("200"))
 
 
 def test_waiter_proceeds_after_first_replacement_rolls_back(postgres_sessions) -> None:
     factory = postgres_sessions
     user_id, log_id = _revision_log(factory)
-    locked, release = Event(), Event()
-    first_result, second_result = [], []
-    first = Thread(
-        target=_run_update,
-        args=(factory, user_id, log_id, {"amount_quantity": Decimal("2")}),
-        kwargs={
-            "locked": locked,
-            "release": release,
-            "fail": True,
-            "result": first_result,
-        },
-    )
-    first.start()
-    assert locked.wait(5)
-    second = Thread(
-        target=_run_update,
-        args=(factory, user_id, log_id, {"amount_quantity": Decimal("4")}),
-        kwargs={"result": second_result},
-    )
-    second.start()
-    release.set()
-    first.join(5)
-    second.join(5)
-    assert isinstance(first_result[0], RuntimeError)
-    assert second_result == ["committed"]
-    _assert_coherent(factory, user_id, log_id, Decimal("4"))
+    _run_observed_waiter(factory, user_id, log_id, {"amount_quantity": Decimal("4")}, rollback=True)
+    _assert_coherent(factory, user_id, log_id, Decimal("4"),
+                     daily_total=Decimal("400"), snapshot_amount=Decimal("400"))
 
 
 def test_different_log_row_does_not_wait(postgres_sessions) -> None:
