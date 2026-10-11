@@ -61,6 +61,17 @@ Jest covers pure feature models, explicit authority routing, local-runtime parit
 mappings, cache/recovery scoping, DRI/Target parity, local backup policy/activation, draft guards,
 shared route chrome, OCR quality policy, and rendered flow behavior.
 
+### Stored snapshot aggregation
+
+Daily Summary, History and Targets share a pure local stored-row fold. Caller catalog/unit
+selection, SQL, ordered reads, transactions and response policies remain local to each reader.
+All three reject inconsistent nonzero explicit-zero, unknown/non-null and numeric/null rows
+with their existing caller-specific invalid-state errors; no persisted history is repaired.
+`localSnapshotAggregation.test.ts` exercises independently expected rows through all three
+public readers. Response-decimal conversion preserves fine scales and derived totals beyond
+persisted numeric bounds. Node SQLite fixture evidence does not establish native lifecycle
+behavior or a supported mutation path producing malformed rows.
+
 ### Nested Recipe selected amounts
 
 Run `npm test -- --runInBand --runTestsByPath __tests__/nestedRecipeSelectedAmount.test.ts __tests__/localRecipePublicationRuntime.test.ts`

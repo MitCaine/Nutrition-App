@@ -36,9 +36,7 @@ import {
   serializeInstant,
 } from "../../shared/exact/canonicalValues";
 import {
-  addResponseDecimals,
   compareDecimals,
-  divideResponseDecimalByPowerOfTen,
   divideResponseDecimals,
   multiplyResponseDecimalsInContext,
   NUMERIC_14_6,
@@ -63,12 +61,13 @@ import {
   withLocalWriteTransaction,
 } from "./localWriteCoordinator";
 
+import { accumulateSnapshot, type SnapshotAggregate } from "./localSnapshotAggregation";
+
 const CREATE_OPERATION = "log.create";
 const UPDATE_OPERATION = "log.update";
 const DELETE_OPERATION = "log.delete";
 const RECENT_ENTRY_LIMIT = 10;
 const SOURCE_STATE_BATCH_SIZE = 900;
-const MASS_UNITS = new Set(["g", "mg", "mcg"]);
 const NUTRIENT_BASES = new Set(["per_serving", "per_100g", "per_gram"]);
 const NUTRIENT_STATUSES = new Set(["known", "unknown", "estimated", "zero"]);
 
@@ -1947,28 +1946,6 @@ function equivalentAmount(left: AmountDefinition, right: AmountDefinition): bool
     && sameDecimal(left.gramEquivalent, right.gramEquivalent);
 }
 
-function sameUnitFamily(left: NutrientUnit, right: NutrientUnit): boolean {
-  if (left === right) return true;
-  return MASS_UNITS.has(left) && MASS_UNITS.has(right);
-}
-
-function convertNutritionAmount(amount: ExactDecimal, from: NutrientUnit, to: NutrientUnit): ResponseDecimal {
-  if (from === to) return parseResponseDecimal(amount);
-  if (!sameUnitFamily(from, to)) throw invalidStored();
-  const factors: Record<string, ResponseDecimal> = {
-    g: parseResponseDecimal("1"),
-    mg: parseResponseDecimal("0.001"),
-    mcg: parseResponseDecimal("0.000001"),
-  };
-  const sourceFactor = factors[from];
-  const targetFactor = factors[to];
-  if (!sourceFactor || !targetFactor) throw invalidStored();
-  return divideResponseDecimalByPowerOfTen(
-    multiplyResponseDecimalsInContext(amount, sourceFactor),
-    targetFactor,
-  );
-}
-
 function normalizeOperation(operation: DailyLogMutationStatus["operation"] | undefined): "create" | "update" | "delete" {
   if (operation === undefined || operation === "create") return "create";
   if (operation === "update" || operation === "delete") return operation;
@@ -2559,72 +2536,13 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           completionRows.map((row) => storedDate(row.logged_date)),
         );
 
-        type HistoryAccumulator = {
-          known: ResponseDecimal;
-          estimated: ResponseDecimal;
-          unit: NutrientUnit;
-          numericCount: number;
-          explicitZeroCount: number;
-          unknownCount: number;
-        };
-
-        const byDate = new Map<string, Map<string, HistoryAccumulator>>();
-
+        const byDate = new Map<string, Map<string, SnapshotAggregate>>();
         for (const row of snapshotRows) {
           const loggedDate = storedDate(row.logged_date);
-          const status = row.data_status as NutrientDataStatus;
-          if (!NUTRIENT_STATUSES.has(status)) throw invalidStored();
-
           const sourceUnit = normalizeNutrientUnit(row.unit);
-          const unit = normalizeNutrientUnit(
-            row.default_unit
-              ?? DEFAULT_NUTRIENT_UNITS.get(row.nutrient_id)
-              ?? row.unit,
-          );
-
-          const day = byDate.get(loggedDate) ?? new Map<string, HistoryAccumulator>();
-          const current = day.get(row.nutrient_id) ?? {
-            known: parseResponseDecimal("0"),
-            estimated: parseResponseDecimal("0"),
-            unit,
-            numericCount: 0,
-            explicitZeroCount: 0,
-            unknownCount: 0,
-          };
-
-          if (!sameUnitFamily(sourceUnit, current.unit)) throw invalidStored();
-
-          if (status === "unknown") {
-            if (row.amount !== null) throw invalidStored();
-            current.unknownCount += 1;
-          } else {
-            const amount = parsePersistedDecimal(row.amount, false) as ExactDecimal;
-
-            if (
-              status === "zero"
-              && compareDecimals(amount, "0", NUMERIC_14_6) !== 0
-            ) {
-              throw invalidStored();
-            }
-
-            current.numericCount += 1;
-            if (status === "zero") current.explicitZeroCount += 1;
-
-            const converted = compareDecimals(amount, "0", NUMERIC_14_6) === 0
-              ? parseResponseDecimal("0")
-              : convertNutritionAmount(amount, sourceUnit, current.unit);
-
-            if (status === "estimated") {
-              current.estimated = addResponseDecimals(
-                current.estimated,
-                converted,
-              );
-            } else {
-              current.known = addResponseDecimals(current.known, converted);
-            }
-          }
-
-          day.set(row.nutrient_id, current);
+          const unit = normalizeNutrientUnit(row.default_unit ?? DEFAULT_NUTRIENT_UNITS.get(row.nutrient_id) ?? row.unit);
+          const day = byDate.get(loggedDate) ?? new Map<string, SnapshotAggregate>();
+          day.set(row.nutrient_id, accumulateSnapshot(day.get(row.nutrient_id), row, sourceUnit, unit, () => invalidStored()));
           byDate.set(loggedDate, day);
         }
 
@@ -2652,8 +2570,8 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
               isExplicitZeroTotal:
                 total.numericCount > 0
                 && total.explicitZeroCount === total.numericCount,
-              hasUnknownContributors: total.unknownCount > 0,
-              unknownContributorCount: total.unknownCount,
+              hasUnknownContributors: total.unknown > 0,
+              unknownContributorCount: total.unknown,
             }));
 
           return {
@@ -2701,31 +2619,11 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
            ORDER BY "snapshot"."nutrient_id", "snapshot"."id"`,
           [this.ownerId, loggedDate],
         );
-        const totals = new Map<string, { known: ResponseDecimal; estimated: ResponseDecimal; unit: NutrientUnit; unknown: number }>();
+        const totals = new Map<string, SnapshotAggregate>();
         for (const row of rows) {
-          const status = row.data_status as NutrientDataStatus;
-          if (!NUTRIENT_STATUSES.has(status)) throw invalidStored();
           const sourceUnit = normalizeNutrientUnit(row.unit);
           const unit = normalizeNutrientUnit(row.default_unit ?? DEFAULT_NUTRIENT_UNITS.get(row.nutrient_id) ?? row.unit);
-          const current = totals.get(row.nutrient_id) ?? {
-            known: parseResponseDecimal("0"),
-            estimated: parseResponseDecimal("0"),
-            unit,
-            unknown: 0,
-          };
-          if (!sameUnitFamily(sourceUnit, current.unit)) throw invalidStored();
-          if (status === "unknown") {
-            if (row.amount !== null) throw invalidStored();
-            current.unknown += 1;
-          } else {
-            const amount = parsePersistedDecimal(row.amount, false);
-            const converted = compareDecimals(amount as ExactDecimal, "0", NUMERIC_14_6) === 0
-              ? parseResponseDecimal("0")
-              : convertNutritionAmount(amount as ExactDecimal, sourceUnit, current.unit);
-            if (status === "estimated") current.estimated = addResponseDecimals(current.estimated, converted);
-            else current.known = addResponseDecimals(current.known, converted);
-          }
-          totals.set(row.nutrient_id, current);
+          totals.set(row.nutrient_id, accumulateSnapshot(totals.get(row.nutrient_id), row, sourceUnit, unit, () => invalidStored()));
         }
         const completion = await this.database.getFirstAsync<{
           completed_at: string;

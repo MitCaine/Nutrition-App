@@ -27,7 +27,6 @@ import {
 import {
   addResponseDecimals,
   compareDecimals,
-  divideResponseDecimalByPowerOfTen,
   divideResponseDecimals,
   multiplyResponseDecimalsInContext,
   NUMERIC_14_6,
@@ -44,13 +43,14 @@ import {
 } from "../../shared/nutrition/catalog";
 import {
   canonicalNutrientUnit,
-  type NutrientDataStatus,
   type NutrientUnit,
 } from "../../shared/nutrition/types";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import type { TargetsRuntime } from "../NutritionRuntime";
 import { LocalRuntimeError } from "./localErrors";
 import { withLocalOrderedRead, withLocalWriteTransaction } from "./localWriteCoordinator";
+
+import { accumulateSnapshot, type SnapshotAggregate } from "./localSnapshotAggregation";
 
 const TARGET_DIRECTION_SEMANTICS_VERSION = "target_directions_2026_v1";
 const INFORMATIONAL_NOTICE =
@@ -109,8 +109,6 @@ const DAILY_VALUE_NOTE_CODES: Readonly<Record<string, string>> = {
   protein: "protein_percent_dv_labeling_caveat",
 };
 
-const MASS_UNITS = new Set<NutrientUnit>(["g", "mg", "mcg"]);
-const NUTRIENT_STATUSES = new Set<NutrientDataStatus>(["known", "unknown", "estimated", "zero"]);
 const DEFAULT_UNITS = new Map(
   SQLITE_NUTRIENT_SEED_ROWS.map(([id, , , unit]) => [id, unit as NutrientUnit]),
 );
@@ -187,12 +185,7 @@ type NormalizedTargetInput = Readonly<{
     | null;
 }>;
 
-type Aggregate = {
-  known: ResponseDecimal;
-  estimated: ResponseDecimal;
-  unit: NutrientUnit;
-  unknown: number;
-};
+type Aggregate = SnapshotAggregate;
 
 export type LocalTargetMutationStage = "after_reread" | "after_write";
 
@@ -1321,10 +1314,6 @@ async function buildConfiguration(
   };
 }
 
-function sameUnitFamily(left: NutrientUnit, right: NutrientUnit): boolean {
-  return left === right || (MASS_UNITS.has(left) && MASS_UNITS.has(right));
-}
-
 function normalizeNutrientUnit(
   value: string,
 ): NutrientUnit {
@@ -1336,23 +1325,6 @@ function normalizeNutrientUnit(
   }
 
   return unit;
-}
-
-function convertNutritionAmount(amount: ExactDecimal, from: NutrientUnit, to: NutrientUnit): ResponseDecimal {
-  if (from === to) return parseResponseDecimal(amount);
-  if (!sameUnitFamily(from, to)) throw invalidStored();
-  const factors: Readonly<Record<"g" | "mg" | "mcg", ResponseDecimal>> = {
-    g: parseResponseDecimal("1"),
-    mg: parseResponseDecimal("0.001"),
-    mcg: parseResponseDecimal("0.000001"),
-  };
-  const sourceFactor = factors[from as "g" | "mg" | "mcg"];
-  const targetFactor = factors[to as "g" | "mg" | "mcg"];
-  if (!sourceFactor || !targetFactor) throw invalidStored();
-  return divideResponseDecimalByPowerOfTen(
-    multiplyResponseDecimalsInContext(amount, sourceFactor),
-    targetFactor,
-  );
 }
 
 async function readDailyTotals(database: SQLiteDatabase, ownerId: string, date: string): Promise<Map<string, Aggregate>> {
@@ -1373,29 +1345,7 @@ async function readDailyTotals(database: SQLiteDatabase, ownerId: string, date: 
     const storedDefaultUnit = row.default_unit === null ? defaultUnit : normalizeNutrientUnit(row.default_unit);
     if (storedDefaultUnit !== defaultUnit) throw invalidStored();
     const sourceUnit = normalizeNutrientUnit(row.unit);
-    if (!sameUnitFamily(sourceUnit, defaultUnit)) throw invalidStored();
-    if (!NUTRIENT_STATUSES.has(row.data_status as NutrientDataStatus)) throw invalidStored();
-    const status = row.data_status as NutrientDataStatus;
-    const current = totals.get(row.nutrient_id) ?? {
-      known: parseResponseDecimal("0"),
-      estimated: parseResponseDecimal("0"),
-      unit: defaultUnit,
-      unknown: 0,
-    };
-    if (status === "unknown") {
-      if (row.amount !== null) throw invalidStored();
-      current.unknown += 1;
-    } else {
-      if (row.amount === null) throw invalidStored();
-      const amount = parseDecimal(row.amount, NUMERIC_14_6);
-      if (status === "zero" && compareDecimals(amount, "0", NUMERIC_14_6) !== 0) throw invalidStored();
-      const converted = compareDecimals(amount, "0", NUMERIC_14_6) === 0
-        ? parseResponseDecimal("0")
-        : convertNutritionAmount(amount, sourceUnit, defaultUnit);
-      if (status === "estimated") current.estimated = addResponseDecimals(current.estimated, converted);
-      else current.known = addResponseDecimals(current.known, converted);
-    }
-    totals.set(row.nutrient_id, current);
+    totals.set(row.nutrient_id, accumulateSnapshot(totals.get(row.nutrient_id), row, sourceUnit, defaultUnit, () => invalidStored()));
   }
   return totals;
 }
