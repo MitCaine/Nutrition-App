@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from app.dependencies.user import TEST_USER_ID
 from app.models.create_idempotency import CreateOperationIdempotency
 from app.models.log import DailyLog, DailyLogDayCompletion, DailyLogNutrientSnapshot
-from app.schemas.log import DailyLogCreateRequest, DailyLogDeleteRequest
-from app.services.log_service import LogService, _creation_fingerprint
+from app.schemas.log import DailyLogCreateRequest, DailyLogDeleteRequest, DailyLogUpdateRequest, DailyLogResponse
+from app.services.log_service import LogService, LogMutationReplay, _creation_fingerprint
 from tests.support.foods import create_food
 
 
@@ -531,3 +531,70 @@ def test_direct_create_validation_rejection_has_no_receipt_or_domain_write(
     )
     assert status.status_code == 200
     assert status.json()["status"] == "unresolved"
+
+
+@pytest.mark.parametrize("intervening", ["edit", "delete"])
+@pytest.mark.parametrize("boundary", ["service", "api"])
+def test_request_update_returns_frozen_response_after_intervening_commit(
+    client: TestClient, db_session: Session, monkeypatch, intervening: str, boundary: str,
+) -> None:
+    """Real SQLite commits in two sessions; deterministic scheduling, not PG overlap."""
+    _food, log = _create_log(client)
+    log_id = UUID(log["id"])
+    payload = DailyLogUpdateRequest(client_request_id=uuid4(), notes="first committed update")
+    commit = db_session.commit
+
+    def commit_then_intervene():
+        commit()
+        with Session(bind=db_session.get_bind(), autoflush=False) as other:
+            if intervening == "edit":
+                LogService(other).update_log(
+                    TEST_USER_ID, log_id, DailyLogUpdateRequest(notes="later committed update"),
+                )
+            else:
+                LogService(other).delete_log(TEST_USER_ID, log_id, DailyLogDeleteRequest())
+
+    monkeypatch.setattr(db_session, "commit", commit_then_intervene)
+    if boundary == "api":
+        initial = client.patch(f"/api/v1/logs/{log_id}", json=payload.model_dump(mode="json", exclude_unset=True))
+        assert initial.status_code == 200, initial.text
+        original = initial.json()
+    else:
+        initial = LogService(db_session).update_log(TEST_USER_ID, log_id, payload)
+        assert isinstance(initial, LogMutationReplay)
+        assert initial.log_id == log_id
+        original = DailyLogResponse.model_validate(initial.snapshot).model_dump(mode="json")
+    monkeypatch.setattr(db_session, "commit", commit)
+    db_session.expire_all()
+    replay = client.patch(f"/api/v1/logs/{log_id}", json=payload.model_dump(mode="json", exclude_unset=True))
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == original
+    assert original["notes"] == "first committed update"
+    current = db_session.get(DailyLog, log_id)
+    if intervening == "delete":
+        assert current is None
+    else:
+        assert current.notes == "later committed update"
+
+
+def test_request_update_failed_commit_rolls_back_snapshot_and_receipt(
+    client: TestClient, db_session: Session, monkeypatch,
+) -> None:
+    _food, log = _create_log(client)
+    payload = DailyLogUpdateRequest(client_request_id=uuid4(), notes="must roll back")
+    commit = db_session.commit
+
+    def fail_commit():
+        raise RuntimeError("injected before real commit")
+
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+    with pytest.raises(RuntimeError, match="injected before real commit"):
+        LogService(db_session).update_log(TEST_USER_ID, UUID(log["id"]), payload)
+    monkeypatch.setattr(db_session, "commit", commit)
+    db_session.expire_all()
+    assert db_session.get(DailyLog, UUID(log["id"])).notes == log["notes"]
+    assert db_session.scalar(select(CreateOperationIdempotency).where(
+        CreateOperationIdempotency.user_id == TEST_USER_ID,
+        CreateOperationIdempotency.operation == "log.update",
+        CreateOperationIdempotency.client_request_id == payload.client_request_id,
+    )) is None

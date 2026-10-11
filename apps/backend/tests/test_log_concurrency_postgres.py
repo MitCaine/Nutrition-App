@@ -5045,3 +5045,74 @@ def test_postgres_status_stays_unresolved_during_and_after_real_log_rollback(
         initial_notes=initial_notes,
         rollback=True,
     )
+
+
+@pytest.mark.parametrize("intervening", ["edit", "delete"])
+@pytest.mark.parametrize("boundary", ["service", "api"])
+def test_request_update_frozen_response_after_postgres_commit(
+    postgres_sessions, intervening: str, boundary: str,
+) -> None:
+    """Keep the first request live while another real session commits after it."""
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _gh271_daily_log_target(factory, "Frozen update response")
+    with factory() as db:
+        created = LogService(db).create_log(user_id, DailyLogCreateRequest(
+            client_request_id=uuid4(), food_item_id=food_id, logged_date=date(2026, 7, 8),
+            amount_quantity=Decimal("1"), amount_unit="serving", serving_definition_id=serving_id,
+        ))
+        log_id = created.id
+    payload = DailyLogUpdateRequest(client_request_id=uuid4(), notes="first committed update")
+    committed = Event()
+    release = Event()
+    results = []
+    errors = []
+
+    def original_request():
+        try:
+            with factory() as db:
+                real_commit = db.commit
+
+                def commit_and_wait():
+                    real_commit()
+                    committed.set()
+                    assert release.wait(10), "intervening mutation did not finish"
+
+                db.commit = commit_and_wait
+                if boundary == "api":
+                    from app.api.v1.routers.logs import update_log as route_update_log
+                    result = route_update_log(log_id, payload, db, db.get(User, user_id))
+                    results.append(result.model_dump(mode="json"))
+                else:
+                    result = LogService(db).update_log(user_id, log_id, payload)
+                    assert isinstance(result, LogMutationReplay)
+                    assert result.log_id == log_id
+                    results.append(DailyLogResponse.model_validate(result.snapshot).model_dump(mode="json"))
+        except BaseException as exc:
+            errors.append(exc)
+            committed.set()
+
+    worker = Thread(target=original_request, daemon=True)
+    worker.start()
+    try:
+        assert committed.wait(10), "first request did not commit"
+        assert not errors, errors
+        with factory() as other:
+            if intervening == "edit":
+                LogService(other).update_log(user_id, log_id, DailyLogUpdateRequest(notes="later committed update"))
+            else:
+                LogService(other).delete_log(user_id, log_id, DailyLogDeleteRequest())
+    finally:
+        release.set()
+        worker.join(10)
+    assert not worker.is_alive(), "first request did not finish"
+    assert not errors, errors
+    with factory() as db:
+        replay = LogService(db).update_log(user_id, log_id, payload)
+        assert isinstance(replay, LogMutationReplay)
+        assert DailyLogResponse.model_validate(replay.snapshot).model_dump(mode="json") == results[0]
+        assert results[0]["notes"] == "first committed update"
+        current = db.get(DailyLog, log_id)
+        if intervening == "delete":
+            assert current is None
+        else:
+            assert current.notes == "later committed update"

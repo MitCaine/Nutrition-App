@@ -1498,8 +1498,9 @@ class LogService:
             elif before_snapshot_signature != after_snapshot_signature:
                 invalidation_dates.add(log.logged_date)
             self._invalidate_complete_dates(user_id, invalidation_dates)
-            # Serialize the same refreshed ORM view that will be returned after
-            # commit, so an exact replay is wire-equivalent to the first result.
+            # Freeze the response and identity before commit expires the ORM
+            # state; later mutations must not change this request's outcome.
+            resource_id = log.id
             self.db.expire(log)
             response_snapshot = self._update_response_snapshot(
                 self.logs.get_required(log.id, user_id),
@@ -1508,6 +1509,8 @@ class LogService:
             if receipt is not None:
                 self.mutation_receipts.complete(receipt, response_snapshot)
             self.db.commit()
+            if receipt is not None:
+                return LogMutationReplay(response_snapshot, resource_id)
             return self.logs.get_required(log.id, user_id)
         except Exception:
             self.db.rollback()

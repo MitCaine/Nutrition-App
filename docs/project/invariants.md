@@ -136,6 +136,11 @@ Exact replay returns the committed response. Payload-changing reuse conflicts. R
 indefinitely because expiring an accepted request ID would eventually grant permission to create a
 duplicate.
 
+Request-bearing Daily Log updates return the frozen precommit response and captured Log UUID
+after successful commit, exactly as their retained owner-scoped receipt does on replay. Later
+authorized edits or deletion cannot replace that initial response or turn committed success
+into an error by expiring mutable ORM state. Receipt and mutation still commit atomically.
+
 Request-bearing Daily Log creates retain an owner-scoped `log.create` receipt independently of the
 Daily Log row. The receipt binds the request UUID and canonical fingerprint to the original Log UUID
 and JSON-mode response, including Decimal strings and nutrient snapshot identities. The receipt,
