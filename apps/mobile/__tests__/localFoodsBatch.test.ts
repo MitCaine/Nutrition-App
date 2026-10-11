@@ -69,6 +69,21 @@ describe("Saved Food bounded hydration on a real file-backed SQLite database", (
     expect(await createLocalFoodsRuntime(db.asExpoDatabase(), OTHER).list()).toEqual([await createLocalFoodsRuntime(db.asExpoDatabase(), OTHER).get(id(16))]);
   });
 
+  test("parent case-insensitive ties and nutrient order differ from insertion order", async () => {
+    const zulu = await food(20, "Zulu");
+    const upper = await food(12, "ALPHA");
+    const lower = await food(10, "alpha");
+    await db.runAsync(`INSERT INTO nutrients (id,display_name,nutrient_kind,default_unit,display_order) VALUES ('calcium','Calcium','mineral','mg',70)`);
+    // Protein was inserted first. Two calcium rows test nutrient-id and same-nutrient id ties.
+    for (const n of [30005, 30004]) await db.runAsync(`INSERT INTO food_nutrients
+      (id,food_item_id,nutrient_id,amount,unit,basis,data_status,source,is_user_confirmed)
+      VALUES (?,?,'calcium','0.000000','mg','per_serving','zero','manual',1)`, [id(n), lower.id]);
+    const calcium = (n: number): Food["nutrients"][number] => ({ id: id(n), nutrient_id: "calcium", amount: "0.000000", unit: "mg", basis: "per_serving", data_status: "zero", source: "manual", is_user_confirmed: true, original_amount: null, original_unit: null, original_text: null });
+    expect(await createLocalFoodsRuntime(db.asExpoDatabase(), OWNER).list()).toEqual([
+      { ...lower, nutrients: [calcium(30004), calcium(30005), ...lower.nutrients] }, upper, zulu,
+    ]);
+  });
+
   test.each([0, 1, 900, 901, 1801])("%i Foods: full expected response and bounded owner-scoped query count", async (size) => {
     const expected: Food[] = [];
     for (let n = 0; n < size; n++) expected.push(await food(100 + n, `Selected ${n.toString().padStart(4, "0")}`));
