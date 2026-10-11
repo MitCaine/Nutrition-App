@@ -1295,7 +1295,15 @@ def test_selected_optional_upstream_relocations_are_pinned_and_declared():
     revision = "efd6fb7c2f68e25c8f459d7bf0aedb649f773f01"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
+    import html
     provenance = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text()
+    current = provenance.split(f"## Current selection: {revision}\n", 1)[1]
+    rows = {}
+    for line in current.splitlines():
+        if line.startswith("| ") and len(line.split("|")) == 8:
+            cells = [cell.strip().strip("`") for cell in line.split("|")[1:-1]]
+            name = html.unescape(cells[0].replace("<code>", "").replace("</code>", ""))
+            rows[name] = cells[1:4]
     assert (
         f"https://github.com/MitCaine/repository-intelligence/blob/{revision}/docs/consumer-guide.md"
         in setup
@@ -1308,23 +1316,29 @@ def test_selected_optional_upstream_relocations_are_pinned_and_declared():
         "docs/skill-templates/capsule-independent-review/SKILL.md",
     ):
         assert f"https://github.com/MitCaine/repository-intelligence/blob/{revision}/{path}" in templates
-    for blob, size, digest in (
-        ("19cf168338614208b2592c5e0111d223384da3a6", 10705,
-         "069cd5607e52b2ef300f4c99d286faf30f4a6200b24a8b5ea0fa015a0e5980b3"),
-        ("810da881c165ea06f7f748fabb9c2933d4a1b377", 2458,
-         "2e6768bde22564f40dbcfd5bf901518aa216d51c23a4a4f5040fd0e33ad69c1a"),
-        ("508b89b141a22ac783166bad559fc65db4b5ca1d", 15809,
-         "294e821c038c3cd31c30a4d03515948e5882439e2d52c54594ee29c24211a59f"),
-        ("295253dda1a590f4b6bb303c9afba06e4d3acb41", 1318,
-         "12fd1e9ff74a971f9d53dcdb68ac156a4bfbf9ecc31e3ec3f0eeac82695d4799"),
-        ("70ff680d4c2a1eef68905b6e1fe136061f998fe2", 1321,
-         "701216b4fb1ce949078d38fa62f7022168b0b816d340e7c97fde19f7565719ce"),
-        ("7c0e18ce6d9a5de1331354b899a723379c792a6d", 2359,
-         "3d4da861fdfa9eeb90bd22e1731f9a061015ac92b14ec4870bbb188765b7f73e"),
-    ):
-        assert blob in provenance and str(size) in provenance and digest in provenance
-    assert "b08dbe6206e9a6138a8bb3554d563b67c5333124" in provenance
-    assert "fdf33600830d9eb6af6209fd89f86f850e873e4382a9337086466ad59b8664c6" in provenance
+    # Exact current rows must match upstream identities; historical rows cannot satisfy them.
+    expected = (
+        ('docs/consumer-guide.md', '19cf168338614208b2592c5e0111d223384da3a6', 10705,
+         '069cd5607e52b2ef300f4c99d286faf30f4a6200b24a8b5ea0fa015a0e5980b3'),
+        ('docs/skill-templates/capsule-preflight/SKILL.md', '4615ba5327763abc2fd028adb77f163c34d0be8f', 2532,
+         '19e72cd8c672a34301fe770699f51cb877b6a7f464e5386e2d56a9646c50d9cb'),
+        ('docs/skill-templates/capsule-preflight/references/evidence-contract.md', '35c018fa1c699b677e2f22794a69059b3ec81be7', 16040,
+         '879ace62064ea2bba036f723a09ab7dd10265095f6f8f70f8b471847d56eb359'),
+        ('docs/skill-templates/capsule-preflight/scripts/evidence_preflight.py', '8c520de6c35a40b690278d675463aba141562e74', 27222,
+         'afdd20be1a0465d202aa133c79927bbb8f1a8b00b9e569d314df1382e86fab63'),
+        ('docs/skill-templates/capsule-queue/SKILL.md', '2e01cf01bb0830e5addc4d46c1257f737793e695', 8811,
+         'ed9e3a3ebfe7c4639f58b6e2595a782ca577d0ba07a1175b6dbabc29c61d3f39'),
+        ('docs/skill-templates/capsule-queue/scripts/run_and_queue.py', 'cf5655ad3f5a66fa46831a06701aba295819bbaf', 13857,
+         '9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191'),
+        ('docs/skill-templates/capsule-scope-review/SKILL.md', '295253dda1a590f4b6bb303c9afba06e4d3acb41', 1318,
+         '12fd1e9ff74a971f9d53dcdb68ac156a4bfbf9ecc31e3ec3f0eeac82695d4799'),
+        ('docs/skill-templates/ri-evidence-handoff/SKILL.md', '70ff680d4c2a1eef68905b6e1fe136061f998fe2', 1321,
+         '701216b4fb1ce949078d38fa62f7022168b0b816d340e7c97fde19f7565719ce'),
+        ('docs/skill-templates/capsule-independent-review/SKILL.md', '7c0e18ce6d9a5de1331354b899a723379c792a6d', 2359,
+         '3d4da861fdfa9eeb90bd22e1731f9a061015ac92b14ec4870bbb188765b7f73e'),
+    )
+    for source, blob, size, digest in expected:
+        assert rows[source] == [blob, str(size), digest]
 
 
 def test_controller_permissions_waiting_and_external_closeout_contract():
