@@ -100,6 +100,22 @@ export class LocalRecipeRepository {
     );
   }
 
+  async ingredientsForRecipes(recipeIds: readonly string[]): Promise<Map<string, LocalRecipeIngredientRow[]>> {
+    const result = new Map<string, LocalRecipeIngredientRow[]>(recipeIds.map((id) => [id, []]));
+    // 900 IDs plus owner fit the conservative SQLite parameter budget.
+    for (let offset = 0; offset < recipeIds.length; offset += 900) {
+      const ids = recipeIds.slice(offset, offset + 900);
+      const rows = await this.database.getAllAsync<LocalRecipeIngredientRow>(
+        `SELECT ${INGREDIENT_COLUMNS} FROM "recipe_ingredients"
+         WHERE "user_id" = ? AND "recipe_id" IN (${ids.map(() => "?").join(", ")})
+         ORDER BY "recipe_id", "position", "id"`,
+        [this.ownerId, ...ids],
+      );
+      for (const row of rows) result.get(row.recipe_id)?.push(row);
+    }
+    return result;
+  }
+
   food(foodId: string): Promise<LocalIngredientFoodRow | null> {
     return this.database.getFirstAsync<LocalIngredientFoodRow>(
       `SELECT "id", "user_id", "name", "source_type", "source_id",

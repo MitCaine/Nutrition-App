@@ -83,6 +83,17 @@ threshold or native bridge performance claim is made. Run alongside `localFoodsR
 `savedFoodsContract.test.ts`, USDA and Recipe publication/dependency contracts. These tests do not
 qualify Expo connection lifecycle or physical-device latency.
 
+### Recipe list ingredients
+
+`localRecipesBatch.test.ts` compares independently expected public list responses on file-backed
+Node SQLite, including shuffled parent/ingredient order, empty and filtered owner-scoped records,
+draft/publication states and malformed-row rejection. Selected Recipe IDs use request-local
+repository groups of at most 900; counts are one list query plus one ingredient query per group.
+Run alongside local Recipe authoring/publication/dependency, list discovery/API mapping and
+`nestedRecipeSelectedAmount.test.ts`. Corrupt duplicate-position fixtures deliberately bypass a
+schema guard to check defensive validation; they do not claim a supported mutation path. SQL/count
+proof establishes no native bridge speedup, Expo lifecycle or concurrent-connection behavior.
+
 ### Nested Recipe selected amounts
 
 Run `npm test -- --runInBand --runTestsByPath __tests__/nestedRecipeSelectedAmount.test.ts __tests__/localRecipePublicationRuntime.test.ts`

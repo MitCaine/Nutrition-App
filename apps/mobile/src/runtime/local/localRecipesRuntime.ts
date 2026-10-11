@@ -534,7 +534,8 @@ export class LocalRecipesRuntime implements RecipesRuntime {
     try {
       const repository = new LocalRecipeRepository(this.database, this.ownerId);
       const rows = await repository.list(query);
-      return Promise.all(rows.map((row) => this.response(repository, row, "read")));
+      const ingredients = await repository.ingredientsForRecipes(rows.map((row) => row.id));
+      return Promise.all(rows.map((row) => this.response(repository, row, "read", ingredients.get(row.id))));
     } catch (error) {
       throw this.readFailure(error);
     }
@@ -1625,6 +1626,7 @@ export class LocalRecipesRuntime implements RecipesRuntime {
     repository: LocalRecipeRepository,
     row: LocalRecipeRow,
     context: OperationContext,
+    loadedIngredients?: readonly LocalRecipeIngredientRow[],
   ): Promise<Recipe> {
     try {
       if (parseUuid(row.id) !== row.id || parseUuid(row.user_id) !== row.user_id) throw new Error("uuid");
@@ -1642,7 +1644,7 @@ export class LocalRecipesRuntime implements RecipesRuntime {
       const createdAt = parseInstant(row.created_at);
       const updatedAt = parseInstant(row.updated_at);
       if (row.needs_republish !== 0 && row.needs_republish !== 1) throw new Error("boolean");
-      const ingredients = await repository.ingredients(row.id);
+      const ingredients = loadedIngredients ?? await repository.ingredients(row.id);
       const mapped = ingredients.map((ingredient) => this.mapIngredient(ingredient, context));
       if (new Set(mapped.map((ingredient) => ingredient.position)).size !== mapped.length) throw new Error("position");
       return {
