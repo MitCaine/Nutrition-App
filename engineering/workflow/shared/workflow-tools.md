@@ -148,10 +148,10 @@ evidence location; the helper does not create a state store.
 
 ## Existing optional evidence helpers
 
-The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/ae8768d4f806dbdc212a50d5e55c74b386e4963f/docs/skill-templates/capsule-preflight/scripts&#47;evidence_preflight.py)
+The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/efd6fb7c2f68e25c8f459d7bf0aedb649f773f01/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
 contains pure input-equivalence predicates; unknown relevant inputs are not
 cacheable. Its extended packet validation remains optional and is not required
-by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/ae8768d4f806dbdc212a50d5e55c74b386e4963f/scripts&#47;check_docs_and_skills.py),
-the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/ae8768d4f806dbdc212a50d5e55c74b386e4963f/docs/consumer-guide.md) and
-[review bundles](https://github.com/MitCaine/repository-intelligence/blob/ae8768d4f806dbdc212a50d5e55c74b386e4963f/docs/review-evidence.md) retain their existing separate scopes.
+by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/efd6fb7c2f68e25c8f459d7bf0aedb649f773f01/scripts/check%5Fdocs%5Fand%5Fskills.py),
+the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/efd6fb7c2f68e25c8f459d7bf0aedb649f773f01/docs/consumer-guide.md) and
+[review bundles](https://github.com/MitCaine/repository-intelligence/blob/efd6fb7c2f68e25c8f459d7bf0aedb649f773f01/docs/review-evidence.md) retain their existing separate scopes.
 None authenticates task authority or proves runtime availability.

@@ -192,6 +192,37 @@ is distinct from the normal plan check and the independent review of correctness
 and proof adequacy. RI requires no broad native/backend run solely for changed
 packaging or documentation.
 
+## Validate a changed workflow binding
+
+Use these bounded cases when a changed route is adopted or exercised by an
+already-authorized task. They are validation examples, not another per-issue gate
+or an executable RI state machine. The governing rules remain in the daily
+[maintenance](start-an-issue.md#optional-maintenance-route),
+[intake](start-an-issue.md#intake),
+[recovery](start-an-issue.md#checkpoint-and-resume) and
+[no-change](start-an-issue.md#planning-only-and-no-change-outcomes) sections.
+
+| Case / distinguishing input | Expected disposition and retained observation |
+| --- | --- |
+| Map permits direct maintenance; scope and decisions fit a brief | Controller implements with no builder, dispatcher or implementor; a fresh nonauthor reviews the exact candidate. Retain map permission, source, actors and verdict. |
+| Delegated brief specifies a compatibility version and installed caller check | Worker uses those decisions and reports the caller obligation honestly; a deliberate omission of the version stops dependent work and returns the gap, rather than retrieving issue history. |
+| Focused check fails within authorized scope | Preserve that failure and make a bounded correction; affected checks and review follow, without automatic normal planning. |
+| Same controller begins issue B after A closeout | Reorient and establish B's authority/source/checkpoint; A's approval and evidence do not become B's. Applicable standing grants may be reused. |
+| Old active attempt is recovered after map adoption | Recover its original selected instructions and assignment, with no silent repin or duplicate dispatch. |
+| Candidate changes after a prior verdict | Reconcile affected evidence and obtain the required review of the actual candidate; do not transfer an unrelated verdict. |
+| Consumer permits already-satisfied no-change review | Fresh review disposes every original criterion against the existing remote source; no branch, capsule, commit or integration operation is performed solely for review. |
+| No-change review finds an unmet criterion | Retain the finding and use the ordinary task branch before implementation; no false completed disposition. |
+| No-change target source changes | Reconcile exact source and affected checks/review before closeout. |
+| Consumer requires a branch for review | Preserve its requirement; the shared exception does not override it. |
+| Issue-close response is unknown | Read authoritative issue state before retry; preserve the original result and avoid duplicate closeout actions. |
+
+Retain selected instruction/source identities, actual inputs and dispositions in
+the existing task/evidence location. Label static walkthroughs and synthetic
+replays as such; they do not prove host execution. The consumer owns actual launch,
+command and installed binding proof. Record requested and host-confirmed settings
+separately and terminal consumption through the selected return route. Idle wake
+is not implied or required unless that optional capability is selected.
+
 ## Replace an entangled adoption
 
 An owner-authorized replacement may proceed as bounded ordinary maintenance;

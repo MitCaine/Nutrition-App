@@ -110,7 +110,7 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
     normalized_provenance = " ".join(provenance.split())
-    current_revision = "ae8768d4f806dbdc212a50d5e55c74b386e4963f"
+    current_revision = "efd6fb7c2f68e25c8f459d7bf0aedb649f773f01"
 
     assert f"future task intake is pinned at {current_revision}" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
@@ -127,13 +127,13 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "live GH-305" not in provenance
 
     current_resources = {
-        "start-an-issue.md": (31806, "8bcacfd3f275787bc84398e0598fcc7da5e5d36914919f851b13cb0543097022"),
-        "worker-instructions.md": (14471, "6b20fefdab27c2d98d7082d396c80f70dad64e6f1706d36b620f63665c186cbd"),
-        "capsule-controller-workflow.md": (13299, "cfed8464e9049b73f5b77c9c58dd6437ab9443c5a907f5fc7d13906938173c02"),
-        "new-project-setup.md": (15155, "ad1e64c78e90691d6af2832e90c111b3c26fdce9f6db9f3002782278f3eb4dbb"),
-        "skill-templates/README.md": (9019, "2d20d5de2322804f8bf2485e505db3c379283cc771ff923b8fa01644021d11f9"),
-        "skill-templates/capsule-queue/SKILL.md": (2029, "cf206bdc22675aac386b18c79ff1267281dc8da4f3bed60133fbfc3e4bccf037"),
-        "workflow-tools.md": (9223, "985b3c197b38c62a6499d3407e4a6a5776d65b8a0f5ba82a4a8408c5e7fe229d"),
+        'start-an-issue.md': (32893, 'c19b5f7e87513431a2de117387aa2c1b254b0326ffbdf9a1b018bcb79766cf93'),
+        'worker-instructions.md': (14961, '4a016062f3f66bc6f30f24f4a246b1aca60bb9c23b2b47d3f84d205aefce9de8'),
+        'capsule-controller-workflow.md': (16328, '925323b4edc6595faa04b99b55ca98dabc3dc49d1cea5e6d4a83ac8d486fdd0a'),
+        'new-project-setup.md': (15155, '687c574adf4eb9ef16b2585f2646f711841813fcdbd0e30b83c5fac203962615'),
+        'skill-templates/README.md': (9019, '7d890bc9c4913176fb30109b6b3d945bb481628f35c19dc75180b101e5a33a54'),
+        'skill-templates/capsule-queue/SKILL.md': (2029, '449c7892fe91cfb83e8d672b3eb24e3b098bf1cf4abdeaef0a9652e4468c2a00'),
+        'workflow-tools.md': (9223, '1f830d73de07cf1f0546f02501662124738acd59d65b8f60318f727df5d7564f'),
     }
     for name, (size, digest) in current_resources.items():
         data = (shared / name).read_bytes()
@@ -248,7 +248,7 @@ def test_direct_work_route_instructions_keep_scope_and_review_controller_owned()
         assert direct_rule in " ".join(maintenance.split())
     assert "selected implementation actor address in-scope findings" in " ".join(procedure.split())
     assert "fresh nonauthor" in normalized_map
-    assert "after confirmed consumption of a dispatcher's terminal result" in normalized_map.lower()
+    assert "selected shared handoff message boundary governs all controller/dispatcher exchanges" in normalized_map.lower()
     assert "qualification, review, integration, closeout and queue progress stay in controller records" in normalized_map
     assert "requested route: maintenance" in normalized_map.lower()
     assert "implementation execution: direct work controller" in normalized_map.lower()
@@ -305,8 +305,8 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
     assert "requested settings, launch evidence, host-confirmed settings and measured telemetry" in normalized_map_lower
     assert "when effective telemetry is unavailable, record it as unverified" in normalized_map_lower
     assert "existing external checkpoint" in normalized_map_lower
-    assert "after confirmed consumption of a dispatcher's terminal result" in normalized_map_lower
-    assert "bounded corrections, the next implementation assignment" in normalized_map_lower
+    assert "selected shared handoff message boundary governs all controller/dispatcher exchanges" in normalized_map_lower
+    assert "qualification, review, integration, closeout and queue progress stay in controller records" in normalized_map_lower
     assert "workflow tools contract" in normalized_map_lower
     assert "collaboration.spawn_agent" in normalized_map
     assert "policy acceptance does not establish measured execution" in normalized_map.lower()
@@ -1278,7 +1278,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "ae8768d4f806dbdc212a50d5e55c74b386e4963f/docs/skill-templates/capsule-queue/")
+              "efd6fb7c2f68e25c8f459d7bf0aedb649f773f01/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1292,7 +1292,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "ae8768d4f806dbdc212a50d5e55c74b386e4963f"
+    revision = "efd6fb7c2f68e25c8f459d7bf0aedb649f773f01"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     provenance = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text()
@@ -1381,7 +1381,7 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
             "it establishes selected Work configuration, not external Nutrition task authority or provider-effective telemetry",
         "No fallback is selected here",
             "route identity and delivery state retained in the existing operational record",
-            "after confirmed consumption of a dispatcher's terminal result",
+            "selected shared handoff message boundary governs all controller/dispatcher exchanges",
             "qualification, review, integration, closeout and queue progress stay in controller records",
         "Main qualification",
         "App `4708441`",
@@ -1569,7 +1569,7 @@ def test_project_map_records_role_correct_nutrition_dispatch():
     assert "route selection, serial assignments, role boundaries" in routing_lower
     assert "controller authenticates the exact candidate, authorized scope" in routing_lower
     assert "fresh independent reviewer assesses substantive correctness and test adequacy" in routing_lower
-    assert "after confirmed consumption of a dispatcher's terminal result" in routing_lower
+    assert "selected shared handoff message boundary governs all controller/dispatcher exchanges" in routing_lower
     assert "qualification, review, integration, closeout and queue progress stay in controller records" in routing_lower
     assert "direct work controller maintenance: permitted" in routing_lower
     assert "collaboration.spawn_agent" in routing_lower

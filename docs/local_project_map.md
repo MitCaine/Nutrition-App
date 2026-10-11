@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `ae8768d4f806dbdc212a50d5e55c74b386e4963f`: controllers use the complete
+future task intake is pinned at `efd6fb7c2f68e25c8f459d7bf0aedb649f773f01`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -52,7 +52,7 @@ rules for its arguments and output.
 
 Optional section-reader and adoption helpers are separate from producer/runtime `20a5039` and are
 selected from the authenticated RI checkout `/Users/mipoo/Projects/Repository Intelligence` at
-revision `ae8768d4f806dbdc212a50d5e55c74b386e4963f`. Before use, confirm that exact HEAD and a clean
+revision `efd6fb7c2f68e25c8f459d7bf0aedb649f773f01`. Before use, confirm that exact HEAD and a clean
 worktree, then authenticate imports with the existing
 `/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python` (Python 3.14.8), `PYTHONPATH=src`,
 and module source paths. The compatible installed helper dependencies are tree-sitter 0.25.1 and
@@ -95,8 +95,7 @@ The selected [daily procedure](../engineering/workflow/shared/start-an-issue.md)
 selection, serial assignments, role boundaries, read scopes, waits, recovery and corrections. The
 controller authenticates the exact candidate, authorized scope, required check completion and
 evidence identity. The fresh independent reviewer assesses substantive correctness and test adequacy.
-After confirmed consumption of a dispatcher's terminal result, messages are limited to bounded
-corrections, the next implementation assignment, necessary delivery, stop or recovery instructions;
+The selected shared handoff message boundary governs all controller/dispatcher exchanges;
 qualification, review, integration, closeout and queue progress stay in controller records.
 
 The optional maintenance route is selected only after controller-confirmed eligibility and the
