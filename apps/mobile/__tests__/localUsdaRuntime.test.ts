@@ -356,11 +356,13 @@ describe("E2-06 local USDA gateway", () => {
       food: expect.objectContaining({ name: "Bananas, raw" }),
     }));
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(foods.importExternal).toHaveBeenCalledTimes(1);
 
     foods.findActiveSource.mockResolvedValue(FOOD);
     fetchImpl.mockRejectedValue(new TypeError("offline after import"));
     await expect(runtime.importFood(1105314)).resolves.toBe(FOOD);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(foods.importExternal).toHaveBeenCalledTimes(1);
   });
 
   test("classifies timeout and route-specific missing responses without false empty results", async () => {

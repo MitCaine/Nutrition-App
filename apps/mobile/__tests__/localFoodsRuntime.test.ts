@@ -726,6 +726,9 @@ describe("E2-05 local Foods runtime", () => {
     const fake = new FoodSQLiteFake();
     const base = createLocalFoodsRuntime(database(fake), OWNER);
     const created = await base.create(foodInput());
+    const priorResponse = await base.get(created.id);
+    const priorServings = fake.state.servings.map((row) => ({ ...row }));
+    const priorNutrients = fake.state.nutrients.map((row) => ({ ...row }));
     const stages: LocalFoodMutationStage[] = [];
     const failing = createLocalFoodsRuntime(database(fake), OWNER, {
       onMutationStage: (stage) => {
@@ -740,7 +743,9 @@ describe("E2-05 local Foods runtime", () => {
       ] }),
     })).rejects.toMatchObject({ code: "local_food_mutation_failed", mutationOutcome: "confirmed_non_commit" });
     expect(stages).toEqual(["after_food", "after_servings"]);
-    await expect(base.get(created.id)).resolves.toMatchObject({ name: "Oats" });
+    await expect(base.get(created.id)).resolves.toEqual(priorResponse);
+    expect(fake.state.servings).toEqual(priorServings);
+    expect(fake.state.nutrients).toEqual(priorNutrients);
     expect(fake.state.servings).toHaveLength(1);
     expect(fake.state.nutrients).toHaveLength(4);
   });
