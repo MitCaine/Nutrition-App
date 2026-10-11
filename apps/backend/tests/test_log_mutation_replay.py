@@ -8,8 +8,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, null, select
 from sqlalchemy.orm import Session
 
-from app.dependencies.user import TEST_USER_ID
+from app.dependencies.user import TEST_USER_ID, get_current_user
 from app.models.create_idempotency import CreateOperationIdempotency
+from app.main import app
+from app.models.user import User
 from app.models.log import DailyLog, DailyLogDayCompletion, DailyLogNutrientSnapshot
 from app.schemas.log import DailyLogCreateRequest, DailyLogDeleteRequest, DailyLogUpdateRequest, DailyLogResponse
 from app.services.log_service import LogService, LogMutationReplay, _creation_fingerprint
@@ -598,3 +600,77 @@ def test_request_update_failed_commit_rolls_back_snapshot_and_receipt(
         CreateOperationIdempotency.operation == "log.update",
         CreateOperationIdempotency.client_request_id == payload.client_request_id,
     )) is None
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+@pytest.mark.parametrize("explicit_operation", [True, False])
+def test_status_does_not_disclose_another_owners_receipt(
+    client: TestClient, db_session: Session, operation: str, explicit_operation: bool,
+) -> None:
+    """Principal seam only: real HTTP/service/SQL, not bearer-auth qualification."""
+    _food, log = _create_log(client)
+    request_id = str(uuid4())
+    payload = {"client_request_id": request_id}
+    if operation == "update":
+        payload["notes"] = "private committed update"
+        accepted = client.patch(f"/api/v1/logs/{log['id']}", json=payload)
+    else:
+        accepted = client.request("DELETE", f"/api/v1/logs/{log['id']}", json=payload)
+    assert accepted.status_code == (200 if operation == "update" else 204)
+    other = User(id=uuid4(), email="receipt-other@example.test")
+    db_session.add(other)
+    db_session.commit()
+    previous = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = lambda: other
+    try:
+        status = client.get(f"/api/v1/logs/mutations/{request_id}",
+                            params={"operation": operation} if explicit_operation else {})
+        assert status.status_code == 200, status.text
+        body = status.json()
+        assert body["status"] == "unresolved"
+        assert body.get("log_id") is None
+        assert body.get("result") is None
+    finally:
+        if previous is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = previous
+    own = client.get(f"/api/v1/logs/mutations/{request_id}", params={"operation": operation})
+    assert own.status_code == 200, own.text
+    assert own.json()["status"] == "confirmed_success"
+    assert own.json()["log_id"] == log["id"]
+    if operation == "update":
+        assert own.json()["result"] == accepted.json()
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+def test_same_intent_on_different_target_is_a_conflict(
+    client: TestClient, db_session: Session, operation: str,
+) -> None:
+    _food_a, first = _create_log(client)
+    _food_b, second = _create_log(client)
+    snapshot_table = DailyLogNutrientSnapshot.__table__
+    before = [dict(row) for row in db_session.execute(
+        select(snapshot_table).where(snapshot_table.c.daily_log_id == UUID(second["id"]))
+        .order_by(snapshot_table.c.id)
+    ).mappings()]
+    assert before
+    payload = {"client_request_id": str(uuid4())}
+    if operation == "update":
+        payload["notes"] = "one intended update"
+        accepted = client.patch(f"/api/v1/logs/{first['id']}", json=payload)
+        conflict = client.patch(f"/api/v1/logs/{second['id']}", json=payload)
+    else:
+        accepted = client.request("DELETE", f"/api/v1/logs/{first['id']}", json=payload)
+        conflict = client.request("DELETE", f"/api/v1/logs/{second['id']}", json=payload)
+    assert accepted.status_code == (200 if operation == "update" else 204), accepted.text
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["detail"]["code"] == "log_mutation_payload_conflict"
+    current = client.get("/api/v1/logs", params={"date": "2026-07-08"}).json()["logs"]
+    assert next(row for row in current if row["id"] == second["id"]) == second
+    db_session.expire_all()
+    after = [dict(row) for row in db_session.execute(
+        select(snapshot_table).where(snapshot_table.c.daily_log_id == UUID(second["id"]))
+        .order_by(snapshot_table.c.id)
+    ).mappings()]
+    assert after == before
