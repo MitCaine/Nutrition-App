@@ -72,7 +72,7 @@ deliberately does not run Alembic.
 The current remote application migration head is
 `0033_complete_runtime_authority`.
 
-Root `VERSION` owns the canonical Version 2.0 repository release identity.
+Root `VERSION` owns the canonical Version 2.2 repository release identity.
 `apps/backend/pyproject.toml` mirrors the root `VERSION`, requires the Python release
 line declared by `.python-version`, and sets the matching Ruff target. `requirements-dev.lock` remains the reproducible
 dependency lock.

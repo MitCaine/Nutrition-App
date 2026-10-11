@@ -54,7 +54,7 @@ CURRENT_REEVALUATION_PATH = [
         "location": "",
         "name": "nutrition-mobile",
         "requested": None,
-        "version": "2.1.0",
+        "version": "2.2.0",
     },
     {
         "location": "node_modules/expo-sharing",
