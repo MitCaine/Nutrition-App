@@ -725,7 +725,7 @@ def test_pg_0033_data_bearing_transfer_is_owner_scoped_read_only_and_non_mutatin
         for section in package["sections"]
     }
     assert result.overall_digest == package["overall_digest"]
-    assert package["format_version"] == "4"
+    assert package["format_version"] == "5"
     assert package["source"] == {
         "postgres_major": "16",
         "alembic_revision": "0033_complete_runtime_authority",

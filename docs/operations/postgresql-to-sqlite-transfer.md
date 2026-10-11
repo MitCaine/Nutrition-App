@@ -13,7 +13,7 @@ The executable transfer boundary is the checked-in
 The current contract is:
 
 - contract: `e2-15.v5`;
-- package format: `nutrition-personal-transfer`, format version `4`;
+- package format: `nutrition-personal-transfer`, format version `5`;
 - source database: PostgreSQL 16;
 - source application head: `0033_complete_runtime_authority`;
 - source schema contract: `e2-15.pg-0033.v3`;
@@ -21,7 +21,7 @@ The current contract is:
 - maximum package size: 64 MiB.
 
 The target schema includes migrations
-`001_initial_runtime_schema` through `007_daily_log_complete_state` as listed
+`001_initial_runtime_schema` through `008_daily_log_owner_date_index` as listed
 by the machine-readable contract.
 
 Historical E2-15 contract and representative-package versions remain checked in
