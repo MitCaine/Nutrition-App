@@ -14,8 +14,8 @@ import {
 
 test("the mobile package boundary consumes the fixed shared contract", () => {
   expect(contract.format).toBe("nutrition-personal-transfer");
-  expect(contract.format_version).toBe("4");
-  expect(contract.contract_version).toBe("e2-15.v4");
+  expect(contract.format_version).toBe("5");
+  expect(contract.contract_version).toBe("e2-15.v5");
   expect(contract.idempotency.copied_operations).toContain("recipe.duplicate");
   expect(contract.codec_version).toBe("e2-02.v1");
   expect(E2_15_MAXIMUM_TRANSFER_BYTES).toBe(64 * 1024 * 1024);
@@ -23,7 +23,7 @@ test("the mobile package boundary consumes the fixed shared contract", () => {
   expect(E2_15_SECTION_NAMES).toHaveLength(18);
   expect(contract.source.expected_public_tables).toHaveLength(32);
   expect(contract.target).toEqual({
-    sqlite_schema_version: 7,
+    sqlite_schema_version: 8,
     migration_ids: [
       "001_initial_runtime_schema",
       "002_food_nutrient_integrity",
@@ -32,6 +32,7 @@ test("the mobile package boundary consumes the fixed shared contract", () => {
       "005_expand_nutrient_catalog",
       "006_total_omega_3_nutrient",
       "007_daily_log_complete_state",
+      "008_daily_log_owner_date_index",
     ],
   });
 });

@@ -1,3 +1,4 @@
+import v4RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v4.json";
 import * as contract from "../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import representativePackage from "../../../packages/shared-contracts/e2-15/representative-package.json";
 import v3RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v3.json";
@@ -744,4 +745,16 @@ test("qualifies transfer totals on the supplied isolated transaction and rolls b
     try { failedReopen?.close(); } catch { /* already closed */ }
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+
+test("imports frozen v4 into version8 without weakening its historical target validation", async () => {
+  const database = await migratedDatabase();
+  try {
+    await importPersonalTransfer(database.asExpoDatabase(), canonicalTransferJson(v4RepresentativePackage));
+    expect(await database.getFirstAsync("PRAGMA user_version")).toEqual({ user_version: 8 });
+    const columns = await database.getAllAsync<{ name: string }>('PRAGMA index_info("ix_daily_logs_owner_date")');
+    expect(columns.map((x) => x.name)).toEqual(["user_id", "logged_date"]);
+    expect(await database.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM daily_logs')).toEqual({ count: 2 });
+  } finally { database.close(); }
 });

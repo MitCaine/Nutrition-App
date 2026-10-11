@@ -3,7 +3,7 @@
  * this app. Column order is intentionally absent: migration 003 adds nullable
  * serving reference columns at the end for upgraded databases.
  *
- * The version-7 contract is derived from the current fresh baseline plus the
+ * The version-7 column contract, unchanged in index-only version 8, is derived from the current fresh baseline plus the
  * migration ledger and migration 007 table. Migration 003 adds the same three
  * nullable TEXT columns to populated upgrades. Keep this backup-only contract
  * aligned with those executable schema sources; do not edit migration history
@@ -293,13 +293,13 @@ export const LOCAL_BACKUP_SCHEMA_REQUIREMENTS_BY_VERSION: Readonly<
   Record<number, Readonly<Record<string, readonly LocalBackupColumnRequirement[]>>>
 > = Object.freeze({
   7: VERSION_7_COLUMN_REQUIREMENTS,
+  8: VERSION_7_COLUMN_REQUIREMENTS,
 });
 
 export function getLocalBackupSchemaRequirements(
   schemaVersion: number,
 ): Readonly<Record<string, readonly LocalBackupColumnRequirement[]>> | undefined {
-  if (schemaVersion !== 7) return undefined;
-  return LOCAL_BACKUP_SCHEMA_REQUIREMENTS_BY_VERSION[7];
+  return LOCAL_BACKUP_SCHEMA_REQUIREMENTS_BY_VERSION[schemaVersion];
 }
 
 function hasOnlyOuterParentheses(value: string): boolean {

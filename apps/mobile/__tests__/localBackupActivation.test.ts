@@ -30,6 +30,10 @@ const mockSetItem =
 const mockGetItem =
   jest.fn<Promise<string | null>, [string]>();
 
+const mockMigrate = jest.fn();
+
+jest.mock("../src/storage/sqlite/migrations", () => ({ migrateNutritionDatabase: (db: MockDatabase) => mockMigrate(db) }));
+
 const mockValidate =
   jest.fn<
     Promise<unknown>,
@@ -215,11 +219,12 @@ import {
   deleteLocalBackupArtifact,
   hasPendingLocalRestore,
   LocalBackupActivationFatalError,
+  stageLocalRestoreFromUri,
 } from "../src/storage/backup/localBackup";
 
 const SUMMARY = Object.freeze({
   formatVersion: 1 as const,
-  schemaVersion: 4,
+  schemaVersion: 8,
   ownerId:
     "00000000-0000-4000-8000-000000000001",
   totalRows: 73,
@@ -271,6 +276,8 @@ beforeEach(() => {
   mockSetItem.mockReset();
   mockGetItem.mockReset();
   mockValidate.mockReset();
+  mockMigrate.mockReset();
+  mockMigrate.mockResolvedValue({ toVersion: 8 });
   mockOpenDatabaseAsync.mockReset();
   mockDeleteDatabaseAsync.mockReset();
   mockBackupDatabaseAsync.mockReset();
@@ -388,7 +395,7 @@ test(
     expect(evidence).toMatchObject({
       status: "success",
       ownerId: SUMMARY.ownerId,
-      schemaVersion: 4,
+      schemaVersion: 8,
       totalRows: 73,
     });
 
@@ -412,7 +419,7 @@ test(
     ).toMatchObject({
       status: "success",
       ownerId: SUMMARY.ownerId,
-      schemaVersion: 4,
+      schemaVersion: 8,
       totalRows: 73,
     });
   },
@@ -904,3 +911,33 @@ test(
     ).toBe(false);
   },
 );
+
+
+test("version7 restore migrates only isolated staged copy before version8 validation", async () => {
+  const uri = "file:///selected-v7.db";
+  mockFiles.add(uri);
+  mockMigrate.mockImplementationOnce(async (db: MockDatabase) => { expect(db.name).toMatch(/^nutrition-restore-staged-/); });
+  database(ACTIVE_DATABASE, "prior active authority");
+  mockValidate.mockResolvedValueOnce({ ...SUMMARY, schemaVersion: 7 }).mockResolvedValueOnce({ ...SUMMARY, schemaVersion: 8 });
+  await expect(stageLocalRestoreFromUri(uri)).resolves.toMatchObject({ schemaVersion: 8 });
+  expect(mockMigrate).toHaveBeenCalledTimes(1);
+  expect(database(ACTIVE_DATABASE).marker).toBe("prior active authority");
+  expect(mockMigrate.mock.invocationCallOrder[0]).toBeGreaterThan(mockValidate.mock.invocationCallOrder[0]);
+  expect(mockMigrate.mock.invocationCallOrder[0]).toBeLessThan(mockValidate.mock.invocationCallOrder[1]);
+  expect(mockFiles.has(uri)).toBe(true);
+  expect(mockFileMove.mock.calls.every(([source]) => !source.endsWith(ACTIVE_DATABASE))).toBe(true);
+});
+
+test("version7 staging migration failure preserves selected backup and existing pending authority", async () => {
+  const uri = "file:///selected-v7-failure.db";
+  mockFiles.add(uri);
+  mockFiles.add(databaseUri(PENDING_DATABASE));
+  database(ACTIVE_DATABASE, "preserved active authority");
+  mockValidate.mockResolvedValueOnce({ ...SUMMARY, schemaVersion: 7 });
+  mockMigrate.mockRejectedValueOnce(new Error("injected migration failure"));
+  await expect(stageLocalRestoreFromUri(uri)).rejects.toThrow("injected migration failure");
+  expect(mockFiles.has(uri)).toBe(true);
+  expect(mockFiles.has(databaseUri(PENDING_DATABASE))).toBe(true);
+  expect(database(ACTIVE_DATABASE).marker).toBe("preserved active authority");
+  expect(mockFileMove).not.toHaveBeenCalled();
+});

@@ -194,9 +194,10 @@ function matchesColumnRequirement(
 async function assertVersionedColumnSchema(
   database: SQLiteDatabase,
   expectedTables: ReadonlySet<string>,
+  schemaVersion: number,
 ): Promise<void> {
   const requirements =
-    getLocalBackupSchemaRequirements(SQLITE_SCHEMA_VERSION);
+    getLocalBackupSchemaRequirements(schemaVersion);
   const contractTables = Object.keys(requirements ?? {});
 
   if (
@@ -262,7 +263,8 @@ async function assertVersionedColumnSchema(
 async function assertFormat(
   database: SQLiteDatabase,
   mode: ValidationMode,
-): Promise<void> {
+  allowVersion7Artifact: boolean,
+): Promise<number> {
   const application = await database.getFirstAsync<{ application_id: number }>(
     "PRAGMA application_id",
   );
@@ -291,16 +293,18 @@ async function assertFormat(
     "PRAGMA user_version",
   );
 
-  if (version?.user_version !== SQLITE_SCHEMA_VERSION) {
+  if (version?.user_version !== SQLITE_SCHEMA_VERSION && !(allowVersion7Artifact && mode === "artifact" && version?.user_version === 7)) {
     fail(
       "backup_schema_mismatch",
       `Backup schema version ${String(version?.user_version)} is not supported by this app version (${SQLITE_SCHEMA_VERSION}).`,
     );
   }
+  return version!.user_version;
 }
 
 async function assertMigrationLedger(
   database: SQLiteDatabase,
+  schemaVersion: number,
 ): Promise<void> {
   let rows: MigrationLedgerRow[];
   try {
@@ -316,14 +320,14 @@ async function assertMigrationLedger(
     );
   }
 
-  if (rows.length !== SQLITE_MIGRATIONS.length) {
+  if (rows.length !== schemaVersion) {
     fail(
       "backup_migration_ledger_invalid",
       "The Nutrition App migration ledger does not match the supported schema.",
     );
   }
 
-  for (let index = 0; index < SQLITE_MIGRATIONS.length; index += 1) {
+  for (let index = 0; index < schemaVersion; index += 1) {
     const expected = SQLITE_MIGRATIONS[index];
     const actual = rows[index];
 
@@ -341,6 +345,7 @@ async function assertMigrationLedger(
 
 async function assertExpectedSchemaObjects(
   database: SQLiteDatabase,
+  schemaVersion: number,
 ): Promise<void> {
   const expectedTables = new Set<string>([
     ...SQLITE_SEMANTIC_TABLES,
@@ -368,7 +373,7 @@ async function assertExpectedSchemaObjects(
     );
   }
 
-  await assertVersionedColumnSchema(database, expectedTables);
+  await assertVersionedColumnSchema(database, expectedTables, schemaVersion);
 
   const triggerRows = await database.getAllAsync<{ name: string }>(
     `SELECT "name" FROM "sqlite_master" WHERE "type" = 'trigger'`,
@@ -397,6 +402,33 @@ async function assertExpectedSchemaObjects(
       fail(
         "backup_schema_invalid",
         `Required integrity index ${name} is missing.`,
+      );
+    }
+  }
+
+  if (schemaVersion === 8) {
+    const indexColumns = await database.getAllAsync<{ name: string }>(
+      'PRAGMA index_info("ix_daily_logs_owner_date")',
+    );
+    const indexes = await database.getAllAsync<{
+      name: string;
+      unique: number;
+      partial: number;
+    }>('PRAGMA index_list("daily_logs")');
+    const ownerDateIndex = indexes.find(
+      (index) => index.name === "ix_daily_logs_owner_date",
+    );
+    if (
+      !ownerDateIndex ||
+      ownerDateIndex.unique !== 0 ||
+      ownerDateIndex.partial !== 0 ||
+      indexColumns.length !== 2 ||
+      indexColumns[0].name !== "user_id" ||
+      indexColumns[1].name !== "logged_date"
+    ) {
+      fail(
+        "backup_schema_invalid",
+        "The version-8 owner/date index is missing or invalid.",
       );
     }
   }
@@ -705,10 +737,11 @@ async function countSemanticRows(
 export async function validateLocalBackupDatabase(
   database: SQLiteDatabase,
   mode: ValidationMode = "artifact",
+  options: Readonly<{ allowVersion7Artifact?: boolean }> = {},
 ): Promise<LocalBackupValidationSummary> {
-  await assertFormat(database, mode);
-  await assertMigrationLedger(database);
-  await assertExpectedSchemaObjects(database);
+  const schemaVersion = await assertFormat(database, mode, options.allowVersion7Artifact === true);
+  await assertMigrationLedger(database, schemaVersion);
+  await assertExpectedSchemaObjects(database, schemaVersion);
   await assertSQLiteIntegrity(database);
   const ownerId = await assertOwnerGraph(database);
   await assertCanonicalColumnValues(database);
@@ -716,7 +749,7 @@ export async function validateLocalBackupDatabase(
 
   return Object.freeze({
     formatVersion: NUTRITION_BACKUP_FORMAT_VERSION,
-    schemaVersion: SQLITE_SCHEMA_VERSION,
+    schemaVersion,
     ownerId,
     totalRows: counts.totalRows,
     rowCounts: counts.rowCounts,

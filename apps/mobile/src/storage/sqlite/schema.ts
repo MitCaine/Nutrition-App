@@ -11,7 +11,7 @@
 
 import { NUTRIENT_RELATIONAL_SEED_ROWS } from "../../shared/nutrition/catalog";
 
-export const SQLITE_SCHEMA_VERSION = 7;
+export const SQLITE_SCHEMA_VERSION = 8;
 export const SQLITE_DATABASE_NAME = "nutrition.db";
 
 export const SQLITE_MIGRATION_LEDGER_TABLE = "nutrition_schema_migrations";
@@ -495,6 +495,7 @@ export const SQLITE_BASELINE_SCHEMA_STATEMENTS: readonly string[] = [
     ON "recipe_ingredients" ("serving_definition_id", "food_item_id")`,
   `CREATE INDEX IF NOT EXISTS "ix_recipes_publication_projection"
     ON "recipes" ("published_food_item_id", "active_publication_revision_id", "user_id")`,
+  `CREATE INDEX IF NOT EXISTS "ix_daily_logs_owner_date" ON "daily_logs" ("user_id", "logged_date");`,
   `CREATE INDEX IF NOT EXISTS "ix_daily_logs_food_owner"
     ON "daily_logs" ("food_item_id", "user_id")`,
   `CREATE INDEX IF NOT EXISTS "ix_daily_logs_serving_food"

@@ -518,10 +518,14 @@ SQLite qualification when the change affects backup copy coherence, schema compa
 replacement/rollback, or restart-time activation. A mocked filesystem/database test alone cannot
 prove safe replacement of the real local authority.
 
-Backup admission has an explicit version-7 column contract for the nineteen semantic tables, the
+Backup admission has an explicit version-7/version-8 column contract for the nineteen semantic tables, the
 migration ledger, and the snapshot-replacement scope table. It checks declared type, nullability,
 primary-key position, and insert-semantic defaults while ignoring column order. Backup format 1
-continues to accept schema version 7 only; admission does not migrate or repair a candidate. The
+accepts current schema version 8. Restore inspection and staging additionally admit strictly
+validated version-7 artifacts only: the isolated staged copy migrates7→8 and passes strict
+version-8 validation before installation. The original artifact and active database remain
+untouched on admission or migration failure. No generic older-version admission or stored-data
+repair is allowed. The
 focused Node `node:sqlite` fixtures exercise that schema logic, and Jest lifecycle mocks exercise
 control flow. Neither is native backup evidence. The `ios-native` profile proves generated-project
 compilation and OCR host regressions; it does not prove backup admission, file replacement, rollback,

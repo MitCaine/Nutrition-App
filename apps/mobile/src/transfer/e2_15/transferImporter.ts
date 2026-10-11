@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import contractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract.json";
+import v4ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v4.json";
 import v3ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v3.json";
 import v2ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v2.json";
 import v1ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v1.json";
@@ -44,6 +45,7 @@ type Contract = Readonly<{
   sections: readonly SectionContract[];
 }>;
 const CONTRACT = contractJson as unknown as Contract;
+const V4_CONTRACT = v4ContractJson as unknown as Contract;
 const V3_CONTRACT = v3ContractJson as unknown as Contract;
 const V2_CONTRACT = v2ContractJson as unknown as Contract;
 const V1_CONTRACT = v1ContractJson as unknown as Contract;
@@ -359,7 +361,9 @@ async function qualifySections(
   const qualificationContract =
     packageValue.format_version === CONTRACT.format_version
       ? CONTRACT
-      : packageValue.format_version === V3_CONTRACT.format_version
+      : packageValue.format_version === V4_CONTRACT.format_version
+    ? V4_CONTRACT
+    : packageValue.format_version === V3_CONTRACT.format_version
       ? V3_CONTRACT
       : packageValue.format_version === V2_CONTRACT.format_version
       ? V2_CONTRACT

@@ -2,7 +2,9 @@ import * as Crypto from "expo-crypto";
 
 import contractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import sourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema.json";
+import v4ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v4.json";
 import v3ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v3.json";
+import v4SourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema-v4.json";
 import v3SourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema-v3.json";
 import v2ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v2.json";
 import v2SourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema-v2.json";
@@ -69,6 +71,7 @@ type TransferContract = Readonly<{
 }>;
 
 const CONTRACT = contractJson as unknown as TransferContract;
+const V4_CONTRACT = v4ContractJson as unknown as TransferContract;
 const V3_CONTRACT = v3ContractJson as unknown as TransferContract;
 const V2_CONTRACT = v2ContractJson as unknown as TransferContract;
 const V1_CONTRACT = v1ContractJson as unknown as TransferContract;
@@ -829,6 +832,8 @@ export async function parseAndValidateTransferPackage(document: string): Promise
   const packageValue = exactKeys(parsed, TOP_LEVEL_KEYS);
   const contract = packageValue.format_version === CONTRACT.format_version
     ? CONTRACT
+    : packageValue.format_version === V4_CONTRACT.format_version
+    ? V4_CONTRACT
     : packageValue.format_version === V3_CONTRACT.format_version
     ? V3_CONTRACT
     : packageValue.format_version === V2_CONTRACT.format_version
@@ -838,6 +843,8 @@ export async function parseAndValidateTransferPackage(document: string): Promise
     : null;
   const installedSourceSchema = contract === CONTRACT
     ? sourceSchema
+    : contract === V4_CONTRACT
+    ? v4SourceSchema
     : contract === V3_CONTRACT
     ? v3SourceSchema
     : contract === V2_CONTRACT

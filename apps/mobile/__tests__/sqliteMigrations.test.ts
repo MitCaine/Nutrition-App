@@ -24,6 +24,7 @@ import {
   SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION,
   SQLITE_TOTAL_OMEGA_3_MIGRATION,
   SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION,
+  SQLITE_DAILY_LOG_OWNER_DATE_MIGRATION,
   SQLiteSnapshotReplacementError,
   SQLiteWriteBusyError,
   UnsupportedSQLiteSchemaVersionError,
@@ -420,7 +421,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(first).toEqual({
       fromVersion: 0,
       toVersion: SQLITE_SCHEMA_VERSION,
-      appliedVersions: [1, 2, 3, 4, 5, 6, 7],
+      appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8],
       alreadyCurrent: false,
     });
     expect(database.userVersion).toBe(SQLITE_SCHEMA_VERSION);
@@ -432,6 +433,7 @@ describe("E2-03 SQLite baseline schema", () => {
       { version: 5, migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id },
       { version: 6, migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id },
       { version: 7, migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id },
+      { version: 8, migration_id: SQLITE_DAILY_LOG_OWNER_DATE_MIGRATION.id },
     ]);
     expect(database.transactions).toBe(1);
     expect(database.transactionExecutions).toBeGreaterThan(0);
@@ -445,7 +447,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(second.alreadyCurrent).toBe(true);
     expect(second.appliedVersions).toEqual([]);
     expect(database.executed.length).toBe(executedBeforeRestart + SQLITE_CONNECTION_SETUP_STATEMENTS.length);
-    expect(database.ledger).toHaveLength(7);
+    expect(database.ledger).toHaveLength(8);
   });
 
   test("upgrades an existing v1 database to the current schema", async () => {
@@ -460,11 +462,11 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 1,
-      toVersion: 7,
-      appliedVersions: [2, 3, 4, 5, 6, 7],
+      toVersion: 8,
+      appliedVersions: [2, 3, 4, 5, 6, 7, 8],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(7);
+    expect(database.userVersion).toBe(8);
     expect(database.ledger).toEqual([
       { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
       { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
@@ -473,6 +475,7 @@ describe("E2-03 SQLite baseline schema", () => {
       { version: 5, migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id },
       { version: 6, migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id },
       { version: 7, migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id },
+      { version: 8, migration_id: SQLITE_DAILY_LOG_OWNER_DATE_MIGRATION.id },
     ]);
     expect(database.servingReferenceColumns).toBe(true);
   });
@@ -487,8 +490,8 @@ describe("E2-03 SQLite baseline schema", () => {
     ];
 
     const first = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(first).toEqual({ fromVersion: 2, toVersion: 7, appliedVersions: [3, 4, 5, 6, 7], alreadyCurrent: false });
-    expect(database.userVersion).toBe(7);
+    expect(first).toEqual({ fromVersion: 2, toVersion: 8, appliedVersions: [3, 4, 5, 6, 7, 8], alreadyCurrent: false });
+    expect(database.userVersion).toBe(8);
     expect(database.servingReferenceColumns).toBe(true);
     expect(database.executed.join("\n")).toContain(
       'ALTER TABLE "serving_definitions" ADD COLUMN "reference_quantity" TEXT',
@@ -498,7 +501,7 @@ describe("E2-03 SQLite baseline schema", () => {
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length;
     const second = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(second).toEqual({ fromVersion: 7, toVersion: 7, appliedVersions: [], alreadyCurrent: true });
+    expect(second).toEqual({ fromVersion: 8, toVersion: 8, appliedVersions: [], alreadyCurrent: true });
     expect(database.executed.filter((statement) =>
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length).toBe(alterCount);
@@ -519,24 +522,24 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 3,
-      toVersion: 7,
-      appliedVersions: [4, 5, 6, 7],
+      toVersion: 8,
+      appliedVersions: [4, 5, 6, 7, 8],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(7);
-    expect(database.ledger.at(-4)).toEqual({
+    expect(database.userVersion).toBe(8);
+    expect(database.ledger.at(-5)).toEqual({
       version: 4,
       migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id,
     });
-    expect(database.ledger.at(-3)).toEqual({
+    expect(database.ledger.at(-4)).toEqual({
       version: 5,
       migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id,
     });
-    expect(database.ledger.at(-2)).toEqual({
+    expect(database.ledger.at(-3)).toEqual({
       version: 6,
       migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id,
     });
-    expect(database.ledger.at(-1)).toEqual({
+    expect(database.ledger.at(-2)).toEqual({
       version: 7,
       migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id,
     });
@@ -587,20 +590,20 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 4,
-      toVersion: 7,
-      appliedVersions: [5, 6, 7],
+      toVersion: 8,
+      appliedVersions: [5, 6, 7, 8],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(7);
-    expect(database.ledger.at(-3)).toEqual({
+    expect(database.userVersion).toBe(8);
+    expect(database.ledger.at(-4)).toEqual({
       version: 5,
       migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id,
     });
-    expect(database.ledger.at(-2)).toEqual({
+    expect(database.ledger.at(-3)).toEqual({
       version: 6,
       migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id,
     });
-    expect(database.ledger.at(-1)).toEqual({
+    expect(database.ledger.at(-2)).toEqual({
       version: 7,
       migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id,
     });
@@ -695,8 +698,8 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 5,
-      toVersion: 7,
-      appliedVersions: [6, 7],
+      toVersion: 8,
+      appliedVersions: [6, 7, 8],
       alreadyCurrent: false,
     });
 
@@ -754,13 +757,13 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 6,
-      toVersion: 7,
-      appliedVersions: [7],
+      toVersion: 8,
+      appliedVersions: [7, 8],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(7);
+    expect(database.userVersion).toBe(8);
     expect(database.snapshotCount).toBe(snapshotCount);
-    expect(database.ledger.at(-1)).toEqual({
+    expect(database.ledger.at(-2)).toEqual({
       version: 7,
       migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id,
     });

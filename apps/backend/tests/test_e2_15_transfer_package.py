@@ -43,8 +43,8 @@ def test_shared_contract_fixes_the_approved_package_boundary() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
     assert contract["format"] == "nutrition-personal-transfer"
-    assert contract["format_version"] == "4"
-    assert contract["contract_version"] == "e2-15.v4"
+    assert contract["format_version"] == "5"
+    assert contract["contract_version"] == "e2-15.v5"
     assert "recipe.duplicate" in contract["idempotency"]["copied_operations"]
     assert "recipe.duplicate" in contract["enums"]["idempotency_operation"]
     assert contract["codec_version"] == "e2-02.v1"
@@ -56,6 +56,10 @@ def test_shared_contract_fixes_the_approved_package_boundary() -> None:
 
 def test_historical_contract_artifacts_remain_byte_exact() -> None:
     expected = {
+        "transfer-contract-v4.json": "7fbee783090bfcab66e13f3c4eabc716b970848ec319fd941aba5ab69b76002a",
+        "source-schema-v4.json": "6e25248fcace9b6d5a874a8715cc5757250bafd94eeadd673c5e4da3c3d4073d",
+        "target-schema-v4.json": "84fe934c42c087a96ed10a813e36234c90b901c7a01e9b47f8c16f2b2f2a501c",
+        "representative-package-v4.json": "6882d31ed87468731840c95873b777b934419f455ac88584f1719649d136d73a",
         "transfer-contract-v1.json": "5718f6ad821a637fa1e2fbe11893e1c4ffa6fa81697d037cb6a16eadb6da090f",
         "source-schema-v1.json": "ffca3a3405a4e65e13aa992ccb7c57e92e4167a9588629ad0d242c37d5a4c223",
         "target-schema-v1.json": "1fc6cca4b0b27c61b08fc458ebaca7bc7109e7afcb2b1efc20663d16ff3c1772",

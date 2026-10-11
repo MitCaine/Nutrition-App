@@ -12,12 +12,12 @@ The executable transfer boundary is the checked-in
 
 The current contract is:
 
-- contract: `e2-15.v4`;
+- contract: `e2-15.v5`;
 - package format: `nutrition-personal-transfer`, format version `4`;
 - source database: PostgreSQL 16;
 - source application head: `0033_complete_runtime_authority`;
 - source schema contract: `e2-15.pg-0033.v3`;
-- target SQLite schema version: `7`; and
+- target SQLite schema version: `8`; and
 - maximum package size: 64 MiB.
 
 The target schema includes migrations
@@ -117,3 +117,7 @@ Any schema or semantic change that affects this boundary must update the
 implementation and create or deliberately revise the applicable versioned
 transfer artifacts. Never edit historical E2-15 architecture prose to pretend
 a later source head existed when that record was approved.
+
+Version-4 packages and descriptors remain frozen alongside versions1–3. Import validates each
+against its original exact contract and installs into the current version8 target, retaining
+whole-date qualification; forged targets and incompatible schemas remain rejected.

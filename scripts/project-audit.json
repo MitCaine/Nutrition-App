@@ -123,9 +123,9 @@
     },
     "docs/operations/postgresql-to-sqlite-transfer.md": {
       "required": [
-        "e2-15.v4",
+        "e2-15.v5",
         "0033_complete_runtime_authority",
-        "target SQLite schema version: `7`",
+        "target SQLite schema version: `8`",
         "--acknowledge-frozen-writes",
         "synchronize PostgreSQL and SQLite;"
       ],

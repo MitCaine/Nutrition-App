@@ -442,6 +442,14 @@ export const SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION: SQLiteMigration = {
   },
 };
 
+export const SQLITE_DAILY_LOG_OWNER_DATE_MIGRATION: SQLiteMigration = {
+  version: 8,
+  id: "008_daily_log_owner_date_index",
+  async up(database) {
+    await database.execAsync('CREATE INDEX IF NOT EXISTS "ix_daily_logs_owner_date" ON "daily_logs" ("user_id", "logged_date");');
+  },
+};
+
 export const SQLITE_MIGRATIONS: readonly SQLiteMigration[] = [
   SQLITE_BASELINE_MIGRATION,
   SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
@@ -450,6 +458,7 @@ export const SQLITE_MIGRATIONS: readonly SQLiteMigration[] = [
   SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION,
   SQLITE_TOTAL_OMEGA_3_MIGRATION,
   SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION,
+  SQLITE_DAILY_LOG_OWNER_DATE_MIGRATION,
 ];
 
 function validateMigrationStream(migrations: readonly SQLiteMigration[]): void {

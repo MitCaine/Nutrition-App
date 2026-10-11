@@ -1,0 +1,2901 @@
+{
+  "descriptor_version": "e2-15.sqlite-v7.schema.v4",
+  "user_version": 7,
+  "objects": [
+    {
+      "type": "index",
+      "name": "ix_daily_logs_food_owner",
+      "tbl_name": "daily_logs",
+      "sql": "CREATE INDEX \"ix_daily_logs_food_owner\"\n    ON \"daily_logs\" (\"food_item_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_daily_logs_serving_food",
+      "tbl_name": "daily_logs",
+      "sql": "CREATE INDEX \"ix_daily_logs_serving_food\"\n    ON \"daily_logs\" (\"serving_definition_id\", \"food_item_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_food_items_active_source_identity",
+      "tbl_name": "food_items",
+      "sql": "CREATE UNIQUE INDEX \"ix_food_items_active_source_identity\"\n        ON \"food_items\" (\"user_id\", \"source_type\", \"source_id\")\n        WHERE \"deleted_at\" IS NULL\n          AND \"source_id\" IS NOT NULL\n          AND \"source_type\" != 'manual'"
+    },
+    {
+      "type": "index",
+      "name": "ix_food_items_source_identity_all",
+      "tbl_name": "food_items",
+      "sql": "CREATE INDEX \"ix_food_items_source_identity_all\"\n    ON \"food_items\" (\"user_id\", \"source_type\", \"source_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_food_nutrients_food_item_id",
+      "tbl_name": "food_nutrients",
+      "sql": "CREATE INDEX \"ix_food_nutrients_food_item_id\"\n    ON \"food_nutrients\" (\"food_item_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_food_sources_food_item_id",
+      "tbl_name": "food_sources",
+      "sql": "CREATE INDEX \"ix_food_sources_food_item_id\"\n    ON \"food_sources\" (\"food_item_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_log_snapshots_daily_log_food",
+      "tbl_name": "daily_log_nutrient_snapshots",
+      "sql": "CREATE INDEX \"ix_log_snapshots_daily_log_food\"\n    ON \"daily_log_nutrient_snapshots\" (\"daily_log_id\", \"source_food_item_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_log_snapshots_serving_food",
+      "tbl_name": "daily_log_nutrient_snapshots",
+      "sql": "CREATE INDEX \"ix_log_snapshots_serving_food\"\n    ON \"daily_log_nutrient_snapshots\" (\"serving_definition_id\", \"source_food_item_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_log_snapshots_source_nutrient_food",
+      "tbl_name": "daily_log_nutrient_snapshots",
+      "sql": "CREATE INDEX \"ix_log_snapshots_source_nutrient_food\"\n    ON \"daily_log_nutrient_snapshots\" (\"source_food_nutrient_id\", \"source_food_item_id\", \"nutrient_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_recipe_ingredients_food_item_id",
+      "tbl_name": "recipe_ingredients",
+      "sql": "CREATE INDEX \"ix_recipe_ingredients_food_item_id\"\n    ON \"recipe_ingredients\" (\"food_item_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_recipe_ingredients_food_owner",
+      "tbl_name": "recipe_ingredients",
+      "sql": "CREATE INDEX \"ix_recipe_ingredients_food_owner\"\n    ON \"recipe_ingredients\" (\"food_item_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_recipe_ingredients_recipe_owner",
+      "tbl_name": "recipe_ingredients",
+      "sql": "CREATE INDEX \"ix_recipe_ingredients_recipe_owner\"\n    ON \"recipe_ingredients\" (\"recipe_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_recipe_ingredients_serving_definition_id",
+      "tbl_name": "recipe_ingredients",
+      "sql": "CREATE INDEX \"ix_recipe_ingredients_serving_definition_id\"\n    ON \"recipe_ingredients\" (\"serving_definition_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_recipe_ingredients_serving_food",
+      "tbl_name": "recipe_ingredients",
+      "sql": "CREATE INDEX \"ix_recipe_ingredients_serving_food\"\n    ON \"recipe_ingredients\" (\"serving_definition_id\", \"food_item_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_recipes_publication_projection",
+      "tbl_name": "recipes",
+      "sql": "CREATE INDEX \"ix_recipes_publication_projection\"\n    ON \"recipes\" (\"published_food_item_id\", \"active_publication_revision_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_serving_definitions_food_item_id",
+      "tbl_name": "serving_definitions",
+      "sql": "CREATE INDEX \"ix_serving_definitions_food_item_id\"\n    ON \"serving_definitions\" (\"food_item_id\")"
+    },
+    {
+      "type": "index",
+      "name": "uq_food_items_publication_revision_projection",
+      "tbl_name": "food_items",
+      "sql": "CREATE UNIQUE INDEX \"uq_food_items_publication_revision_projection\"\n    ON \"food_items\" (\"recipe_publication_revision_id\")\n    WHERE \"recipe_publication_revision_id\" IS NOT NULL"
+    },
+    {
+      "type": "index",
+      "name": "uq_recipe_publication_amount_one_default",
+      "tbl_name": "recipe_publication_amount_definitions",
+      "sql": "CREATE UNIQUE INDEX \"uq_recipe_publication_amount_one_default\"\n    ON \"recipe_publication_amount_definitions\" (\"revision_id\") WHERE \"is_default\" = 1"
+    },
+    {
+      "type": "index",
+      "name": "uq_recipe_publication_amount_one_gram_mode",
+      "tbl_name": "recipe_publication_amount_definitions",
+      "sql": "CREATE UNIQUE INDEX \"uq_recipe_publication_amount_one_gram_mode\"\n    ON \"recipe_publication_amount_definitions\" (\"revision_id\") WHERE \"semantic_mode\" = 'g'"
+    },
+    {
+      "type": "index",
+      "name": "uq_serving_definitions_one_default_per_food",
+      "tbl_name": "serving_definitions",
+      "sql": "CREATE UNIQUE INDEX \"uq_serving_definitions_one_default_per_food\"\n    ON \"serving_definitions\" (\"food_item_id\") WHERE \"is_default\" = 1"
+    },
+    {
+      "type": "table",
+      "name": "create_operation_idempotency",
+      "tbl_name": "create_operation_idempotency",
+      "sql": "CREATE TABLE \"create_operation_idempotency\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"user_id\" TEXT NOT NULL,\n    \"operation\" TEXT NOT NULL,\n    \"client_request_id\" TEXT NOT NULL,\n    \"request_fingerprint\" TEXT NOT NULL,\n    \"resource_id\" TEXT NOT NULL,\n    \"response_snapshot\" TEXT,\n    \"completed_at\" TEXT,\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    CONSTRAINT \"uq_create_idempotency_user_operation_request\"\n      UNIQUE (\"user_id\", \"operation\", \"client_request_id\"),\n    CONSTRAINT \"ck_create_idempotency_completion_paired\"\n      CHECK ((\"response_snapshot\" IS NULL AND \"completed_at\" IS NULL)\n        OR (\"response_snapshot\" IS NOT NULL AND \"completed_at\" IS NOT NULL)),\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "daily_log_day_completions",
+      "tbl_name": "daily_log_day_completions",
+      "sql": "CREATE TABLE \"daily_log_day_completions\" (\n    \"logged_date\" TEXT PRIMARY KEY NOT NULL,\n    \"completed_at\" TEXT NOT NULL\n  )"
+    },
+    {
+      "type": "table",
+      "name": "daily_log_nutrient_snapshots",
+      "tbl_name": "daily_log_nutrient_snapshots",
+      "sql": "CREATE TABLE \"daily_log_nutrient_snapshots\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"daily_log_id\" TEXT NOT NULL,\n    \"source_food_item_id\" TEXT NOT NULL,\n    \"source_food_nutrient_id\" TEXT,\n    \"serving_definition_id\" TEXT,\n    \"nutrient_id\" TEXT NOT NULL,\n    \"amount\" TEXT,\n    \"unit\" TEXT NOT NULL,\n    \"data_status\" TEXT NOT NULL,\n    \"consumed_amount_quantity\" TEXT NOT NULL,\n    \"consumed_amount_unit\" TEXT NOT NULL,\n    \"consumed_gram_amount\" TEXT,\n    \"consumed_package_fraction\" TEXT,\n    \"calculation_metadata\" TEXT,\n    CONSTRAINT \"fk_log_snapshots_daily_log_food\"\n      FOREIGN KEY (\"daily_log_id\", \"source_food_item_id\")\n      REFERENCES \"daily_logs\" (\"id\", \"food_item_id\") DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT \"fk_log_snapshots_source_nutrient_food_identity\"\n      FOREIGN KEY (\"source_food_nutrient_id\", \"source_food_item_id\", \"nutrient_id\")\n      REFERENCES \"food_nutrients\" (\"id\", \"food_item_id\", \"nutrient_id\") DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT \"fk_log_snapshots_serving_food\"\n      FOREIGN KEY (\"serving_definition_id\", \"source_food_item_id\")\n      REFERENCES \"serving_definitions\" (\"id\", \"food_item_id\") DEFERRABLE INITIALLY DEFERRED,\n    FOREIGN KEY (\"daily_log_id\") REFERENCES \"daily_logs\" (\"id\"),\n    FOREIGN KEY (\"source_food_item_id\") REFERENCES \"food_items\" (\"id\"),\n    FOREIGN KEY (\"source_food_nutrient_id\") REFERENCES \"food_nutrients\" (\"id\") ON DELETE SET NULL,\n    FOREIGN KEY (\"serving_definition_id\") REFERENCES \"serving_definitions\" (\"id\") ON DELETE SET NULL,\n    FOREIGN KEY (\"nutrient_id\") REFERENCES \"nutrients\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "daily_logs",
+      "tbl_name": "daily_logs",
+      "sql": "CREATE TABLE \"daily_logs\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"user_id\" TEXT NOT NULL,\n    \"food_item_id\" TEXT NOT NULL,\n    \"food_name_snapshot\" TEXT,\n    \"client_request_id\" TEXT,\n    \"client_request_fingerprint\" TEXT,\n    \"logged_date\" TEXT NOT NULL,\n    \"meal_type\" TEXT,\n    \"amount_quantity\" TEXT NOT NULL,\n    \"amount_unit\" TEXT NOT NULL,\n    \"serving_definition_id\" TEXT,\n    \"recipe_publication_revision_id\" TEXT,\n    \"recipe_publication_amount_definition_id\" TEXT,\n    \"gram_amount\" TEXT,\n    \"package_fraction\" TEXT,\n    \"notes\" TEXT,\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    \"updated_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    CONSTRAINT \"ck_daily_logs_publication_links_paired\"\n      CHECK ((\"recipe_publication_revision_id\" IS NULL AND \"recipe_publication_amount_definition_id\" IS NULL)\n        OR (\"recipe_publication_revision_id\" IS NOT NULL AND \"recipe_publication_amount_definition_id\" IS NOT NULL)),\n    CONSTRAINT \"fk_daily_logs_publication_revision_owner\"\n      FOREIGN KEY (\"recipe_publication_revision_id\", \"user_id\")\n      REFERENCES \"recipe_publication_revisions\" (\"id\", \"user_id\") ON DELETE RESTRICT\n      DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT \"fk_daily_logs_food_owner\"\n      FOREIGN KEY (\"food_item_id\", \"user_id\") REFERENCES \"food_items\" (\"id\", \"user_id\")\n      DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT \"fk_daily_logs_serving_food\"\n      FOREIGN KEY (\"serving_definition_id\", \"food_item_id\")\n      REFERENCES \"serving_definitions\" (\"id\", \"food_item_id\")\n      DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT \"uq_daily_logs_identity_food\" UNIQUE (\"id\", \"food_item_id\"),\n    CONSTRAINT \"ck_daily_logs_client_request_paired\"\n      CHECK ((\"client_request_id\" IS NULL AND \"client_request_fingerprint\" IS NULL)\n        OR (\"client_request_id\" IS NOT NULL AND \"client_request_fingerprint\" IS NOT NULL)),\n    CONSTRAINT \"uq_daily_logs_user_client_request\" UNIQUE (\"user_id\", \"client_request_id\"),\n    CONSTRAINT \"fk_daily_logs_publication_amount_membership\"\n      FOREIGN KEY (\"recipe_publication_amount_definition_id\", \"recipe_publication_revision_id\")\n      REFERENCES \"recipe_publication_amount_definitions\" (\"id\", \"revision_id\") ON DELETE RESTRICT,\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\"),\n    FOREIGN KEY (\"food_item_id\") REFERENCES \"food_items\" (\"id\"),\n    FOREIGN KEY (\"serving_definition_id\") REFERENCES \"serving_definitions\" (\"id\") ON DELETE SET NULL\n  )"
+    },
+    {
+      "type": "table",
+      "name": "food_favorites",
+      "tbl_name": "food_favorites",
+      "sql": "CREATE TABLE \"food_favorites\" (\n    \"user_id\" TEXT NOT NULL,\n    \"food_item_id\" TEXT NOT NULL,\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    PRIMARY KEY (\"user_id\", \"food_item_id\"),\n    CONSTRAINT \"fk_food_favorites_food_owner\"\n      FOREIGN KEY (\"food_item_id\", \"user_id\") REFERENCES \"food_items\" (\"id\", \"user_id\") ON DELETE RESTRICT,\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "food_items",
+      "tbl_name": "food_items",
+      "sql": "CREATE TABLE \"food_items\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"user_id\" TEXT,\n    \"name\" TEXT NOT NULL,\n    \"brand\" TEXT,\n    \"source_type\" TEXT NOT NULL,\n    \"source_id\" TEXT,\n    \"recipe_publication_revision_id\" TEXT,\n    \"is_recipe\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_recipe\" IN (0, 1)),\n    \"notes\" TEXT,\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    \"updated_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    \"deleted_at\" TEXT,\n    CONSTRAINT \"ck_food_items_publication_revision_has_owner\"\n      CHECK (\"recipe_publication_revision_id\" IS NULL OR \"user_id\" IS NOT NULL),\n    CONSTRAINT \"uq_food_items_identity_user\" UNIQUE (\"id\", \"user_id\"),\n    CONSTRAINT \"uq_food_items_projection_identity_revision_owner\"\n      UNIQUE (\"id\", \"recipe_publication_revision_id\", \"user_id\"),\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\"),\n    CONSTRAINT \"fk_food_items_publication_revision_owner\"\n      FOREIGN KEY (\"recipe_publication_revision_id\", \"user_id\")\n      REFERENCES \"recipe_publication_revisions\" (\"id\", \"user_id\")\n      ON DELETE RESTRICT\n  )"
+    },
+    {
+      "type": "table",
+      "name": "food_nutrients",
+      "tbl_name": "food_nutrients",
+      "sql": "CREATE TABLE \"food_nutrients\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"food_item_id\" TEXT NOT NULL,\n    \"nutrient_id\" TEXT NOT NULL,\n    \"amount\" TEXT,\n    \"unit\" TEXT NOT NULL,\n    \"basis\" TEXT NOT NULL,\n    \"data_status\" TEXT NOT NULL,\n    \"confidence\" TEXT,\n    \"source\" TEXT NOT NULL,\n    \"is_user_confirmed\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_user_confirmed\" IN (0, 1)),\n    \"original_amount\" TEXT,\n    \"original_unit\" TEXT,\n    \"original_text\" TEXT,\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    \"updated_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    CONSTRAINT \"uq_food_nutrients_identity_food_nutrient\"\n      UNIQUE (\"id\", \"food_item_id\", \"nutrient_id\"),\n    FOREIGN KEY (\"food_item_id\") REFERENCES \"food_items\" (\"id\"),\n    FOREIGN KEY (\"nutrient_id\") REFERENCES \"nutrients\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "food_sources",
+      "tbl_name": "food_sources",
+      "sql": "CREATE TABLE \"food_sources\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"food_item_id\" TEXT NOT NULL,\n    \"source_type\" TEXT NOT NULL,\n    \"external_id\" TEXT,\n    \"raw_payload\" TEXT,\n    \"metadata\" TEXT,\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    FOREIGN KEY (\"food_item_id\") REFERENCES \"food_items\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "nutrients",
+      "tbl_name": "nutrients",
+      "sql": "CREATE TABLE \"nutrients\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"display_name\" TEXT NOT NULL,\n    \"nutrient_kind\" TEXT NOT NULL,\n    \"default_unit\" TEXT NOT NULL,\n    \"parent_nutrient_id\" TEXT,\n    \"display_order\" INTEGER NOT NULL,\n    FOREIGN KEY (\"parent_nutrient_id\") REFERENCES \"nutrients\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "nutrition_daily_log_snapshot_replacement_scopes",
+      "tbl_name": "nutrition_daily_log_snapshot_replacement_scopes",
+      "sql": "CREATE TABLE \"nutrition_daily_log_snapshot_replacement_scopes\" (\n    \"user_id\" TEXT NOT NULL,\n    \"daily_log_id\" TEXT NOT NULL,\n    \"original_snapshot_count\" INTEGER NOT NULL CHECK (\"original_snapshot_count\" >= 0),\n    \"deleted_snapshot_count\" INTEGER NOT NULL DEFAULT 0 CHECK (\"deleted_snapshot_count\" >= 0),\n    \"header_touched\" INTEGER NOT NULL DEFAULT 0 CHECK (\"header_touched\" IN (0, 1)),\n    PRIMARY KEY (\"user_id\", \"daily_log_id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "nutrition_schema_migrations",
+      "tbl_name": "nutrition_schema_migrations",
+      "sql": "CREATE TABLE \"nutrition_schema_migrations\" (\n  \"version\" INTEGER PRIMARY KEY NOT NULL CHECK (\"version\" > 0),\n  \"migration_id\" TEXT NOT NULL UNIQUE,\n  \"applied_at\" TEXT NOT NULL\n)"
+    },
+    {
+      "type": "table",
+      "name": "nutrition_targets",
+      "tbl_name": "nutrition_targets",
+      "sql": "CREATE TABLE \"nutrition_targets\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"user_id\" TEXT NOT NULL,\n    \"target_type\" TEXT NOT NULL,\n    \"nutrient_id\" TEXT NOT NULL,\n    \"min_amount\" TEXT,\n    \"target_amount\" TEXT,\n    \"max_amount\" TEXT,\n    \"unit\" TEXT NOT NULL,\n    \"basis\" TEXT NOT NULL,\n    \"source\" TEXT NOT NULL,\n    \"metadata\" TEXT,\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    \"updated_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    CONSTRAINT \"uq_nutrition_target_user_type_nutrient\"\n      UNIQUE (\"user_id\", \"target_type\", \"nutrient_id\"),\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\"),\n    FOREIGN KEY (\"nutrient_id\") REFERENCES \"nutrients\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "ocr_nutrition_confirmation_traces",
+      "tbl_name": "ocr_nutrition_confirmation_traces",
+      "sql": "CREATE TABLE \"ocr_nutrition_confirmation_traces\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"user_id\" TEXT NOT NULL,\n    \"food_item_id\" TEXT NOT NULL,\n    \"parser_version\" TEXT NOT NULL,\n    \"image_source_type\" TEXT NOT NULL,\n    \"schema_version\" TEXT NOT NULL,\n    \"trace_snapshot\" TEXT NOT NULL,\n    \"client_request_id\" TEXT NOT NULL,\n    \"request_fingerprint\" TEXT NOT NULL,\n    \"confirmed_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    CONSTRAINT \"uq_ocr_confirmation_food\" UNIQUE (\"food_item_id\"),\n    CONSTRAINT \"uq_ocr_confirmation_user_request\" UNIQUE (\"user_id\", \"client_request_id\"),\n    CONSTRAINT \"fk_ocr_confirmation_traces_food_owner\"\n      FOREIGN KEY (\"food_item_id\", \"user_id\") REFERENCES \"food_items\" (\"id\", \"user_id\"),\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\"),\n    FOREIGN KEY (\"food_item_id\") REFERENCES \"food_items\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "recipe_ingredients",
+      "tbl_name": "recipe_ingredients",
+      "sql": "CREATE TABLE \"recipe_ingredients\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"user_id\" TEXT NOT NULL,\n    \"recipe_id\" TEXT NOT NULL,\n    \"food_item_id\" TEXT NOT NULL,\n    \"position\" INTEGER NOT NULL,\n    \"amount_quantity\" TEXT NOT NULL,\n    \"amount_unit\" TEXT NOT NULL,\n    \"amount_display_quantity\" TEXT,\n    \"amount_display_unit\" TEXT,\n    \"serving_definition_id\" TEXT,\n    \"resolved_gram_amount\" TEXT,\n    \"preparation_note\" TEXT,\n    CONSTRAINT \"uq_recipe_ingredients_recipe_position\" UNIQUE (\"recipe_id\", \"position\"),\n    CONSTRAINT \"fk_recipe_ingredients_recipe_owner\"\n      FOREIGN KEY (\"recipe_id\", \"user_id\") REFERENCES \"recipes\" (\"id\", \"user_id\")\n      ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT \"fk_recipe_ingredients_food_owner\"\n      FOREIGN KEY (\"food_item_id\", \"user_id\") REFERENCES \"food_items\" (\"id\", \"user_id\")\n      DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT \"fk_recipe_ingredients_serving_food\"\n      FOREIGN KEY (\"serving_definition_id\", \"food_item_id\")\n      REFERENCES \"serving_definitions\" (\"id\", \"food_item_id\")\n      DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT \"ck_recipe_ingredients_amount_positive\"\n      CHECK (\"amount_quantity\" NOT LIKE '-%' AND \"amount_quantity\" <> '0.000000'),\n    CONSTRAINT \"ck_recipe_ingredients_grams_positive\"\n      CHECK (\"resolved_gram_amount\" IS NULL OR (\"resolved_gram_amount\" NOT LIKE '-%' AND \"resolved_gram_amount\" <> '0.000000')),\n    FOREIGN KEY (\"recipe_id\") REFERENCES \"recipes\" (\"id\") ON DELETE CASCADE,\n    FOREIGN KEY (\"food_item_id\") REFERENCES \"food_items\" (\"id\"),\n    FOREIGN KEY (\"serving_definition_id\") REFERENCES \"serving_definitions\" (\"id\") ON DELETE SET NULL\n  )"
+    },
+    {
+      "type": "table",
+      "name": "recipe_publication_amount_definitions",
+      "tbl_name": "recipe_publication_amount_definitions",
+      "sql": "CREATE TABLE \"recipe_publication_amount_definitions\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"revision_id\" TEXT NOT NULL,\n    \"display_order\" INTEGER NOT NULL,\n    \"display_label\" TEXT NOT NULL,\n    \"semantic_mode\" TEXT NOT NULL,\n    \"display_quantity\" TEXT,\n    \"display_unit\" TEXT NOT NULL,\n    \"gram_equivalent\" TEXT,\n    \"is_default\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_default\" IN (0, 1)),\n    \"conversion_metadata\" TEXT,\n    CONSTRAINT \"uq_recipe_publication_amount_identity_revision\" UNIQUE (\"id\", \"revision_id\"),\n    CONSTRAINT \"uq_recipe_publication_amount_order\" UNIQUE (\"revision_id\", \"display_order\"),\n    CONSTRAINT \"uq_recipe_publication_amount_semantic_label\"\n      UNIQUE (\"revision_id\", \"semantic_mode\", \"display_label\"),\n    CONSTRAINT \"ck_recipe_publication_amount_order_nonnegative\" CHECK (\"display_order\" >= 0),\n    CONSTRAINT \"ck_recipe_publication_amount_semantic_mode\" CHECK (\"semantic_mode\" IN ('serving', 'g')),\n    CONSTRAINT \"ck_recipe_publication_amount_mode_shape\"\n      CHECK ((\"semantic_mode\" = 'g' AND \"display_quantity\" IS NULL AND \"display_unit\" = 'g' AND \"gram_equivalent\" IS NULL)\n        OR (\"semantic_mode\" = 'serving' AND \"display_quantity\" IS NOT NULL AND \"display_quantity\" NOT LIKE '-%' AND \"display_quantity\" <> '0.000000')),\n    CONSTRAINT \"ck_recipe_publication_amount_grams_positive\"\n      CHECK (\"gram_equivalent\" IS NULL OR (\"gram_equivalent\" NOT LIKE '-%' AND \"gram_equivalent\" <> '0.000000')),\n    FOREIGN KEY (\"revision_id\") REFERENCES \"recipe_publication_revisions\" (\"id\") ON DELETE RESTRICT\n  )"
+    },
+    {
+      "type": "table",
+      "name": "recipe_publication_nutrients",
+      "tbl_name": "recipe_publication_nutrients",
+      "sql": "CREATE TABLE \"recipe_publication_nutrients\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"revision_id\" TEXT NOT NULL,\n    \"nutrient_id\" TEXT NOT NULL,\n    \"amount\" TEXT,\n    \"unit\" TEXT NOT NULL,\n    \"basis\" TEXT NOT NULL,\n    \"data_status\" TEXT NOT NULL,\n    \"diagnostic_provenance\" TEXT,\n    CONSTRAINT \"uq_recipe_publication_nutrient_identity_basis\"\n      UNIQUE (\"revision_id\", \"nutrient_id\", \"basis\"),\n    CONSTRAINT \"ck_recipe_publication_nutrient_basis\"\n      CHECK (\"basis\" IN ('per_serving', 'per_100g', 'per_gram')),\n    CONSTRAINT \"ck_recipe_publication_nutrient_status\"\n      CHECK (\"data_status\" IN ('known', 'estimated', 'unknown', 'zero')),\n    CONSTRAINT \"ck_recipe_publication_nutrient_nonnegative\"\n      CHECK (\"amount\" IS NULL OR \"amount\" NOT LIKE '-%'),\n    CONSTRAINT \"ck_recipe_publication_nutrient_status_amount\"\n      CHECK ((\"data_status\" = 'unknown' AND \"amount\" IS NULL)\n        OR (\"data_status\" = 'zero' AND \"amount\" = '0.000000')\n        OR (\"data_status\" IN ('known', 'estimated') AND \"amount\" IS NOT NULL)),\n    FOREIGN KEY (\"revision_id\") REFERENCES \"recipe_publication_revisions\" (\"id\") ON DELETE RESTRICT,\n    FOREIGN KEY (\"nutrient_id\") REFERENCES \"nutrients\" (\"id\") ON DELETE RESTRICT\n  )"
+    },
+    {
+      "type": "table",
+      "name": "recipe_publication_revisions",
+      "tbl_name": "recipe_publication_revisions",
+      "sql": "CREATE TABLE \"recipe_publication_revisions\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"recipe_id\" TEXT NOT NULL,\n    \"user_id\" TEXT NOT NULL,\n    \"revision_number\" INTEGER NOT NULL,\n    \"published_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    \"creation_origin\" TEXT NOT NULL,\n    \"provenance_confidence\" TEXT NOT NULL,\n    \"published_name\" TEXT NOT NULL,\n    \"published_notes\" TEXT,\n    \"content_digest\" TEXT NOT NULL,\n    CONSTRAINT \"uq_recipe_publication_revision_number\"\n      UNIQUE (\"recipe_id\", \"revision_number\"),\n    CONSTRAINT \"uq_recipe_publication_revision_identity_owner\"\n      UNIQUE (\"id\", \"recipe_id\", \"user_id\"),\n    CONSTRAINT \"uq_recipe_publication_revision_identity_user\"\n      UNIQUE (\"id\", \"user_id\"),\n    CONSTRAINT \"ck_recipe_publication_revision_number_positive\" CHECK (\"revision_number\" > 0),\n    CONSTRAINT \"ck_recipe_publication_revision_origin\"\n      CHECK (\"creation_origin\" IN ('normal_publication', 'explicit_republish', 'legacy_projection_capture')),\n    CONSTRAINT \"ck_recipe_publication_revision_provenance\"\n      CHECK (\"provenance_confidence\" IN ('complete', 'transition_baseline', 'partial', 'ambiguous')),\n    CONSTRAINT \"fk_recipe_publication_revision_recipe_owner\"\n      FOREIGN KEY (\"recipe_id\", \"user_id\") REFERENCES \"recipes\" (\"id\", \"user_id\")\n      ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\") ON DELETE RESTRICT\n  )"
+    },
+    {
+      "type": "table",
+      "name": "recipes",
+      "tbl_name": "recipes",
+      "sql": "CREATE TABLE \"recipes\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"user_id\" TEXT NOT NULL,\n    \"published_food_item_id\" TEXT,\n    \"active_publication_revision_id\" TEXT,\n    \"name\" TEXT NOT NULL,\n    \"notes\" TEXT,\n    \"serving_count_yield\" TEXT,\n    \"final_cooked_weight_grams\" TEXT,\n    \"final_cooked_weight_display_quantity\" TEXT,\n    \"final_cooked_weight_display_unit\" TEXT,\n    \"needs_republish\" INTEGER NOT NULL DEFAULT 0 CHECK (\"needs_republish\" IN (0, 1)),\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    \"updated_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    \"deleted_at\" TEXT,\n    CONSTRAINT \"ck_recipes_serving_count_positive\"\n      CHECK (\"serving_count_yield\" IS NULL OR (\"serving_count_yield\" NOT LIKE '-%' AND \"serving_count_yield\" <> '0.000000')),\n    CONSTRAINT \"ck_recipes_final_weight_positive\"\n      CHECK (\"final_cooked_weight_grams\" IS NULL OR (\"final_cooked_weight_grams\" NOT LIKE '-%' AND \"final_cooked_weight_grams\" <> '0.000000')),\n    CONSTRAINT \"ck_recipes_publication_links_paired\"\n      CHECK ((\"published_food_item_id\" IS NULL) = (\"active_publication_revision_id\" IS NULL)),\n    CONSTRAINT \"uq_recipes_id_user_id\" UNIQUE (\"id\", \"user_id\"),\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\"),\n    CONSTRAINT \"fk_recipes_active_publication_revision_owner\"\n      FOREIGN KEY (\"active_publication_revision_id\", \"id\", \"user_id\")\n      REFERENCES \"recipe_publication_revisions\" (\"id\", \"recipe_id\", \"user_id\")\n      ON DELETE RESTRICT\n      DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT \"fk_recipes_publication_projection\"\n      FOREIGN KEY (\"published_food_item_id\", \"active_publication_revision_id\", \"user_id\")\n      REFERENCES \"food_items\" (\"id\", \"recipe_publication_revision_id\", \"user_id\")\n      DEFERRABLE INITIALLY DEFERRED,\n    FOREIGN KEY (\"published_food_item_id\") REFERENCES \"food_items\" (\"id\") ON DELETE SET NULL\n  )"
+    },
+    {
+      "type": "table",
+      "name": "serving_definitions",
+      "tbl_name": "serving_definitions",
+      "sql": "CREATE TABLE \"serving_definitions\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"food_item_id\" TEXT NOT NULL,\n    \"label\" TEXT NOT NULL,\n    \"quantity\" TEXT NOT NULL,\n    \"unit\" TEXT NOT NULL,\n    \"gram_weight\" TEXT,\n    \"reference_quantity\" TEXT,\n    \"reference_unit\" TEXT,\n    \"reference_gram_weight\" TEXT,\n    \"is_default\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_default\" IN (0, 1)),\n    \"source\" TEXT NOT NULL,\n    \"confidence\" TEXT,\n    \"is_user_confirmed\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_user_confirmed\" IN (0, 1)),\n    CONSTRAINT \"uq_serving_definitions_identity_food\" UNIQUE (\"id\", \"food_item_id\"),\n    FOREIGN KEY (\"food_item_id\") REFERENCES \"food_items\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "user_profiles",
+      "tbl_name": "user_profiles",
+      "sql": "CREATE TABLE \"user_profiles\" (\n    \"user_id\" TEXT PRIMARY KEY NOT NULL,\n    \"birth_date\" TEXT,\n    \"height_cm\" TEXT,\n    \"weight_kg\" TEXT,\n    \"biological_sex_for_reference_calculations\" TEXT,\n    \"activity_level\" TEXT,\n    \"energy_estimation_context\" TEXT NOT NULL DEFAULT 'general_adult',\n    \"authoritative_time_zone\" TEXT,\n    \"calendar_revision\" INTEGER NOT NULL DEFAULT 0 CHECK (\"calendar_revision\" >= 0),\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    \"updated_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\")\n  )"
+    },
+    {
+      "type": "table",
+      "name": "users",
+      "tbl_name": "users",
+      "sql": "CREATE TABLE \"users\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"email\" TEXT NOT NULL UNIQUE,\n    \"display_name\" TEXT,\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END)\n  )"
+    },
+    {
+      "type": "trigger",
+      "name": "nutrition_snapshot_scope_validate_insert",
+      "tbl_name": "nutrition_daily_log_snapshot_replacement_scopes",
+      "sql": "CREATE TRIGGER \"nutrition_snapshot_scope_validate_insert\"\n    BEFORE INSERT ON \"nutrition_daily_log_snapshot_replacement_scopes\"\n    WHEN NOT EXISTS (\n      SELECT 1 FROM \"daily_logs\"\n      WHERE \"id\" = NEW.\"daily_log_id\" AND \"user_id\" = NEW.\"user_id\"\n    ) OR NEW.\"original_snapshot_count\" IS NOT (\n      SELECT COUNT(*) FROM \"daily_log_nutrient_snapshots\"\n      WHERE \"daily_log_id\" = NEW.\"daily_log_id\"\n    )\n    BEGIN\n      SELECT RAISE(ABORT, 'sqlite_snapshot_scope_owner_mismatch');\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_daily_log_immutable_update",
+      "tbl_name": "daily_logs",
+      "sql": "CREATE TRIGGER \"phase0020_daily_log_immutable_update\"\n    BEFORE UPDATE ON \"daily_logs\"\n    WHEN OLD.\"id\" IS NOT NEW.\"id\"\n      OR OLD.\"user_id\" IS NOT NEW.\"user_id\"\n      OR OLD.\"food_item_id\" IS NOT NEW.\"food_item_id\"\n      OR OLD.\"food_name_snapshot\" IS NOT NEW.\"food_name_snapshot\"\n      OR OLD.\"client_request_id\" IS NOT NEW.\"client_request_id\"\n      OR OLD.\"client_request_fingerprint\" IS NOT NEW.\"client_request_fingerprint\"\n      OR OLD.\"created_at\" IS NOT NEW.\"created_at\"\n      OR (\n        NOT (\n          OLD.\"amount_quantity\" IS NEW.\"amount_quantity\"\n          AND OLD.\"amount_unit\" IS NEW.\"amount_unit\"\n          AND OLD.\"serving_definition_id\" IS NEW.\"serving_definition_id\"\n          AND OLD.\"recipe_publication_revision_id\" IS NEW.\"recipe_publication_revision_id\"\n          AND OLD.\"recipe_publication_amount_definition_id\" IS NEW.\"recipe_publication_amount_definition_id\"\n          AND OLD.\"gram_amount\" IS NEW.\"gram_amount\"\n          AND OLD.\"package_fraction\" IS NEW.\"package_fraction\"\n        )\n        AND NOT EXISTS (\n          SELECT 1 FROM \"nutrition_daily_log_snapshot_replacement_scopes\"\n          WHERE \"user_id\" = OLD.\"user_id\" AND \"daily_log_id\" = OLD.\"id\"\n        )\n        AND NOT (\n          OLD.\"serving_definition_id\" IS NOT NULL\n          AND NEW.\"serving_definition_id\" IS NULL\n          AND NOT EXISTS (\n            SELECT 1 FROM \"serving_definitions\"\n            WHERE \"id\" = OLD.\"serving_definition_id\"\n          )\n          AND OLD.\"id\" IS NEW.\"id\"\n          AND OLD.\"user_id\" IS NEW.\"user_id\"\n          AND OLD.\"food_item_id\" IS NEW.\"food_item_id\"\n          AND OLD.\"food_name_snapshot\" IS NEW.\"food_name_snapshot\"\n          AND OLD.\"client_request_id\" IS NEW.\"client_request_id\"\n          AND OLD.\"client_request_fingerprint\" IS NEW.\"client_request_fingerprint\"\n          AND OLD.\"logged_date\" IS NEW.\"logged_date\"\n          AND OLD.\"meal_type\" IS NEW.\"meal_type\"\n          AND OLD.\"amount_quantity\" IS NEW.\"amount_quantity\"\n          AND OLD.\"amount_unit\" IS NEW.\"amount_unit\"\n          AND OLD.\"recipe_publication_revision_id\" IS NEW.\"recipe_publication_revision_id\"\n          AND OLD.\"recipe_publication_amount_definition_id\" IS NEW.\"recipe_publication_amount_definition_id\"\n          AND OLD.\"gram_amount\" IS NEW.\"gram_amount\"\n          AND OLD.\"package_fraction\" IS NEW.\"package_fraction\"\n          AND OLD.\"notes\" IS NEW.\"notes\"\n          AND OLD.\"created_at\" IS NEW.\"created_at\"\n          AND OLD.\"updated_at\" IS NEW.\"updated_at\"\n        )\n      )\n    BEGIN\n      SELECT RAISE(ABORT, 'phase0020_daily_log_immutable_update');\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_daily_log_replacement_header_touched",
+      "tbl_name": "daily_logs",
+      "sql": "CREATE TRIGGER \"phase0020_daily_log_replacement_header_touched\"\n    AFTER UPDATE ON \"daily_logs\"\n    WHEN EXISTS (\n      SELECT 1 FROM \"nutrition_daily_log_snapshot_replacement_scopes\"\n      WHERE \"user_id\" = OLD.\"user_id\" AND \"daily_log_id\" = OLD.\"id\"\n    )\n      AND NOT EXISTS (\n        SELECT 1 FROM \"daily_log_nutrient_snapshots\"\n        WHERE \"daily_log_id\" = OLD.\"id\"\n      )\n      AND NOT (\n        OLD.\"serving_definition_id\" IS NOT NULL\n        AND NEW.\"serving_definition_id\" IS NULL\n        AND NOT EXISTS (\n          SELECT 1 FROM \"serving_definitions\"\n          WHERE \"id\" = OLD.\"serving_definition_id\"\n        )\n        AND OLD.\"id\" IS NEW.\"id\"\n        AND OLD.\"user_id\" IS NEW.\"user_id\"\n        AND OLD.\"food_item_id\" IS NEW.\"food_item_id\"\n        AND OLD.\"food_name_snapshot\" IS NEW.\"food_name_snapshot\"\n        AND OLD.\"client_request_id\" IS NEW.\"client_request_id\"\n        AND OLD.\"client_request_fingerprint\" IS NEW.\"client_request_fingerprint\"\n        AND OLD.\"logged_date\" IS NEW.\"logged_date\"\n        AND OLD.\"meal_type\" IS NEW.\"meal_type\"\n        AND OLD.\"amount_quantity\" IS NEW.\"amount_quantity\"\n        AND OLD.\"amount_unit\" IS NEW.\"amount_unit\"\n        AND OLD.\"recipe_publication_revision_id\" IS NEW.\"recipe_publication_revision_id\"\n        AND OLD.\"recipe_publication_amount_definition_id\" IS NEW.\"recipe_publication_amount_definition_id\"\n        AND OLD.\"gram_amount\" IS NEW.\"gram_amount\"\n        AND OLD.\"package_fraction\" IS NEW.\"package_fraction\"\n        AND OLD.\"notes\" IS NEW.\"notes\"\n        AND OLD.\"created_at\" IS NEW.\"created_at\"\n        AND OLD.\"updated_at\" IS NEW.\"updated_at\"\n      )\n    BEGIN\n      UPDATE \"nutrition_daily_log_snapshot_replacement_scopes\"\n      SET \"header_touched\" = 1\n      WHERE \"user_id\" = OLD.\"user_id\" AND \"daily_log_id\" = OLD.\"id\";\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_ocr_trace_immutable_delete",
+      "tbl_name": "ocr_nutrition_confirmation_traces",
+      "sql": "CREATE TRIGGER \"phase0020_ocr_trace_immutable_delete\"\n      BEFORE DELETE ON \"ocr_nutrition_confirmation_traces\"\n      BEGIN\n        SELECT RAISE(ABORT, 'phase0020_immutable_row_mutation');\n      END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_ocr_trace_immutable_update",
+      "tbl_name": "ocr_nutrition_confirmation_traces",
+      "sql": "CREATE TRIGGER \"phase0020_ocr_trace_immutable_update\"\n      BEFORE UPDATE ON \"ocr_nutrition_confirmation_traces\"\n      BEGIN\n        SELECT RAISE(ABORT, 'phase0020_immutable_row_mutation');\n      END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_revision_amount_immutable_delete",
+      "tbl_name": "recipe_publication_amount_definitions",
+      "sql": "CREATE TRIGGER \"phase0020_revision_amount_immutable_delete\"\n      BEFORE DELETE ON \"recipe_publication_amount_definitions\"\n      BEGIN\n        SELECT RAISE(ABORT, 'phase0020_immutable_row_mutation');\n      END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_revision_amount_immutable_update",
+      "tbl_name": "recipe_publication_amount_definitions",
+      "sql": "CREATE TRIGGER \"phase0020_revision_amount_immutable_update\"\n      BEFORE UPDATE ON \"recipe_publication_amount_definitions\"\n      BEGIN\n        SELECT RAISE(ABORT, 'phase0020_immutable_row_mutation');\n      END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_revision_immutable_delete",
+      "tbl_name": "recipe_publication_revisions",
+      "sql": "CREATE TRIGGER \"phase0020_revision_immutable_delete\"\n      BEFORE DELETE ON \"recipe_publication_revisions\"\n      BEGIN\n        SELECT RAISE(ABORT, 'phase0020_immutable_row_mutation');\n      END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_revision_immutable_update",
+      "tbl_name": "recipe_publication_revisions",
+      "sql": "CREATE TRIGGER \"phase0020_revision_immutable_update\"\n      BEFORE UPDATE ON \"recipe_publication_revisions\"\n      BEGIN\n        SELECT RAISE(ABORT, 'phase0020_immutable_row_mutation');\n      END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_revision_nutrient_immutable_delete",
+      "tbl_name": "recipe_publication_nutrients",
+      "sql": "CREATE TRIGGER \"phase0020_revision_nutrient_immutable_delete\"\n      BEFORE DELETE ON \"recipe_publication_nutrients\"\n      BEGIN\n        SELECT RAISE(ABORT, 'phase0020_immutable_row_mutation');\n      END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_revision_nutrient_immutable_update",
+      "tbl_name": "recipe_publication_nutrients",
+      "sql": "CREATE TRIGGER \"phase0020_revision_nutrient_immutable_update\"\n      BEFORE UPDATE ON \"recipe_publication_nutrients\"\n      BEGIN\n        SELECT RAISE(ABORT, 'phase0020_immutable_row_mutation');\n      END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_snapshot_immutable_delete",
+      "tbl_name": "daily_log_nutrient_snapshots",
+      "sql": "CREATE TRIGGER \"phase0020_snapshot_immutable_delete\"\n    BEFORE DELETE ON \"daily_log_nutrient_snapshots\"\n    WHEN EXISTS (SELECT 1 FROM \"daily_logs\" WHERE \"id\" = OLD.\"daily_log_id\")\n      AND NOT EXISTS (\n        SELECT 1 FROM \"nutrition_daily_log_snapshot_replacement_scopes\"\n        WHERE \"user_id\" = (SELECT \"user_id\" FROM \"daily_logs\" WHERE \"id\" = OLD.\"daily_log_id\")\n          AND \"daily_log_id\" = OLD.\"daily_log_id\"\n      )\n    BEGIN\n      SELECT RAISE(ABORT, 'phase0020_snapshot_immutable_delete');\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_snapshot_immutable_update",
+      "tbl_name": "daily_log_nutrient_snapshots",
+      "sql": "CREATE TRIGGER \"phase0020_snapshot_immutable_update\"\n    BEFORE UPDATE ON \"daily_log_nutrient_snapshots\"\n    WHEN NOT (\n      OLD.\"id\" IS NEW.\"id\"\n      AND OLD.\"daily_log_id\" IS NEW.\"daily_log_id\"\n      AND OLD.\"source_food_item_id\" IS NEW.\"source_food_item_id\"\n      AND OLD.\"nutrient_id\" IS NEW.\"nutrient_id\"\n      AND OLD.\"amount\" IS NEW.\"amount\"\n      AND OLD.\"unit\" IS NEW.\"unit\"\n      AND OLD.\"data_status\" IS NEW.\"data_status\"\n      AND OLD.\"consumed_amount_quantity\" IS NEW.\"consumed_amount_quantity\"\n      AND OLD.\"consumed_amount_unit\" IS NEW.\"consumed_amount_unit\"\n      AND OLD.\"consumed_gram_amount\" IS NEW.\"consumed_gram_amount\"\n      AND OLD.\"consumed_package_fraction\" IS NEW.\"consumed_package_fraction\"\n      AND OLD.\"calculation_metadata\" IS NEW.\"calculation_metadata\"\n      AND (\n        OLD.\"source_food_nutrient_id\" IS NOT NEW.\"source_food_nutrient_id\"\n        OR OLD.\"serving_definition_id\" IS NOT NEW.\"serving_definition_id\"\n      )\n      AND (\n        OLD.\"source_food_nutrient_id\" IS NEW.\"source_food_nutrient_id\"\n        OR (OLD.\"source_food_nutrient_id\" IS NOT NULL AND NEW.\"source_food_nutrient_id\" IS NULL\n          AND NOT EXISTS (SELECT 1 FROM \"food_nutrients\" WHERE \"id\" = OLD.\"source_food_nutrient_id\"))\n      )\n      AND (\n        OLD.\"serving_definition_id\" IS NEW.\"serving_definition_id\"\n        OR (OLD.\"serving_definition_id\" IS NOT NULL AND NEW.\"serving_definition_id\" IS NULL\n          AND NOT EXISTS (SELECT 1 FROM \"serving_definitions\" WHERE \"id\" = OLD.\"serving_definition_id\"))\n      )\n    )\n    BEGIN\n      SELECT RAISE(ABORT, 'phase0020_snapshot_immutable_update');\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "phase0020_snapshot_replacement_delete_count",
+      "tbl_name": "daily_log_nutrient_snapshots",
+      "sql": "CREATE TRIGGER \"phase0020_snapshot_replacement_delete_count\"\n    AFTER DELETE ON \"daily_log_nutrient_snapshots\"\n    WHEN EXISTS (\n      SELECT 1 FROM \"nutrition_daily_log_snapshot_replacement_scopes\"\n      WHERE \"daily_log_id\" = OLD.\"daily_log_id\"\n    )\n    BEGIN\n      UPDATE \"nutrition_daily_log_snapshot_replacement_scopes\"\n      SET \"deleted_snapshot_count\" = \"deleted_snapshot_count\" + 1\n      WHERE \"daily_log_id\" = OLD.\"daily_log_id\";\n    END"
+    }
+  ],
+  "tables": {
+    "create_operation_idempotency": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "operation",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "client_request_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "request_fingerprint",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "resource_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "response_snapshot",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "completed_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "daily_log_day_completions": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "logged_date",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "completed_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "daily_log_nutrient_snapshots": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "daily_log_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "source_food_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "source_food_nutrient_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "serving_definition_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "nutrient_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "data_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "consumed_amount_quantity",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 10,
+          "name": "consumed_amount_unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 11,
+          "name": "consumed_gram_amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 12,
+          "name": "consumed_package_fraction",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 13,
+          "name": "calculation_metadata",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "nutrients",
+          "from": "nutrient_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "serving_definitions",
+          "from": "serving_definition_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET NULL",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 0,
+          "table": "food_nutrients",
+          "from": "source_food_nutrient_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET NULL",
+          "match": "NONE"
+        },
+        {
+          "id": 3,
+          "seq": 0,
+          "table": "food_items",
+          "from": "source_food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 4,
+          "seq": 0,
+          "table": "daily_logs",
+          "from": "daily_log_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 5,
+          "seq": 0,
+          "table": "serving_definitions",
+          "from": "serving_definition_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 5,
+          "seq": 1,
+          "table": "serving_definitions",
+          "from": "source_food_item_id",
+          "to": "food_item_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 6,
+          "seq": 0,
+          "table": "food_nutrients",
+          "from": "source_food_nutrient_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 6,
+          "seq": 1,
+          "table": "food_nutrients",
+          "from": "source_food_item_id",
+          "to": "food_item_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 6,
+          "seq": 2,
+          "table": "food_nutrients",
+          "from": "nutrient_id",
+          "to": "nutrient_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 7,
+          "seq": 0,
+          "table": "daily_logs",
+          "from": "daily_log_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 7,
+          "seq": 1,
+          "table": "daily_logs",
+          "from": "source_food_item_id",
+          "to": "food_item_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "daily_logs": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "food_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "food_name_snapshot",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "client_request_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "client_request_fingerprint",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "logged_date",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "meal_type",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "amount_quantity",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "amount_unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 10,
+          "name": "serving_definition_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 11,
+          "name": "recipe_publication_revision_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 12,
+          "name": "recipe_publication_amount_definition_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 13,
+          "name": "gram_amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 14,
+          "name": "package_fraction",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 15,
+          "name": "notes",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 16,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 17,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "serving_definitions",
+          "from": "serving_definition_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET NULL",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 3,
+          "seq": 0,
+          "table": "recipe_publication_amount_definitions",
+          "from": "recipe_publication_amount_definition_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 3,
+          "seq": 1,
+          "table": "recipe_publication_amount_definitions",
+          "from": "recipe_publication_revision_id",
+          "to": "revision_id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 4,
+          "seq": 0,
+          "table": "serving_definitions",
+          "from": "serving_definition_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 4,
+          "seq": 1,
+          "table": "serving_definitions",
+          "from": "food_item_id",
+          "to": "food_item_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 5,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 5,
+          "seq": 1,
+          "table": "food_items",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 6,
+          "seq": 0,
+          "table": "recipe_publication_revisions",
+          "from": "recipe_publication_revision_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 6,
+          "seq": 1,
+          "table": "recipe_publication_revisions",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        }
+      ]
+    },
+    "food_favorites": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "food_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 2,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 1,
+          "table": "food_items",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        }
+      ]
+    },
+    "food_items": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "brand",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "source_type",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "source_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "recipe_publication_revision_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "is_recipe",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": "0",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "notes",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 11,
+          "name": "deleted_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "recipe_publication_revisions",
+          "from": "recipe_publication_revision_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 0,
+          "seq": 1,
+          "table": "recipe_publication_revisions",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "food_nutrients": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "food_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "nutrient_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "basis",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "data_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "confidence",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "is_user_confirmed",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": "0",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 10,
+          "name": "original_amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 11,
+          "name": "original_unit",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 12,
+          "name": "original_text",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 13,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 14,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "nutrients",
+          "from": "nutrient_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "food_sources": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "food_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "source_type",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "external_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "raw_payload",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "metadata",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "nutrients": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "display_name",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "nutrient_kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "default_unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "parent_nutrient_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "display_order",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "nutrients",
+          "from": "parent_nutrient_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "nutrition_daily_log_snapshot_replacement_scopes": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "daily_log_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 2,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "original_snapshot_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "deleted_snapshot_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": "0",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "header_touched",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": "0",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "nutrition_schema_migrations": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "migration_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "nutrition_targets": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "target_type",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "nutrient_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "min_amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "target_amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "max_amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "basis",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 10,
+          "name": "metadata",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 11,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 12,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "nutrients",
+          "from": "nutrient_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "ocr_nutrition_confirmation_traces": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "food_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "parser_version",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "image_source_type",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "schema_version",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "trace_snapshot",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "client_request_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "request_fingerprint",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "confirmed_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 1,
+          "table": "food_items",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "recipe_ingredients": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "recipe_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "food_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "position",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "amount_quantity",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "amount_unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "amount_display_quantity",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "amount_display_unit",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "serving_definition_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 10,
+          "name": "resolved_gram_amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 11,
+          "name": "preparation_note",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "serving_definitions",
+          "from": "serving_definition_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET NULL",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 0,
+          "table": "recipes",
+          "from": "recipe_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 3,
+          "seq": 0,
+          "table": "serving_definitions",
+          "from": "serving_definition_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 3,
+          "seq": 1,
+          "table": "serving_definitions",
+          "from": "food_item_id",
+          "to": "food_item_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 4,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 4,
+          "seq": 1,
+          "table": "food_items",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 5,
+          "seq": 0,
+          "table": "recipes",
+          "from": "recipe_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 5,
+          "seq": 1,
+          "table": "recipes",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ]
+    },
+    "recipe_publication_amount_definitions": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "revision_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "display_order",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "display_label",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "semantic_mode",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "display_quantity",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "display_unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "gram_equivalent",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "is_default",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": "0",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "conversion_metadata",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "recipe_publication_revisions",
+          "from": "revision_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        }
+      ]
+    },
+    "recipe_publication_nutrients": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "revision_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "nutrient_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "amount",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "basis",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "data_status",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "diagnostic_provenance",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "nutrients",
+          "from": "nutrient_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "recipe_publication_revisions",
+          "from": "revision_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        }
+      ]
+    },
+    "recipe_publication_revisions": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "recipe_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "revision_number",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "published_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "creation_origin",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "provenance_confidence",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "published_name",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "published_notes",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "content_digest",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "recipes",
+          "from": "recipe_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 1,
+          "table": "recipes",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        }
+      ]
+    },
+    "recipes": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "published_food_item_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "active_publication_revision_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "notes",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "serving_count_yield",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "final_cooked_weight_grams",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "final_cooked_weight_display_quantity",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "final_cooked_weight_display_unit",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 10,
+          "name": "needs_republish",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": "0",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 11,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 12,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 13,
+          "name": "deleted_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "food_items",
+          "from": "published_food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET NULL",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "food_items",
+          "from": "published_food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 1,
+          "table": "food_items",
+          "from": "active_publication_revision_id",
+          "to": "recipe_publication_revision_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 2,
+          "table": "food_items",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 0,
+          "table": "recipe_publication_revisions",
+          "from": "active_publication_revision_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 1,
+          "table": "recipe_publication_revisions",
+          "from": "id",
+          "to": "recipe_id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 2,
+          "table": "recipe_publication_revisions",
+          "from": "user_id",
+          "to": "user_id",
+          "on_update": "NO ACTION",
+          "on_delete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 3,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "serving_definitions": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "food_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "label",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "quantity",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "unit",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "gram_weight",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "reference_quantity",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "reference_unit",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "reference_gram_weight",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "is_default",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": "0",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 10,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 11,
+          "name": "confidence",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 12,
+          "name": "is_user_confirmed",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": "0",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "food_items",
+          "from": "food_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "user_profiles": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "birth_date",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "height_cm",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "weight_kg",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 4,
+          "name": "biological_sex_for_reference_calculations",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 5,
+          "name": "activity_level",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 6,
+          "name": "energy_estimation_context",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "'general_adult'",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 7,
+          "name": "authoritative_time_zone",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 8,
+          "name": "calendar_revision",
+          "type": "INTEGER",
+          "notnull": 1,
+          "default": "0",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 9,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    "users": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 1,
+          "hidden": 0
+        },
+        {
+          "cid": 1,
+          "name": "email",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 2,
+          "name": "display_name",
+          "type": "TEXT",
+          "notnull": 0,
+          "default": null,
+          "primary_key_position": 0,
+          "hidden": 0
+        },
+        {
+          "cid": 3,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "default": "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END",
+          "primary_key_position": 0,
+          "hidden": 0
+        }
+      ],
+      "foreign_keys": []
+    }
+  }
+}

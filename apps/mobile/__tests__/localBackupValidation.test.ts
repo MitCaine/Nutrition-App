@@ -272,9 +272,9 @@ describe("local backup validation", () => {
     try {
       const requirements =
         getLocalBackupSchemaRequirements(SQLITE_SCHEMA_VERSION);
-      expect(SQLITE_SCHEMA_VERSION).toBe(7);
+      expect(SQLITE_SCHEMA_VERSION).toBe(8);
       expect(getLocalBackupSchemaRequirements(6)).toBeUndefined();
-      expect(getLocalBackupSchemaRequirements(8)).toBeUndefined();
+      expect(getLocalBackupSchemaRequirements(9)).toBeUndefined();
       expect(Object.keys(requirements ?? {}).sort()).toEqual(
         [...VERSION_7_TABLES].sort(),
       );
@@ -322,7 +322,7 @@ describe("local backup validation", () => {
       expect(totalColumns).toBe(199);
       await expect(
         validateLocalBackupDatabase(database.asExpoDatabase()),
-      ).resolves.toMatchObject({ schemaVersion: 7 });
+      ).resolves.toMatchObject({ schemaVersion: 8 });
     } finally {
       database.close();
     }
@@ -349,7 +349,7 @@ describe("local backup validation", () => {
       await expect(
         validateLocalBackupDatabase(database.asExpoDatabase()),
       ).resolves.toMatchObject({
-        schemaVersion: 7,
+        schemaVersion: 8,
         ownerId: OWNER_ID,
         rowCounts: { food_items: 1 },
       });
@@ -630,7 +630,7 @@ describe("local backup validation", () => {
 
       await expect(
         validateLocalBackupDatabase(database.asExpoDatabase()),
-      ).resolves.toMatchObject({ schemaVersion: 7 });
+      ).resolves.toMatchObject({ schemaVersion: 8 });
 
       const canonical =
         "CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END";
@@ -872,4 +872,56 @@ describe("local backup validation", () => {
       database.close();
     }
   });
+});
+
+
+async function asVersion7Artifact(database: LocalSQLiteTestDatabase) {
+  await database.execAsync('DROP INDEX "ix_daily_logs_owner_date"; DELETE FROM nutrition_schema_migrations WHERE version = 8; PRAGMA user_version = 7');
+}
+
+test("strict version7 artifact admission is explicit and unavailable for active installation", async () => {
+  const database = await createValidArtifact();
+  try {
+    await asVersion7Artifact(database);
+    await expect(validateLocalBackupDatabase(database.asExpoDatabase())).rejects.toMatchObject({ code: "backup_schema_mismatch" });
+    await expect(validateLocalBackupDatabase(database.asExpoDatabase(), "artifact", { allowVersion7Artifact: true })).resolves.toMatchObject({ schemaVersion: 7, ownerId: OWNER_ID });
+    await database.execAsync('PRAGMA application_id = 0');
+    await expect(validateLocalBackupDatabase(database.asExpoDatabase(), "active", { allowVersion7Artifact: true })).rejects.toMatchObject({ code: "backup_schema_mismatch" });
+  } finally { database.close(); }
+});
+
+test("version7 admission retains exact columns and ledger; version8 requires correct index", async () => {
+  const database = await createValidArtifact();
+  try {
+    await database.execAsync('DROP INDEX "ix_daily_logs_owner_date"');
+    await expect(validateLocalBackupDatabase(database.asExpoDatabase())).rejects.toMatchObject({ code: "backup_schema_invalid" });
+    await database.execAsync('DELETE FROM nutrition_schema_migrations WHERE version = 8; PRAGMA user_version = 7');
+    await database.runAsync('UPDATE nutrition_schema_migrations SET migration_id = ? WHERE version = 7', ['forged']);
+    await expect(validateLocalBackupDatabase(database.asExpoDatabase(), "artifact", { allowVersion7Artifact: true })).rejects.toMatchObject({ code: "backup_migration_ledger_invalid" });
+  } finally { database.close(); }
+});
+
+
+test("version7 artifact with a missing nullable column is rejected before migration", async () => {
+  const database = await createValidArtifact();
+  try {
+    await asVersion7Artifact(database);
+    await database.execAsync('ALTER TABLE food_items DROP COLUMN brand');
+    await expect(validateLocalBackupDatabase(database.asExpoDatabase(), "artifact", { allowVersion7Artifact: true })).rejects.toMatchObject({ code: "backup_schema_invalid" });
+    expect(await database.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 7 });
+  } finally { database.close(); }
+});
+
+
+test.each([
+  'CREATE INDEX ix_daily_logs_owner_date ON daily_logs (user_id, logged_date) WHERE logged_date > \'2026-01-01\'',
+  'CREATE UNIQUE INDEX ix_daily_logs_owner_date ON daily_logs (user_id, logged_date)',
+  'CREATE INDEX ix_daily_logs_owner_date ON food_items (user_id, name)',
+])("version8 rejects incompatible owner-date index: %s", async (definition) => {
+  const database = await createValidArtifact();
+  try {
+    await database.execAsync('DROP INDEX "ix_daily_logs_owner_date"');
+    await database.execAsync(definition);
+    await expect(validateLocalBackupDatabase(database.asExpoDatabase())).rejects.toMatchObject({ code: "backup_schema_invalid" });
+  } finally { database.close(); }
 });

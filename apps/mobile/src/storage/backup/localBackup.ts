@@ -8,6 +8,8 @@ import {
   type SQLiteDatabase,
 } from "expo-sqlite";
 
+import { migrateNutritionDatabase } from "../sqlite/migrations";
+
 import { SQLITE_DATABASE_NAME } from "../sqlite/schema";
 import {
   NUTRITION_BACKUP_APPLICATION_ID,
@@ -353,6 +355,7 @@ export async function inspectLocalBackupFromUri(
     return await validateLocalBackupDatabase(
       candidate,
       "artifact",
+      { allowVersion7Artifact: true },
     );
   } finally {
     await closeQuietly(candidate);
@@ -393,6 +396,7 @@ export async function stageLocalRestoreFromUri(
       await validateLocalBackupDatabase(
         candidate,
         "artifact",
+        { allowVersion7Artifact: true },
       );
 
     staged = await openMaintenanceDatabase(stagedName);
@@ -401,6 +405,10 @@ export async function stageLocalRestoreFromUri(
       staged,
       NUTRITION_BACKUP_APPLICATION_ID,
     );
+
+    if (candidateSummary.schemaVersion === 7) {
+      await migrateNutritionDatabase(staged);
+    }
 
     const stagedSummary =
       await validateLocalBackupDatabase(

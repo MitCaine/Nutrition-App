@@ -337,11 +337,11 @@ function portableReceiptMutation(operation: string, tamper?: ReceiptTamper) {
   };
 }
 
-test("v4 representative carries one explicit Complete date and one unconfirmed logged date", async () => {
+test("current representative carries one explicit Complete date and one unconfirmed logged date", async () => {
   const validated = await parseAndValidateTransferPackage(
     canonicalTransferJson(representativePackage),
   );
-  expect(validated.format_version).toBe("4");
+  expect(validated.format_version).toBe("5");
 
   const sections = new Map(
     (validated.sections as Record<string, unknown>[]).map(

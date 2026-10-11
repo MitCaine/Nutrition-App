@@ -1,12 +1,18 @@
 {
-  "descriptor_version": "e2-15.sqlite-v7.schema.v4",
-  "user_version": 7,
+  "descriptor_version": "e2-15.sqlite-v8.schema.v5",
+  "user_version": 8,
   "objects": [
     {
       "type": "index",
       "name": "ix_daily_logs_food_owner",
       "tbl_name": "daily_logs",
       "sql": "CREATE INDEX \"ix_daily_logs_food_owner\"\n    ON \"daily_logs\" (\"food_item_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "ix_daily_logs_owner_date",
+      "tbl_name": "daily_logs",
+      "sql": "CREATE INDEX \"ix_daily_logs_owner_date\" ON \"daily_logs\" (\"user_id\", \"logged_date\")"
     },
     {
       "type": "index",
