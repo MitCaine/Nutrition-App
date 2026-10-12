@@ -16,6 +16,17 @@ fabricate that authenticated comment or a passed check.
 - Trusted qualification workflows, `trusted_qualification.py` and `qualification_profiles.py`
   retain candidate-independent planning, credential/cache isolation and dedicated-App checks.
   App `4708441` produces exact-SHA `Main qualification`; ordinary push CI is insufficient.
+- `task status ISSUE` leaves checkpoint bytes and stdout state unchanged, and emits read-only
+  `status_diagnostics` JSON on stderr. Exit zero means the state was read, not acceptance.
+  Recorded integration requires current `INTEGRATED` phase and matching candidate/origin-main-after
+  binding. Only current `execution` and `execution_checkpoint` optional summaries are diagnosed;
+  histories and archives remain opaque. Their `installed_checks_due` booleans report pending or
+  reported satisfaction, while explicit reviewer `active` or `PASS consumed`/`consumed` values report
+  current activity or reported consumption. Missing/unrecognized values remain unknown.
+  Recorded integration conflicts with a true `integration_authorized_but_not_performed` flag.
+  A current `VERIFIED_TERMINAL_CLOSEOUT_COMPLETE` summary conflicts with pending installed checks
+  or an active reviewer. Diagnostics never establish installed success or consumed review from
+  integration, verify optional claims, clear duties, repair historical records or dispatch work.
 - `task verify` and `task review` retain explicit candidate-bound decisions. The reviewer
   must be independent of implementation. The controller records actual evidence and actor;
   an asserted actor string alone is not evidence that independent review occurred.

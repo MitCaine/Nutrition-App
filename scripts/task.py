@@ -11,6 +11,7 @@ import platform
 import re
 import secrets
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -4698,6 +4699,62 @@ def command_qualify_reconcile(
     return 0 if operation.get("status") == "COMPLETE" else 1
 
 
+def status_diagnostics(state: dict[str, Any]) -> dict[str, Any]:
+    """Describe current optional summaries without repairing state or granting acceptance."""
+    integration = state.get("integration")
+    recorded = (
+        state.get("phase") == "INTEGRATED"
+        and isinstance(integration, dict)
+        and isinstance(integration.get("candidate_sha"), str)
+        and re.fullmatch(r"[0-9a-f]{40}", integration["candidate_sha"]) is not None
+        and integration.get("origin_main_after") == integration["candidate_sha"]
+    )
+    contradictions: list[dict[str, str]] = []
+    unknown: list[str] = []
+    summaries: dict[str, dict[str, str]] = {}
+    if state.get("phase") == "INTEGRATED" and not recorded:
+        unknown.append("integration binding")
+    # These are existing controller-owned current containers. Histories/archives are opaque.
+    for name in ("execution", "execution_checkpoint"):
+        current = state.get(name)
+        if not isinstance(current, dict):
+            continue
+        due = current.get("installed_checks_due")
+        installed = "pending" if due is True else "reported_satisfied" if due is False else "unknown"
+        reviewer = current.get("reviewer")
+        reviewer_status = current.get("reviewer_status")
+        if reviewer_status is None and isinstance(reviewer, dict):
+            reviewer_status = reviewer.get("status")
+        reviewer_status = reviewer_status.lower() if isinstance(reviewer_status, str) else ""
+        review = ("active" if reviewer_status == "active" else
+                  "reported_consumed" if reviewer_status in {"pass consumed", "consumed"} else "unknown")
+        summaries[name] = {"installed_checks": installed, "reviewer_result": review}
+        if recorded and current.get("integration_authorized_but_not_performed") is True:
+            contradictions.append({"path": name + ".integration_authorized_but_not_performed",
+                                   "code": "RECORDED_INTEGRATION_MARKED_NOT_PERFORMED"})
+        if current.get("phase") == "VERIFIED_TERMINAL_CLOSEOUT_COMPLETE":
+            if due is True:
+                contradictions.append({"path": name + ".installed_checks_due",
+                                       "code": "TERMINAL_CLOSEOUT_HAS_PENDING_INSTALLED_CHECKS"})
+            if review == "active":
+                contradictions.append({"path": name + ".reviewer",
+                                       "code": "TERMINAL_CLOSEOUT_HAS_ACTIVE_REVIEWER"})
+        if installed == "unknown":
+            unknown.append(name + ".installed_checks_due")
+        if review == "unknown":
+            unknown.append(name + ".reviewer consumption")
+    if not summaries:
+        unknown.extend(["installed obligations", "reviewer consumption"])
+    return {
+        "integration": "recorded" if recorded else "unknown",
+        "current_optional_summaries": summaries,
+        "contradictions": contradictions,
+        "unknown": unknown,
+        "limitation": "Read-only diagnostics, not acceptance. Reported satisfaction/consumption is unverified; "
+                      "integration does not establish installed success or reviewer consumption.",
+    }
+
+
 def command_status(
     args: argparse.Namespace,
 ) -> int:
@@ -4706,6 +4763,7 @@ def command_status(
         args.issue_number,
     )
 
+    print(json.dumps({"status_diagnostics": status_diagnostics(state)}, sort_keys=True), file=sys.stderr)
     emit(state)
     return 0
 
