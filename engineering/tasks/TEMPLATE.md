@@ -74,13 +74,8 @@ its exact idle-wake route is verified. A terminal result already delivered can b
 immediately without idle-wake proof. Queue is conditional on a supported observer and verified
 delivery.
 
-Freeze this tracked preparation/check ledger before candidate C is frozen for exact-candidate
-qualification and review. Label the snapshot historical and point current status to the live
-issue and existing authenticated external controller checkpoint (record its portable selected
-identity). After C is frozen, keep every later attempt, failure, rerun, qualification, review,
-integration, issue closure and cleanup outcome in those existing operational records. Do not
-create another candidate solely for completion evidence. A later real tracked-document correction
-needs affected checks/review and authorized publication.
+Follow the selected [completion-record rule](../workflow/shared/start-an-issue.md#keep-completion-records-external)
+for tracked preparation timing and later operational evidence.
 
 Preserve append-only preparation decisions, corrections, stops and failed attempts here; never
 reset recorded authority or allowances. Preserve later operational history externally.

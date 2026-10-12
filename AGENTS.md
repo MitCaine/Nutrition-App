@@ -160,14 +160,9 @@ For dependency-only pull requests:
 ## Task workflow
 
 Start at [the local execution map](docs/local_project_map.md). The controller reads its complete
-byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md). Each worker
-reads `Shared worker rules` and its assigned unique level-two section of the pinned
-[worker instructions](engineering/workflow/shared/worker-instructions.md#role-index), through the next
-level-two heading or end of file; links are navigation, not bounded reads. Builders receive
-original objective/base/specifications without a future capsule. Normal-route
-implementors and reviewers receive the accepted capsule; implementors and reviewers on
-controller-approved maintenance receive the complete recorded maintenance handoff in the existing
-task record.
+byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md). Role inputs and bounded reading are governed by the selected
+[worker Role index](engineering/workflow/shared/worker-instructions.md#role-index)
+and the [role assignment rule](engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs).
 The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional
 on setup or replacement. New tasks normally use six-heading Markdown capsules and the standard controller. For a
 bounded change whose objective, scope, decisions and verification are sufficiently understood, the
@@ -181,15 +176,9 @@ The direct record carries `Requested route: maintenance` and
 `Implementation execution: direct Work controller`. The read-only validator checks those fields
 and the selected map permission only; it does not authenticate owner authority, semantic eligibility,
 actual author identity, reviewer independence, live assignments, qualification, or acceptance.
-The normal route retains its capsule builder and planning publication; maintenance omits those
-planning steps while retaining exact-candidate review, required qualification, verification, owner
-approval, protected integration and closeout. A permitted direct Work controller assumes the
-implementor duties and scope/check limits using its existing selected Work settings; it has no
-builder, Codex dispatcher or separate implementor assignment, and must obtain fresh review from a
-nonauthor. The Work controller dispatches the capsule builder on the normal route and the distinct
-independent reviewer on either route. When implementation is delegated, the owner-designated Codex
-dispatcher authenticates the complete assigned task handoff and launches one implementor; the
-implementor returns there for relay to Work. Apply the [local map's per-worker launch settings and confirmation policy](docs/local_project_map.md#nutrition-permissions-and-routing)
+Use the selected [maintenance and role sequence](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route);
+the author must receive fresh nonauthor review before controller approval and protected integration.
+Apply the [local map's per-worker launch settings and confirmation policy](docs/local_project_map.md#nutrition-permissions-and-routing)
 separately to each assigned role; do not infer configuration from tool names, backing metadata or another
 worker's confirmation. Workers do not recruit. Use blocking completion while an assignment is
 active unless its exact idle-wake route is verified; consume a terminal result already delivered

@@ -208,23 +208,8 @@ SHA, actor, decision and summary; and
 `rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2` after a
 standard `REVIEWED_CHANGES_REQUESTED`; and
 `integrate ISSUE --candidate-root PATH --human-owner-authorized`. The executable controller owns their exact argument validation and
-must reauthenticate live owner authority at dependent gates. Rework keeps the same authorized
-base, paths and profiles, retains C1's qualification/verification/review/operation history, and
-clears active proof before C2 is qualified, verified and independently reviewed from scratch.
-Each rework qualification checks its operation ID against every retained correction archive and
-refuses reuse before publishing a candidate ref or dispatching. A C1 qualification failure may be
-archived only with a failed exact-C1 verification; a passing verification cannot validate a failed
-qualification. Rework grants no new authority and does not convert compatibility or historical records.
-Before a transition or qualification, the controller checks generated archive identities, terminal
-operation cleanup, adjacent candidate links, and retained authority/scope bindings. It checks stored
-checkpoint digests by format without reconstructing historical checkpoint contents and preserves
-opaque unrelated history and failure evidence.
-Repeated calls, `STOP_REPLAN`, unsupported phases, and overlapping or unresolved
-qualification/integration operations are refused without checkpoint mutation. An owner pause is
-a controller hold outside checkpoint state, not a serialized phase; the controller must not
-invoke rework until the owner explicitly continues. The separate fresh-authorized-attempt route
-uses `prepare` with current matching owner authorization and a separately selected state
-location, preserving the existing checkpoint and its consumed allowances.
+must reauthenticate live owner authority at dependent gates. Correction and interrupted-operation
+recovery follow [Nutrition state, concurrency and recovery](../engineering/workflow/AUTHORITY.md#state-concurrency-and-recovery).
 
 Qualification uses the dedicated App `4708441`'s successful exact-candidate-SHA `Main qualification`
 check. Select the required profiles from the complete rename-aware changed-path
@@ -332,13 +317,8 @@ Never resume an old attempt implicitly.
 
 ## Integration and closeout
 
-Before candidate C is frozen for exact-candidate qualification and review, finalize the
-tracked task preparation/check ledger, label it historical and point current status to the live
-issue and existing external controller checkpoint. After C is frozen, record every later attempt,
-failure, rerun, qualification, review, integration, issue closure and cleanup outcome in those
-existing operational records. Do not create another candidate solely to append completion
-evidence. The adopted [completion-record rule](../engineering/workflow/shared/start-an-issue.md#keep-completion-records-external)
-defines this boundary.
+The selected [completion-record rule](../engineering/workflow/shared/start-an-issue.md#keep-completion-records-external)
+owns candidate-freeze timing, historical preparation and later operational evidence.
 
 Only the controller performs authorized integration and closeout, after exact-candidate
 qualification, explicit verification, independent review and current owner permission. The

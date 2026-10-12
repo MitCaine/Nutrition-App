@@ -969,43 +969,10 @@ explicit verification and independent source/diff review, then performs owner-au
 protected integration. Attached RI SDK preflight/evidence commands are retired.
 After a standard `REVIEWED_CHANGES_REQUESTED`, the supported correction route is
 `./scripts/task rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2`.
-The controller requires C1 to match its current qualified, verified, rejected review and C2 to
-be the clean candidate HEAD. It reauthenticates the same owner authorization, base, scope and
-profiles, and accepts C1's qualification operation only after terminal result and candidate-ref
-cleanup are reconciled. Uncertain qualification or integration state blocks the transition.
-C1 proof and operation history remain archived; C2 begins without transferred checks, approval
-or review and must pass fresh qualification, verification and independent review. Rework does
-not create authority or convert legacy records. Before rework or qualification, the controller
-validates generated archive proof and operation identities, terminal cleanup, adjacent candidate
-links and retained authority/scope bindings. Archived checkpoint digests are checked by format
-without reconstructing historical checkpoint contents; opaque unrelated history and failure
-evidence remain intact.
-Repeated calls, `STOP_REPLAN`, unsupported phases, and overlapping or unresolved
-qualification/integration operations are refused without checkpoint mutation. An owner pause is
-a controller hold outside checkpoint state, not a serialized phase; the controller must not
-invoke rework until the owner explicitly continues. The separate fresh-authorized-attempt route
-uses `prepare` with current matching owner authorization and a separately selected state
-location, preserving the existing checkpoint and its consumed allowances.
-
-Qualification recovery holds a separate issue-scoped process-held qualification ownership lock
-from before operation persistence through dispatch, polling, terminal application and ref cleanup.
-The lock is distinct from the short checkpoint transaction lock, so unrelated checkpoint writes
-can proceed during hosted calls. The operating system releases ownership when the controller
-process exits. Its lock file is stored under the canonical controller-state directory, so different
-`TMPDIR` settings still address the same issue lock. Reconciliation takes the same lock; a live
-holder returns `QUALIFICATION_OWNER_ACTIVE` without changing the checkpoint or candidate ref. Its
-persisted binding identifies the supported local host and controller-state location. Missing, legacy,
-unknown or different-domain bindings fail closed and require an explicit controller disposition.
-
-After the interrupted process exits, run
-`./scripts/task qualify-reconcile ISSUE --candidate-root PATH`. This command discovers the hosted
-run for the persisted operation and never dispatches. A no matching run leaves operation and ref
-evidence unchanged and returns a non-success result; a still-running run remains available for a
-later reconciliation. A completed run is accepted only after exact workflow/candidate identity,
-current authorization and the dedicated App's exact-candidate check are revalidated. The command
-then records the terminal outcome and safely cleans up that operation's exact candidate ref.
-Repeat the same command after another interruption. A missing run or released process lock alone
-does not authorize a fresh qualification attempt.
+Rework limits, qualification ownership, interrupted-run discovery and refusal/preservation rules
+are owned by [Nutrition state, concurrency and recovery](../../engineering/workflow/AUTHORITY.md#state-concurrency-and-recovery).
+After an interrupted process exits, the operator command is
+`./scripts/task qualify-reconcile ISSUE --candidate-root PATH`.
 
 `Main qualification` is valid only when its exact SHA, name, conclusion, authorization identity,
 and producing App match the controller's trusted configuration.

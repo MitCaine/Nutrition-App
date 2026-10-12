@@ -29,13 +29,9 @@
    `standard` tasks, obtain ordinary CI through a pull request from the published task branch to
    `main`, as required by the [Testing Guide](../docs/operations/testing.md#main-qualification-profiles).
    This ordinary-CI requirement is separate from the controller-owned guarded integration.
-7. **Close out and release deliberately.** Freeze the tracked preparation/check ledger before
-   candidate C is frozen for exact-candidate qualification and review. Label it historical and
-   point current status to the live issue and existing external controller checkpoint. After C is
-   frozen, record every later attempt, failure, rerun, qualification, review, integration, issue
-   closure and cleanup in those existing operational records. Do not create another candidate
-   solely to append completion evidence. A genuine later
-   tracked-document correction requires affected checks, review and authorized publication.
+7. **Close out and release deliberately.** Follow the selected
+   [completion-record rule](workflow/shared/start-an-issue.md#keep-completion-records-external)
+   for preparation freeze and external operational evidence.
    Existing capsule lifecycles additionally require their separate guarded capsule HISTORY closeout;
    do not create a capsule for an ordinary task. Release from a clean, qualified `main` commit.
 

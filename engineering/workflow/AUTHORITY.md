@@ -28,20 +28,8 @@ fabricate that authenticated comment or a passed check.
   accept a candidate, verify it, approve it or integrate it. Mandatory and advisory outcomes, source
   drift and incomplete attempts retain their documented evidence semantics in the testing guide.
 - `task rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2`
-  supports a corrected candidate only after an authenticated standard changes-requested review.
-  It rechecks the current owner authorization, base, full C2 scope and profile floor; retains
-  C1's proof and operation history; and clears active C1 proof before C2 starts fresh. It does
-  not grant new authority or accept compatibility, attached, implicit-legacy or injected
-  historical bindings. Repeated calls, `STOP_REPLAN`, unsupported phases, and overlapping or
-  unresolved qualification/integration operations are refused without checkpoint mutation. An
-  owner pause is a controller hold outside checkpoint state, not a serialized phase; the
-  controller must not invoke rework until the owner explicitly continues. The separate
-  fresh-authorized-attempt route uses `prepare` with current matching owner authorization and a
-  separately selected state location, preserving the existing checkpoint and its consumed
-  allowances. Before rework or qualification, the controller validates generated archive proof
-  identities, terminal cleanup, adjacent candidate links and retained authority/scope bindings.
-  It checks archived checkpoint digests by format without reconstructing historical checkpoint
-  contents, and preserves opaque unrelated history and failure evidence.
+  handles an authorized corrected candidate under the canonical
+  [state, concurrency and recovery rules](#state-concurrency-and-recovery).
 - `task integrate` requires owner authorization, live exact check/authority, clean candidate,
   and protected expected-main update. Ruleset `21357860` remains protected; no routine bypass.
   Ref compare-and-swap, stale-main rejection and interrupted-push reconciliation remain.

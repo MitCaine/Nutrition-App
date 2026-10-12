@@ -11,6 +11,56 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 import task  # noqa: E402
 
+def _assert_canonical_guidance(root, guide, owner, anchor, rules):
+    """Check a concrete guide's navigation and the selected owner's rule section."""
+    spec = importlib.util.spec_from_file_location("workflow_doc_navigation", ROOT / "scripts/validate-docs.py")
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    guide_path, owner_path = root / guide, root / owner
+    assert owner_path.is_file(), "missing canonical target"
+    visible, _, errors = validator._scan_document(guide_path)
+    assert not errors
+    links = [validator._split_target(m.group(1)) for m in validator.LINK_PATTERN.finditer(visible)]
+    assert any(((guide_path.parent / path) if path else guide_path).resolve() == owner_path.resolve() and fragment == anchor
+               for path, fragment in links), "missing canonical link"
+    canonical, anchors, errors = validator._scan_document(owner_path)
+    assert not errors and anchor in anchors, "missing canonical anchor"
+    lines = canonical.splitlines()
+    starts = [(n, len(match.group(1))) for n, line in enumerate(lines)
+              if (match := validator.HEADING_PATTERN.match(line))
+              and validator._github_slug(match.group(2)) == anchor]
+    assert len(starts) == 1, "canonical section must be unique"
+    heading, level = starts[0]
+    start = heading + 1
+    end = next((n for n in range(start, len(lines))
+                if (match := validator.HEADING_PATTERN.match(lines[n]))
+                and len(match.group(1)) <= level), len(lines))
+    section = " ".join("\n".join(lines[start:end]).replace("`", "").split())
+    for rule in rules:
+        assert rule in section, f"missing canonical rule: {rule}"
+
+
+def test_canonical_guidance_link_only_and_refusal_fixtures(tmp_path):
+    guide, owner, anchor = "guide.md", "authority.md", "state-and-recovery"
+    (tmp_path / guide).write_text("[Recovery](authority.md#state-and-recovery)\n")
+    (tmp_path / owner).write_text("## State and recovery\nPreserve old evidence.\n")
+    _assert_canonical_guidance(tmp_path, guide, owner, anchor, ("Preserve old evidence.",))
+    for broken in ("No link.\n", "[Recovery](missing.md#state-and-recovery)\n",
+                   "[Recovery](authority.md#wrong-anchor)\n"):
+        (tmp_path / guide).write_text(broken)
+        with pytest.raises(AssertionError):
+            _assert_canonical_guidance(tmp_path, guide, owner, anchor, ("Preserve old evidence.",))
+    (tmp_path / guide).write_text("[Recovery](authority.md#state-and-recovery)\n")
+    (tmp_path / owner).unlink()
+    with pytest.raises(AssertionError, match="missing canonical target"):
+        _assert_canonical_guidance(tmp_path, guide, owner, anchor, ("Preserve old evidence.",))
+    (tmp_path / owner).write_text("## Wrong section\nPreserve old evidence.\n")
+    with pytest.raises(AssertionError, match="missing canonical anchor"):
+        _assert_canonical_guidance(tmp_path, guide, owner, anchor, ("Preserve old evidence.",))
+    (tmp_path / owner).write_text("## State and recovery\nNo rule.\n## History\nPreserve old evidence.\n")
+    with pytest.raises(AssertionError, match="missing canonical rule"):
+        _assert_canonical_guidance(tmp_path, guide, owner, anchor, ("Preserve old evidence.",))
+
 def test_standard_mode_has_no_attachment_requirement_but_rejects_injected_attachment():
     assert task._require_workflow_candidate_attachment({}, mode="standard", candidate_sha="a"*40) == (None, None)
     with pytest.raises(task.EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
@@ -31,15 +81,11 @@ def test_qualification_reconcile_cli_and_recovery_guides(capsys, tmp_path):
     assert args.handler is task.command_qualify_reconcile
     assert args.issue_number == 275
 
-    testing_text = (ROOT / "docs/operations/testing.md").read_text()
-    authority_text = (ROOT / "engineering/workflow/AUTHORITY.md").read_text()
-    for guide in (testing_text, authority_text):
-        normalized = " ".join(guide.split())
-        assert "qualification ownership lock" in normalized
-        assert "QUALIFICATION_OWNER_ACTIVE" in normalized
-        assert "qualify-reconcile ISSUE --candidate-root PATH" in normalized
-        assert "never dispatches" in normalized
-        assert "no matching run" in normalized
+    for guide in ("docs/operations/testing.md",):
+        _assert_canonical_guidance(ROOT, guide, "engineering/workflow/AUTHORITY.md",
+                                   "state-concurrency-and-recovery",
+                                   ("qualification ownership lock", "QUALIFICATION_OWNER_ACTIVE",
+                                    "qualify-reconcile ISSUE --candidate-root PATH", "never dispatches", "no matching run"))
 
 def test_retired_execution_cli_cannot_dispatch():
     with pytest.raises(SystemExit) as result:
@@ -83,18 +129,15 @@ def test_standard_rework_cli_and_guides_describe_same_checkpoint_limits(capsys, 
     assert args.handler is task.command_rework
 
     map_text = (ROOT / "docs/local_project_map.md").read_text()
-    authority_text = (ROOT / "engineering/workflow/AUTHORITY.md").read_text()
     testing_text = (ROOT / "docs/operations/testing.md").read_text()
     assert "rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2" in map_text
-    assert "only after an authenticated standard changes-requested review" in authority_text
-    assert "qualification operation only after terminal result and candidate-ref" in testing_text
-    assert "C2 begins without transferred checks, approval" in testing_text
-    for guide in (map_text, authority_text, testing_text):
-        guide_text = " ".join(guide.split())
-        assert "Repeated calls, `STOP_REPLAN`, unsupported phases" in guide_text
-        assert "An owner pause is a controller hold outside checkpoint state, not a serialized phase" in guide_text
-        assert "separate fresh-authorized-attempt route" in guide_text
-        assert "separately selected state location" in guide_text
+    assert "./scripts/task rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2" in testing_text
+    for guide in ("docs/local_project_map.md", "docs/operations/testing.md", "engineering/workflow/AUTHORITY.md"):
+        _assert_canonical_guidance(ROOT, guide, "engineering/workflow/AUTHORITY.md",
+                                   "state-concurrency-and-recovery",
+                                   ("Repeated calls, STOP_REPLAN, unsupported phases",
+                                    "An owner pause is a controller hold outside checkpoint state",
+                                    "separate fresh-authorized-attempt", "separately selected state location"))
 
 def test_retired_model_evidence_cli_cannot_dispatch():
     with pytest.raises(SystemExit) as result:
@@ -285,16 +328,17 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
         normalized = " ".join(text.split())
         normalized_lower = normalized.lower()
         assert old_pin not in text, name
-        assert " ".join(required[0].split()).lower() in normalized_lower, name
-        assert " ".join(required[1].split()).lower() in normalized_lower, name
-        if name not in {"docs/local_project_map.md", "engineering/workflow/shared/skill-templates/README.md"}:
-            assert "assigned unique level-two section" in normalized_lower, name
-        assert ("worker instructions" in normalized_lower or "worker-instructions.md" in normalized_lower), name
+        if name == "engineering/workflow/shared/skill-templates/README.md":
+            # Exact pinned shared bytes are verified separately; do not rewrite them.
+            for phrase in required:
+                assert phrase.lower() in normalized_lower
+        else:
+            _assert_canonical_guidance(ROOT, name, "engineering/workflow/shared/worker-instructions.md",
+                                       "role-index", ("next level-two heading or end of file",))
     for name in ("WORKFLOW.md", "ROUTING.md", "EVIDENCE.md", "FAILURE_TAXONOMY.md"):
-        text = (ROOT / "engineering/workflow" / name).read_text()
-        assert "Shared worker rules" in text
-        assert "assigned unique level-two section" in text
-        assert "next level-two heading or end of file" in " ".join(text.split())
+        _assert_canonical_guidance(ROOT, "engineering/workflow/" + name,
+                                   "engineering/workflow/shared/worker-instructions.md",
+                                   "role-index", ("next level-two heading or end of file",))
     map_text = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(map_text.split())
     assert "controller, capsule builder and independent reviewer | work" in normalized_map.lower()
@@ -1427,13 +1471,11 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
     assert "gpt-6-luna` / `max" in normalized
     assert "NUTRITION_RI_RUNTIME" not in normalized
     for name in ("docs/local_project_map.md", "engineering/README.md", "engineering/tasks/TEMPLATE.md"):
-        text = " ".join((ROOT / name).read_text().split())
-        lower = text.lower()
-        for rule in ("historical", "live issue", "external controller checkpoint",
-                     "another candidate solely", "operational records"):
-            assert rule in lower
-        assert "before candidate c is frozen" in lower, name
-        assert "after c is frozen" in lower, name
+        _assert_canonical_guidance(ROOT, name, "engineering/workflow/shared/start-an-issue.md",
+                                   "keep-completion-records-external",
+                                   ("Finalize tracked preparation records before", "exact-candidate qualification and review",
+                                    "label preparation snapshots historical", "live issue and external controller checkpoint",
+                                    "Record subsequent check attempts", "Do not create another candidate merely"))
     task_text = (ROOT / "engineering/tasks/GH-261.md").read_text()
     assert "Historical preparation snapshot" in task_text
     assert "controller-state/issue-261.json" in task_text
