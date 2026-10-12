@@ -4,6 +4,8 @@
 > point for repository knowledge. It routes readers to the document that owns a
 > fact; it does not duplicate current status or historical inventories.
 
+For the published [2.2.0 source release](https://github.com/MitCaine/Nutrition-App/releases/tag/v2.2.0), start with [Current State](project/current-state.md). Earlier release and implementation records remain under [Historical Knowledge](historical/README.md).
+
 ## Start here
 
 ### Implementing a change

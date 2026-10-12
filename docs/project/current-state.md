@@ -14,7 +14,8 @@ qualified with Node 24 and Python 3.12. Current development and qualification
 use the Node and Python lines declared by `.nvmrc` and `.python-version`.
 
 The [v2.2.0 GitHub release](https://github.com/MitCaine/Nutrition-App/releases/tag/v2.2.0)
-identifies its qualified source through the annotated `v2.2.0` tag and release notes.
+records qualified source commit `2f888ec8bb8a65eef59ac8fd71f894e1444cc3c9`,
+identified by the annotated `v2.2.0` tag.
 Version 2.2 includes durable remote Log mutation receipts, strict backup schema admission
 and staged version-7 backup migration, owner-scoped batched Food and Recipe list hydration,
 and aligned development and review tooling. The local SQLite runtime remains the primary

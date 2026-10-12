@@ -187,7 +187,12 @@ Staging alone does not replace the open application database and can be canceled
 Admission checks the complete column contract for the supported schema version, including declared
 types, nullability, primary-key positions, and defaults used by runtime inserts. It does not depend
 on physical column order: supported upgrades append the serving reference columns. Backup format 1
-admits schema version 7 only; older or newer backups are rejected without migration or repair.
+admits current schema version 8 and strictly validated version-7 artifacts. For a version-7
+backup, restore migrates only the isolated staged copy to version 8, then requires full version-8
+validation (including the owner/date index) before pending-restore publication. Version-8 backups
+use the existing validation route. The original backup remains untouched; validation or migration
+failure leaves the active database unchanged. Other schema versions are rejected; no general
+backup migration or repair is supported.
 Cancellation reports success only after the pending path is gone; if both the SQLite and file
 cleanup routes fail, Settings keeps the pending affordance and reports the failure so the staged
 backup remains truthfully eligible for activation.

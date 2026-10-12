@@ -17,7 +17,7 @@ implementation, and migrations define present behavior.
 - Captured Phase 5C performance evidence remains beside the backend operator implementation in
   `apps/backend/evidence/phase5c/`.
 
-- [Retained unqualified reviewer-runtime proposal and diagnostic evidence](../engineering/REVIEW_RUNTIME_SELECTION.md)
+- [Reviewer-runtime retirement and retained proposal evidence](engineering/reviewer-runtime-retirement.md)
 
 ## Completed version programs
 
