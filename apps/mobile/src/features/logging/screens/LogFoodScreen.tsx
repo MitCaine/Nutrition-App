@@ -359,9 +359,9 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         return;
       }
       setSelectedServingId(
-        initialEditAmountId(food.data, log, editContext.data) ??
-          servings.find((serving) => serving.is_default)?.id ??
-          initialServingId(food.data, log?.serving_definition_id),
+        log
+          ? initialEditAmountId(food.data, log, editContext.data)
+          : servings.find((serving) => serving.is_default)?.id ?? initialServingId(food.data),
       );
     }
     restoredDraftRef.current = false;
@@ -630,7 +630,6 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     if (
       log &&
       editAmountChanged &&
-      revisionBacked &&
       unit === "serving" &&
       (selectedAmountMode !== unit || selectedServingId === null)
     ) {
@@ -1013,6 +1012,11 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             </View>
           </View>
         ) : null}
+          {log && !revisionBacked && log.amount_unit === "serving" && food.data && initialEditAmountId(food.data, log, editContext.data) === null && selectedServingId === null ? (
+            <Text accessibilityLiveRegion="polite" style={styles.warningText}>
+              The original serving is no longer available. Choose a current serving to change nutrition. Saving only meal, note or date keeps the original nutrition.
+            </Text>
+          ) : null}
           {nutritionEditUnavailable ? (
             <Text accessibilityLiveRegion="polite" style={styles.warningText}>
               Nutrition editing is unavailable because the current Recipe source is no longer available. Meal, note, and date edits remain available.

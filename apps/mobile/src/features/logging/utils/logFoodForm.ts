@@ -216,7 +216,8 @@ export function initialEditAmountId(
   ) {
     return null;
   }
-  return initialServingId(food, log?.serving_definition_id);
+  // A missing historical identity is not equivalent to today's default.
+  return log ? log.serving_definition_id ?? null : initialServingId(food);
 }
 
 export function buildLogInput(params: {

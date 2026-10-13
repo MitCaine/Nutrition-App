@@ -345,3 +345,10 @@ test("legacy and Manual Food edits retain projection serving choices", () => {
 });
 
 test.each(["0.125", "0.004", "1000", "1.25", "99999999.123456"])("editable quantity preserves %s without display rounding/grouping", (quantity) => { expect(formatInitialLogAmount(quantity)).toBe(quantity); });
+
+test("missing historical serving identity never substitutes the current default", () => {
+  expect(initialEditAmountId(importedFood, { serving_definition_id: null } as DailyLog)).toBeNull();
+  expect(initialEditAmountId(importedFood, { serving_definition_id: "deleted-serving" } as DailyLog)).toBeNull();
+  expect(initialEditAmountId(importedFood, { serving_definition_id: "serving-bar" } as DailyLog)).toBe("serving-bar");
+  expect(initialEditAmountId(importedFood, undefined)).toBe("serving-bar");
+});

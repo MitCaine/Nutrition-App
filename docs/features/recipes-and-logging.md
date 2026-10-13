@@ -179,6 +179,8 @@ deleted.
 
 ## Editing and deleting Logs
 
+When an ordinary Food replaces its serving identities, an existing Log retains its historical nutrition. A missing historical serving is not mapped to the current default in the editor. Choose a current serving explicitly to replace nutrition; untouched meal, note and date edits preserve the historical snapshots.
+
 Editable Log quantities preserve the exact canonical decimal value received from Food Details or stored history. Only insignificant trailing zeros may be trimmed; display rounding and digit grouping remain presentation-only. Untouched quantities, metadata-only edits and exact Repeat drafts do not change nutrition through initialization.
 
 Editing a Log is a new historical observation of the edited amount, not retroactive reaction to a
