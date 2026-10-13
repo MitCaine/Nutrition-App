@@ -59,6 +59,32 @@ def remove_synchronous_fixture_stage(completed):
 
 
 class BackendQualificationTests(unittest.TestCase):
+    def test_public_baseline_preserves_space_and_quote_paths_and_selector(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ("Nutrition App", "Nutrition 'App'"):
+                candidate = Path(directory) / name
+                backend = candidate / "apps/backend"
+                (backend / "app").mkdir(parents=True)
+                (backend / "tests").mkdir()
+                (backend / "app/__init__.py").write_text("VALUE = 37\n")
+                (backend / "tests/conftest.py").write_text("from app import VALUE\nassert VALUE == 37\n")
+                (backend / "tests/test_local.py").write_text("def test_local(): pass\n")
+                (backend / "tests/test_opt_in.py").write_text(
+                    "import pytest\npytestmark = pytest.mark.postgres_concurrency\ndef test_opt_in(): pass\n")
+                env = os.environ.copy()
+                for key in ("PYTHONPATH", "PYTEST_ADDOPTS", "NUTRITION_BACKEND_TEST_USER",
+                            "NUTRITION_BACKEND_TEST_TMPDIR"):
+                    env.pop(key, None)
+                env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+                result = subprocess.run(
+                    [sys.executable, "-I", str(HELPER), "baseline", "--candidate-root", str(candidate),
+                     "--", "--collect-only", "-q"], env=env, text=True, capture_output=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("tests/test_local.py::test_local", result.stdout)
+                self.assertNotIn("tests/test_opt_in.py::test_opt_in", result.stdout)
+                self.assertIn("1/2 tests collected (1 deselected)", result.stdout)
+
     def checkout_fixture(self, base):
         source = base / "remote"
         source.mkdir()

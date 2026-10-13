@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import stat
 import subprocess
 import sys
@@ -733,7 +734,7 @@ def run_pytest(backend: Path, postgresql: bool, extra: list[str]) -> int:
     # /dev/null prevents candidate configuration selecting/deselecting the gate.
     argv = [sys.executable, "-I", "-m", "pytest", "-c", os.devnull,
             "--rootdir", str(backend), "--confcutdir", str(backend),
-            "--strict-markers", "-o", "addopts=", "-o", f"pythonpath={backend}",
+            "--strict-markers", "-o", "addopts=", "-o", f"pythonpath={shlex.quote(str(backend))}",
             "-o", "markers=" + "\n".join(MARKERS), "-p", "no:cacheprovider"]
     if postgresql:
         argv.extend(["-q", *POSTGRES_TEST_FILES])
