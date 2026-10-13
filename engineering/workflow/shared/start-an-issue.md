@@ -276,7 +276,8 @@ The actor launching a command verifies its required inputs in the actual
 execution context before expensive or dependent work: command, working directory,
 paths and effective child configuration, not merely the parent's. The controller verifies dispatch prerequisites and may
 rely on authenticated launcher or worker checks. Examples include guarded
-authentication, temporary paths, recovery objects and CI trigger/check identity.
+authentication, temporary paths, recovery objects, runner acceptance of executable
+paths (including symlink handling), and CI trigger/check identity.
 Use the smallest sufficient checks, not a product-suite rehearsal or unrelated
 setup investigation. Reuse readiness only while relevant inputs remain unchanged;
 recheck affected prerequisites on changes or capability failure, and report
@@ -284,7 +285,8 @@ unresolved prerequisites before proceeding. After setup fails, continue only
 checks whose own prerequisites are satisfied. Results qualify for acceptance only
 when source, dependencies and environment meet the selected requirements;
 otherwise label them diagnostic and report required checks still blocked.
-Where required gate order permits, run inexpensive source-validity checks before
+Where required gate order permits, run inexpensive source-validity, compiler and
+lint checks before
 costly qualification. On failure, report before further expensive checks unless
 the assignment requires collecting independent results. This grants no frozen
 candidate edits or omission of required checks.
@@ -421,7 +423,13 @@ branch as merged or invent a product change merely to clean it up.
 
 At a blocker, hold consequential work and do one bounded authorized read-only
 sweep to consolidate real failures and unknowns. Routine clarification, diagnosis
-and in-scope correction need no repeated human approval. STOP_REPLAN, replan,
+and in-scope correction need no repeated human approval. The assigned implementor
+may diagnose and repair ordinary compile, lint and test failures throughout the
+accepted task scope and authorized edit boundaries without a new grant or handoff
+for each fix. Check fixture-dependent expectations against the actual setup before
+prescribing a correction; a failed check never permits weakening tests or guessing
+acceptance decisions. Requirement changes, protected inputs, wider scope or new
+permissions return to the controller. STOP_REPLAN, replan,
 scope expansion and requests for broader authority are last resorts. First verify
 the blocker against exact source, controlling requirements and existing authorized
 routes; distinguish observed failures from assumptions. Prefer bounded in-scope

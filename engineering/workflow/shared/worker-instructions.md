@@ -94,7 +94,9 @@ controller before dependent work; do not reconstruct requirements yourself.
 Use supplied commands, environment, evidence locations and authority limits.
 The controller has already selected the workflow and project route; do not repeat
 its issue-start orientation or dispatch other roles. A failed assigned check permits
-bounded correction within the accepted handoff; unresolved decisions or wider
+diagnosis and repair throughout the accepted scope and authorized edits under the
+[existing correction authority](start-an-issue.md#diagnose-blockers-and-recover),
+without a separate grant for each ordinary compile, lint or test fix; unresolved decisions or wider
 impact go to the controller under the governing maintenance rule. Preserve valid
 work/evidence and pause only the affected part pending that decision.
 For a Work-to-Codex handoff, return your terminal result to the assigned Codex
@@ -229,7 +231,10 @@ waiting/recovery rules; duplicate/stale handoffs cannot start another assignment
 Preserve terminal stops. Capacity or routing failures go to Work without silent
 model/environment substitution or retry loops.
 
-Corrections require a bounded controller handoff under the [correction rules](start-an-issue.md#diagnose-blockers-and-recover). Do not replan, recruit builders
+Routine fixes within the existing assignment follow the
+[correction authority](start-an-issue.md#diagnose-blockers-and-recover); relay their
+terminal evidence without requiring a new handoff for each fix. A new controller
+correction assignment requires its bounded handoff under that rule. Do not replan, recruit builders
 or reviewers, implement the task yourself, mutate controller decisions, approve,
 integrate or close issues. No new service, receipt framework or additional normal
 reasoning stage is implied.
