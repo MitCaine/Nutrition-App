@@ -363,11 +363,12 @@ npm run typecheck
 npm run config:validate
 ```
 
-Backend/reference validation:
+Backend/reference validation follows the [canonical baseline guide](docs/operations/testing.md#baseline-validation) using the prepared backend virtual environment:
 
 ```bash
 cd apps/backend
-pytest
+source .venv/bin/activate
+../../scripts/run-backend-baseline.sh
 ruff check .
 ```
 
