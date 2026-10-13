@@ -38,13 +38,13 @@ TRACKED_ALERTS = {
 
 
 CURRENT_REEVALUATION_SCOPE = (
-    "issue-282 current @expo/config-plugins compatibility re-evaluation"
+    "issue-384 current @expo/config-plugins compatibility re-evaluation"
 )
 
 CURRENT_REEVALUATION_REASON = (
-    "Issue #282 re-evaluates the current Expo SDK-57 owner path: "
-    "expo-sharing's requested ^57.0.9 edge resolves "
-    "@expo/config-plugins 57.0.10 in the 57.0.27 lock; historical "
+    "Issue #384 re-evaluates the current Expo SDK-57 owner path: "
+    "expo-sharing's requested ^57.0.10 edge resolves "
+    "@expo/config-plugins 57.0.10 in the 57.0.28 lock; historical "
     "alert 2 assessment, owner authority, and UUID replacement remain "
     "immutable."
 )
@@ -60,12 +60,12 @@ CURRENT_REEVALUATION_PATH = [
         "location": "node_modules/expo-sharing",
         "name": "expo-sharing",
         "requested": "~57.0.22",
-        "version": "57.0.22",
+        "version": "57.0.23",
     },
     {
         "location": "node_modules/@expo/config-plugins",
         "name": "@expo/config-plugins",
-        "requested": "^57.0.9",
+        "requested": "^57.0.10",
         "version": "57.0.10",
     },
     {
@@ -86,10 +86,10 @@ CURRENT_REEVALUATION_REQUESTED_EDGE = {
     "from": {
         "location": "node_modules/expo-sharing",
         "name": "expo-sharing",
-        "version": "57.0.22",
+        "version": "57.0.23",
     },
     "package": "@expo/config-plugins",
-    "requested": "^57.0.9",
+    "requested": "^57.0.10",
 }
 
 CURRENT_REEVALUATION_ACTUAL_SOURCE = {
@@ -164,7 +164,7 @@ def validate_current_re_evaluation_schema(
     )
 
     require(
-        current.get("source_issue") == 282,
+        current.get("source_issue") == 384,
         "current re-evaluation source issue drift",
     )
 

@@ -89,12 +89,12 @@
             "location": "node_modules/expo-sharing",
             "name": "expo-sharing",
             "requested": "~57.0.22",
-            "version": "57.0.22"
+            "version": "57.0.23"
           },
           {
             "location": "node_modules/@expo/config-plugins",
             "name": "@expo/config-plugins",
-            "requested": "^57.0.9",
+            "requested": "^57.0.10",
             "version": "57.0.10"
           },
           {
@@ -111,20 +111,20 @@
           }
         ],
         "manifest_path": "apps/mobile/package-lock.json",
-        "reason": "Issue #282 re-evaluates the current Expo SDK-57 owner path: expo-sharing's requested ^57.0.9 edge resolves @expo/config-plugins 57.0.10 in the 57.0.27 lock; historical alert 2 assessment, owner authority, and UUID replacement remain immutable.",
+        "reason": "Issue #384 re-evaluates the current Expo SDK-57 owner path: expo-sharing's requested ^57.0.10 edge resolves @expo/config-plugins 57.0.10 in the 57.0.28 lock; historical alert 2 assessment, owner authority, and UUID replacement remain immutable.",
         "requested_edge": {
           "from": {
             "location": "node_modules/expo-sharing",
             "name": "expo-sharing",
-            "version": "57.0.22"
+            "version": "57.0.23"
           },
           "package": "@expo/config-plugins",
-          "requested": "^57.0.9"
+          "requested": "^57.0.10"
         },
-        "reviewed_at": "2026-10-06",
-        "reviewed_commit": "8fb94af05063276ce5404df5bb00e0e4161be775",
-        "scope": "issue-282 current @expo/config-plugins compatibility re-evaluation",
-        "source_issue": 282
+        "reviewed_at": "2026-10-13",
+        "reviewed_commit": "e4e54d55b543eed61e820dea853131b6aa44b9cd",
+        "scope": "issue-384 current @expo/config-plugins compatibility re-evaluation",
+        "source_issue": 384
       },
       "disposition": "fixed by owner-authorized tested compatibility override",
       "historical_assessment": {

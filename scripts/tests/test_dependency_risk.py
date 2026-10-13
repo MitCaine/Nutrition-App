@@ -303,7 +303,11 @@ class DependencyRiskTests(unittest.TestCase):
 
         self.assertEqual(
             current["requested_edge"]["requested"],
-            "^57.0.9",
+            "^57.0.10",
+        )
+        self.assertEqual(
+            current["dependency_path"][1]["version"],
+            "57.0.23",
         )
         self.assertEqual(
             current["actual_source"]["version"],
@@ -315,6 +319,24 @@ class DependencyRiskTests(unittest.TestCase):
             self.load_lock(),
             {"overrides": {"xcode": {"uuid": "11.1.1"}}},
         )
+
+    def test_current_re_evaluation_rejects_owner_patch_drift(self):
+        retired = self.load_register()["retired_records"][0]
+        manifest = {"overrides": {"xcode": {"uuid": "11.1.1"}}}
+        for version, requested in (
+            ("57.0.22", "^57.0.9"),
+            ("57.0.24", "^57.0.10"),
+            ("57.0.23", "^57.0.9"),
+        ):
+            lock = self.load_lock()
+            owner = lock["packages"]["node_modules/expo-sharing"]
+            owner["version"] = version
+            owner["dependencies"]["@expo/config-plugins"] = requested
+            with self.subTest(version=version, requested=requested):
+                with self.assertRaises(dependency_risk.DependencyRiskError):
+                    dependency_risk.validate_current_re_evaluation(
+                        retired, lock, manifest
+                    )
 
     def test_current_re_evaluation_rejects_historical_path(self):
         retired = self.load_register()["retired_records"][0]
