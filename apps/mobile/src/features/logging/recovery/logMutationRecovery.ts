@@ -679,11 +679,13 @@ export async function reconcileLogMutationRecoveryRecord(
           operationFor(record),
         );
     if (status.status === "confirmed_success") {
-      projectConfirmedRecovery(
-        queryClient,
-        record,
-        status,
-      );
+      if (dependencies.authority.kind === "local" && record.payload.operation === "create") {
+        // A completed local receipt can describe a subsequently edited/deleted Log.
+        // Settle the intent, but let current-resource reads populate the cache.
+        if (queryClient) refreshAffectedDates(queryClient, record, status);
+      } else {
+        projectConfirmedRecovery(queryClient, record, status);
+      }
       await finalizeConfirmedLogMutationRecoveryRecord(
         record,
         storage,

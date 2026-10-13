@@ -148,6 +148,11 @@ mechanisms differ. Remote mode uses PostgreSQL transactions/locks; local mode us
 SQLite transactions. Neither may expose a committed Log before the selected authority has actually
 committed it.
 
+A completed local create receipt remains authoritative for exact replay and recovery status after a
+later Log edit or deletion. Recovery clears the submitted intent without recreating the entry;
+current-resource reads refresh the cache rather than projecting the receipt's historical response.
+Missing, incomplete or malformed receipts remain unresolved, and payload/owner isolation still applies.
+
 ### Logging a mutable Food
 
 The selected runtime resolves one coherent committed Food generation and writes the resulting

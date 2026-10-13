@@ -174,6 +174,7 @@ type LogRow = Readonly<{
 }>;
 
 type ReceiptRow = Readonly<{
+  completed_at: string | null;
   request_fingerprint: string;
   resource_id: string;
   response_snapshot: string | null;
@@ -893,7 +894,7 @@ async function readMutationReceipt(
   clientRequestId: string,
 ): Promise<ReceiptRow | null> {
   return transaction.getFirstAsync<ReceiptRow>(
-    `SELECT "request_fingerprint", "resource_id", "response_snapshot"
+    `SELECT "request_fingerprint", "resource_id", "response_snapshot", "completed_at"
      FROM "create_operation_idempotency"
      WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
     [ownerId, operation, clientRequestId],
@@ -932,6 +933,39 @@ async function completeMutationReceipt(
      WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
     [canonicalJsonStringify(snapshot), completedAt, ownerId, operation, clientRequestId],
   );
+}
+
+/** Completed create receipts outlive their mutable resource; validate the retained local response. */
+function parseCreateReceipt(receipt: ReceiptRow): DailyLog {
+  try {
+    if (!receipt.completed_at || !receipt.response_snapshot) throw new Error("incomplete create receipt");
+    parseInstant(receipt.completed_at);
+    parseCanonicalJson(receipt.response_snapshot);
+    const result = JSON.parse(receipt.response_snapshot) as Partial<DailyLog>;
+    if (!result || typeof result !== "object" || Array.isArray(result)
+      || result.id !== receipt.resource_id
+      || typeof result.source_food_available !== "boolean"
+      || typeof result.is_editable !== "boolean"
+      || (result.edit_block_reason !== null && result.edit_block_reason !== "source_food_deleted")) {
+      throw new Error("invalid create receipt");
+    }
+    parseUuid(result.id);
+    parseUuid(result.food_item_id);
+    parseDateOnly(result.logged_date);
+    const quantity = parseDecimal(result.amount_quantity, NUMERIC_14_6);
+    if (compareDecimals(quantity, "0", NUMERIC_14_6) <= 0) throw new Error("invalid quantity");
+    if (result.amount_unit !== "serving" && result.amount_unit !== "g") throw new Error("invalid amount unit");
+    if (result.serving_definition_id !== null) parseUuid(result.serving_definition_id);
+    if (result.gram_amount !== null) parseDecimal(result.gram_amount, NUMERIC_14_6);
+    parseInstant(result.created_at);
+    parseInstant(result.updated_at);
+    for (const value of [result.food_name_snapshot, result.meal_type, result.notes]) {
+      if (value !== null && typeof value !== "string") throw new Error("invalid response text");
+    }
+    return result as DailyLog;
+  } catch {
+    throw idempotencyResultUnavailable();
+  }
 }
 
 function parseUpdateReceipt(receipt: ReceiptRow): UpdateReceiptSnapshot {
@@ -2043,23 +2077,14 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
     try {
       return await withLocalWriteTransaction(this.database, async (transaction) => {
         const existingReceipt = await transaction.getFirstAsync<ReceiptRow>(
-          `SELECT "request_fingerprint", "resource_id", "response_snapshot"
+          `SELECT "request_fingerprint", "resource_id", "response_snapshot", "completed_at"
            FROM "create_operation_idempotency"
            WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
           [this.ownerId, CREATE_OPERATION, normalized.clientRequestId],
         );
         if (existingReceipt) {
           if (existingReceipt.request_fingerprint !== requestFingerprint) throw idempotencyPayloadConflict();
-          if (!existingReceipt.response_snapshot) throw idempotencyResultUnavailable();
-          try {
-            parseCanonicalJson(existingReceipt.response_snapshot);
-            const existingLog = await loadLog(transaction, this.ownerId, existingReceipt.resource_id);
-            if (!existingLog) throw idempotencyResultUnavailable();
-            return JSON.parse(existingReceipt.response_snapshot) as DailyLog;
-          } catch (error) {
-            if (error instanceof LocalRuntimeError) throw error;
-            throw idempotencyResultUnavailable();
-          }
+          return parseCreateReceipt(existingReceipt);
         }
         const existingLog = await transaction.getFirstAsync<LogRow>(
           `SELECT "id", "user_id", "food_item_id", "food_name_snapshot", "client_request_id",
@@ -2676,7 +2701,7 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             ? UPDATE_OPERATION
             : DELETE_OPERATION;
         const receipt = await this.database.getFirstAsync<ReceiptRow>(
-          `SELECT "request_fingerprint", "resource_id", "response_snapshot"
+          `SELECT "request_fingerprint", "resource_id", "response_snapshot", "completed_at"
            FROM "create_operation_idempotency"
            WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
           [this.ownerId, receiptOperation, requestId],
@@ -2685,16 +2710,13 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           return { operation: normalizedOperation, client_request_id: requestId, status: "confirmed_non_commit", log_id: null, result: null };
         }
         if (normalizedOperation === "create") {
-          const log = await loadLog(this.database, this.ownerId, receipt.resource_id);
-          if (!receipt.response_snapshot || !log) {
-            return { operation: "create", client_request_id: requestId, status: "unresolved", log_id: log ? log.id : null, result: null };
-          }
+          const result = parseCreateReceipt(receipt);
           return {
             operation: "create",
             client_request_id: requestId,
             status: "confirmed_success",
-            log_id: log.id,
-            result: await logResponse(this.database, this.ownerId, log),
+            log_id: result.id,
+            result,
           };
         }
 

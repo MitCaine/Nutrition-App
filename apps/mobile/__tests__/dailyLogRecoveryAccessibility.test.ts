@@ -1,3 +1,6 @@
+import { QueryClient } from "@tanstack/react-query";
+import { localAuthorityIdentity } from "../src/runtime/authorityIdentity";
+import type { DailyLog } from "../src/features/logging/api/types";
 import React from "react";
 import { Pressable, Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
@@ -16,6 +19,7 @@ import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRun
 import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
 
 let mockRecovery: RecoveryJournalState;
+let mockCachedLogs: DailyLog[] = [];
 const mockAnnounce = jest.fn((_message?: string, _options?: unknown) => jest.fn());
 const mockFocus = jest.fn((_target?: unknown, _options?: unknown) => jest.fn());
 const mockReconcile = jest.fn();
@@ -31,7 +35,13 @@ const testRuntime = createNutritionTestRuntime({
   },
 });
 
-jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
+jest.mock("../src/shared/components/RootScreenHeader", () => {
+  const React = jest.requireActual("react") as typeof import("react");
+  const { Pressable } = jest.requireActual("react-native") as typeof import("react-native");
+  return { RootScreenHeader: ({ action }: { action?: { accessibilityLabel: string; disabled: boolean; onPress: () => void } }) => action
+    ? React.createElement(Pressable, { accessibilityLabel: action.accessibilityLabel, disabled: action.disabled, onPress: action.onPress })
+    : null };
+});
 jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
   ...jest.requireActual("../src/features/targets/hooks/useDailyTargetComparison"),
   useTargetConfiguration: () => ({
@@ -60,7 +70,7 @@ jest.mock("../src/features/calendar/hooks/useCalendar", () => ({
 }));
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),
-  useDailyLogs: () => ({ data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
+  useDailyLogs: () => ({ data: mockCachedLogs, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
   useFutureLogs: () => ({ data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
   useDailySummary: () => ({
     data: {
@@ -155,6 +165,7 @@ function textContent(node: TestRenderer.ReactTestInstance | string): string {
 }
 
 beforeEach(() => {
+  mockCachedLogs = [];
   mockRecovery = { ready: true, unknownVersion: false, malformedRecordCount: 0, storageError: false, records: [] };
   mockAnnounce.mockClear();
   mockFocus.mockClear();
@@ -259,4 +270,35 @@ test("busy and dismissed recovery lifecycle states are exposed without erasing t
     .toEqual(expect.objectContaining({ busy: true, disabled: true }));
   await act(async () => finish("pending"));
   await act(async () => renderer.unmount());
+});
+
+test("settled local create receipt leaves a deleted entry absent and releases rendered Complete", async () => {
+  const actual = jest.requireActual("../src/features/logging/recovery/logMutationRecovery") as typeof import("../src/features/logging/recovery/logMutationRecovery");
+  const authority = localAuthorityIdentity("00000000-0000-4000-8000-000000000001");
+  const input = { client_request_id: "00000000-0000-4000-8000-000000000471", food_item_id: "00000000-0000-4000-8000-000000000010", logged_date: "2026-07-14", amount_quantity: "1", amount_unit: "g" as const };
+  const historical: DailyLog = { id: "00000000-0000-4000-8000-000000000472", ...input, source_food_available: true };
+  const remaining: DailyLog = { ...historical, id: "00000000-0000-4000-8000-000000000473", food_name_snapshot: "Remaining food" };
+  let value: string | null = null;
+  const storage: RecoveryStorage = { getItem: async () => value, setItem: async (_key, next) => { value = next; }, removeItem: async () => { value = null; } };
+  const record = actual.createLogMutationRecoveryRecord({ authority, clientRequestId: input.client_request_id, mutationType: "create", sourceDate: input.logged_date, payload: { operation: "create", input }, displayContext: { item_name: "Deleted food", amount_label: "1 g", meal_label: null } });
+  await actual.upsertLogMutationRecoveryRecord({ ...record, state: "submitted" }, storage);
+  mockRecovery.records = await actual.loadLogMutationRecoveryJournal(authority, storage);
+  const client = new QueryClient();
+  client.setQueryData(["logs", input.logged_date], [remaining]);
+  mockCachedLogs = client.getQueryData<DailyLog[]>(["logs", input.logged_date])!;
+  const renderer = await renderRecovery();
+  const complete = () => renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === "Complete")!;
+  expect(complete().props.disabled).toBe(true);
+  const create = jest.fn();
+  try {
+    await actual.reconcileLogMutationRecoveryRecord(mockRecovery.records[0]!, client, { authority, dailyLogs: { ...testRuntime.dailyLogs, create, getMutationStatus: async () => ({ operation: "create", client_request_id: input.client_request_id, status: "confirmed_success", log_id: historical.id, result: historical }) } }, { storage });
+    mockRecovery.records = await actual.loadLogMutationRecoveryJournal(authority, storage);
+    mockCachedLogs = client.getQueryData<DailyLog[]>(["logs", input.logged_date])!;
+    await act(async () => renderer.update(withNutritionRuntime(React.createElement(DailyLogScreen, { date: input.logged_date, setDate: jest.fn(), onOpenFood: jest.fn(), onEditLog: jest.fn(), onOpenSettings: jest.fn(), onOpenHistory: jest.fn(), onOpenNutrition: jest.fn(), initialScrollOffset: 0, onScrollOffsetChange: jest.fn() }), testRuntime)));
+    expect(complete().props.disabled).toBe(false);
+    expect(mockCachedLogs).toEqual([remaining]);
+    expect(create).not.toHaveBeenCalled();
+    expect(client.getQueryState(["logs", input.logged_date])?.isInvalidated).toBe(true);
+    expect(renderer.root.findAllByType(Text).map(textContent).join(" ")).not.toContain("Deleted food");
+  } finally { await act(async () => renderer.unmount()); client.clear(); }
 });

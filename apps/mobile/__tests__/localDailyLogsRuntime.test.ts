@@ -1,3 +1,4 @@
+import { QueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 
 const { mkdtempSync, rmSync } = require("node:fs") as {
@@ -909,6 +910,77 @@ describe("E2-09 local Daily Logs", () => {
     await expect(reconcileLogMutationRecoveryRecord(record, null, dependencies, { storage }))
       .resolves.toBe("confirmed");
   });
+
+  test("settles a reopened submitted create after deletion without replaying or resurrecting it", async () => {
+    database.close();
+    const directory = mkdtempSync(join(tmpdir(), "nutrition-gh371-"));
+    temporaryDirectories.add(directory);
+    database = await prepareDatabase(join(directory, "nutrition.db"));
+    await seedProteinFood(database);
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const input = createInput("00000000-0000-4000-8000-000000000471");
+    const authority = localAuthorityIdentity(OWNER);
+    const storage = memoryRecoveryStorage();
+    const record = createLogMutationRecoveryRecord({
+      authority, clientRequestId: input.client_request_id, mutationType: "create",
+      sourceDate: input.logged_date, payload: { operation: "create", input },
+      displayContext: { item_name: "Protein food", amount_label: "2 servings", meal_label: "Breakfast" },
+    });
+    await upsertLogMutationRecoveryRecord({ ...record, state: "submitted" }, storage);
+    const created = await runtime.create(input);
+    await expect(runtime.getMutationStatus(input.client_request_id, "create")).resolves.toMatchObject({ status: "confirmed_success", result: created });
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000472");
+    const remaining = await runtime.create(createInput("00000000-0000-4000-8000-000000000473"));
+    await runtime.update(created.id, { notes: "later edit" });
+    await expect(runtime.create(input)).resolves.toEqual(created);
+    await expect(runtime.getMutationStatus(input.client_request_id, "create")).resolves.toMatchObject({ result: created });
+    database.close();
+    database = new LocalSQLiteTestDatabase(join(directory, "nutrition.db"));
+    await database.initialize();
+    const reopened = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    await reopened.delete(created.id);
+    const before = await reopened.getDailySummary(input.logged_date);
+    await expect(reopened.create(input)).resolves.toEqual(created);
+    await expect(reopened.create({ ...input, amount_quantity: "3" })).rejects.toMatchObject({ code: "log_idempotency_payload_conflict" });
+    const other = createLocalDailyLogsRuntime(database.asExpoDatabase(), OTHER_OWNER, { now: NOW });
+    await expect(other.getMutationStatus(input.client_request_id, "create")).resolves.toMatchObject({ status: "confirmed_non_commit", result: null });
+    await expect(reopened.getMutationStatus(input.client_request_id, "update")).resolves.toMatchObject({ status: "confirmed_non_commit" });
+    const persisted = await loadLogMutationRecoveryJournal(authority, storage);
+    expect(persisted).toHaveLength(1);
+    const client = new QueryClient();
+    client.setQueryData(["logs", input.logged_date], [remaining]);
+    const create = jest.spyOn(reopened, "create");
+    try {
+      await expect(reconcileLogMutationRecoveryRecord(persisted[0]!, client, { authority, dailyLogs: reopened }, { storage })).resolves.toBe("confirmed");
+      expect(create).not.toHaveBeenCalled();
+      expect(await loadLogMutationRecoveryJournal(authority, storage)).toHaveLength(0);
+      expect(client.getQueryData(["logs", input.logged_date])).toEqual([remaining]);
+      expect(client.getQueryState(["logs", input.logged_date])?.isInvalidated).toBe(true);
+      expect(await reopened.list(input.logged_date)).toEqual([remaining]);
+      expect(await reopened.getDailySummary(input.logged_date)).toEqual(before);
+      expect(before.is_complete).toBe(false);
+    } finally { client.clear(); }
+  });
+
+  test.each(["incomplete receipt", "malformed JSON", "wrong identity", "invalid quantity", "incomplete response"])(
+    "keeps a %s create receipt unresolved even with a live target", async (fault) => {
+      const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+      const input = createInput("00000000-0000-4000-8000-000000000474");
+      const created = await runtime.create(input);
+      const response = fault === "malformed JSON" ? "{" : JSON.stringify(fault === "incomplete response" ? { id: created.id } : {
+        ...created,
+        ...(fault === "wrong identity" ? { id: FOOD } : {}),
+        ...(fault === "invalid quantity" ? { amount_quantity: "bad" } : {}),
+      });
+      await database.runAsync(
+        `UPDATE create_operation_idempotency SET response_snapshot = ?, completed_at = ? WHERE user_id = ? AND operation = 'log.create' AND client_request_id = ?`,
+        [fault === "incomplete receipt" ? null : response, fault === "incomplete receipt" ? null : NOW().toISOString(), OWNER, input.client_request_id],
+      );
+      await expect(runtime.getMutationStatus(input.client_request_id, "create")).resolves.toMatchObject({ status: "unresolved", result: null });
+      await expect(runtime.create(input)).rejects.toMatchObject({ code: "log_mutation_unresolved" });
+      expect(await runtime.list(input.logged_date)).toHaveLength(1);
+    },
+  );
 
   test("retains completed mutation receipts across an actual file-backed SQLite connection reopen", async () => {
     database.close();
