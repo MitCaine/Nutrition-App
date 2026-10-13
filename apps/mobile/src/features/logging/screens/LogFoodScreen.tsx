@@ -53,6 +53,7 @@ import {
   RecoveryStorageError,
   type LogMutationRecoveryRecord,
 } from "../recovery/logMutationRecovery";
+import { formatDisplayNumber } from "../../../shared/nutrition/display";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
 function isLocalRecoveryStorageError(error: unknown): boolean {
@@ -860,11 +861,11 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         >
           <Text style={styles.calendarNotice}>Move this entry to Today or an earlier date. The entry identity, nutrition, and metadata remain unchanged.</Text>
           <Text
-            accessibilityLabel={`${log.food_name_snapshot ?? "Deleted food"}, original date ${formatReadableDate(log.logged_date)}, ${formatInitialLogAmount(log.amount_quantity)} ${log.amount_unit}, ${mealLabel.toLowerCase()}${log.notes ? ", note present" : ", no note"}${!log.source_food_available ? ", source unavailable" : ""}`}
+            accessibilityLabel={`${log.food_name_snapshot ?? "Deleted food"}, original date ${formatReadableDate(log.logged_date)}, ${formatDisplayNumber(log.amount_quantity)} ${log.amount_unit}, ${mealLabel.toLowerCase()}${log.notes ? ", note present" : ", no note"}${!log.source_food_available ? ", source unavailable" : ""}`}
             style={styles.foodName}
           >{log.food_name_snapshot ?? "Deleted food"}</Text>
           <Text accessible={false} style={styles.text}>Original date: {log.logged_date}</Text>
-          <Text accessible={false} style={styles.text}>Amount: {formatInitialLogAmount(log.amount_quantity)} {log.amount_unit}</Text>
+          <Text accessible={false} style={styles.text}>Amount: {formatDisplayNumber(log.amount_quantity)} {log.amount_unit}</Text>
           <Text accessible={false} style={styles.text}>Meal: {mealLabel}</Text>
           {log.notes ? <Text accessible={false} style={styles.text}>Note: {log.notes}</Text> : null}
           {!log.source_food_available ? <Text style={styles.calendarNotice}>Source Food or Recipe is unavailable; this date-only move remains available.</Text> : null}

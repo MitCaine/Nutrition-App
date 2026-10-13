@@ -1,7 +1,8 @@
 import type { Food, FoodResolvedNutrition, ResolvedFoodAmount } from "../../foods/api/types";
 import { defaultServing } from "../../foods/utils/foodDisplay";
 import { formatServingLabelForDisplay } from "../../foods/utils/amountForm";
-import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
+import { formatAmountWithUnit } from "../../../shared/nutrition/display";
+import { isUnsignedDecimalString } from "../../../shared/forms/decimalString";
 import type { DailyLog, DailyLogEditContext, DailyLogInput, DailyLogUpdateInput } from "../api/types";
 import { normalizeLogMeal, normalizeLogNote } from "../validation/logContracts";
 
@@ -259,7 +260,10 @@ export function buildLogUpdateInput(input: DailyLogInput): DailyLogUpdateInput {
 }
 
 export function formatInitialLogAmount(amount?: string | null): string {
-  return amount ? formatDisplayNumber(amount) : "1";
+  if (!amount) return "1";
+  // Editable authority: trim only insignificant zeros, never round or group.
+  if (!isUnsignedDecimalString(amount) || !amount.includes(".")) return amount;
+  return amount.replace(/0+$/, "").replace(/\.$/, "");
 }
 
 export function formatServingGramWeight(gramWeight?: string | null): string | null {

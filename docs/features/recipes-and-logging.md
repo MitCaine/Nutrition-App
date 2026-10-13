@@ -179,6 +179,8 @@ deleted.
 
 ## Editing and deleting Logs
 
+Editable Log quantities preserve the exact canonical decimal value received from Food Details or stored history. Only insignificant trailing zeros may be trimmed; display rounding and digit grouping remain presentation-only. Untouched quantities, metadata-only edits and exact Repeat drafts do not change nutrition through initialization.
+
 Editing a Log is a new historical observation of the edited amount, not retroactive reaction to a
 Food edit. The service deletes and rebuilds only that Log's snapshots in the same transaction:
 

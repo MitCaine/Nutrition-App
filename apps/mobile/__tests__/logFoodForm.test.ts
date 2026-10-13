@@ -343,3 +343,5 @@ test("legacy and Manual Food edits retain projection serving choices", () => {
     "serving-bar",
   ]);
 });
+
+test.each(["0.125", "0.004", "1000", "1.25", "99999999.123456"])("editable quantity preserves %s without display rounding/grouping", (quantity) => { expect(formatInitialLogAmount(quantity)).toBe(quantity); });
