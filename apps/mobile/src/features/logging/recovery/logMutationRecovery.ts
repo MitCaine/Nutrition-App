@@ -649,12 +649,16 @@ function projectConfirmedRecovery(
   queryClient: QueryClient | null,
   record: LogMutationRecoveryRecord,
   status: DailyLogMutationStatus,
+  authority: RuntimeAuthorityIdentity,
 ): void {
   if (queryClient === null) return;
+  // Local create responses are retained receipts, including on exact retry.
+  // Current-resource reads must populate both fresh and recovered create caches.
   if (record.payload.operation === "delete") {
     const logId = status.log_id ?? record.target_id;
     if (logId) projectConfirmedDelete(queryClient, record.source_date, logId);
-  } else if (record.payload.operation !== "complete" && status.result) {
+  } else if (record.payload.operation !== "complete" && status.result
+    && !(authority.kind === "local" && record.payload.operation === "create")) {
     projectConfirmedLog(queryClient, status.source_logged_date ?? record.source_date, status.result);
   }
   refreshAffectedDates(queryClient, record, status);
@@ -679,13 +683,7 @@ export async function reconcileLogMutationRecoveryRecord(
           operationFor(record),
         );
     if (status.status === "confirmed_success") {
-      if (dependencies.authority.kind === "local" && record.payload.operation === "create") {
-        // A completed local receipt can describe a subsequently edited/deleted Log.
-        // Settle the intent, but let current-resource reads populate the cache.
-        if (queryClient) refreshAffectedDates(queryClient, record, status);
-      } else {
-        projectConfirmedRecovery(queryClient, record, status);
-      }
+      projectConfirmedRecovery(queryClient, record, status, dependencies.authority);
       await finalizeConfirmedLogMutationRecoveryRecord(
         record,
         storage,
@@ -747,6 +745,7 @@ export async function retryLogMutationRecoveryRecord(
       queryClient,
       submitted,
       status,
+      dependencies.authority,
     );
     await finalizeConfirmedLogMutationRecoveryRecord(
       submitted,

@@ -223,7 +223,12 @@ export function useLogMutations(date: string) {
       mutationFn: (input: Parameters<typeof runtime.dailyLogs.create>[0]) =>
         runtime.dailyLogs.create(input),
       onSuccess: (result) => {
-        projectConfirmedLog(queryClient, date, result);
+        if (runtime.authority.kind === "local") {
+          // A create response may be an exact replay after a later edit/delete.
+          invalidateLogDateCaches(queryClient, result.logged_date);
+        } else {
+          projectConfirmedLog(queryClient, date, result);
+        }
         invalidateUse();
         invalidateHistory(result.logged_date);
       },

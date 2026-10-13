@@ -12,6 +12,7 @@ import {
   createLogMutationRecoveryRecord,
   loadLogMutationRecoveryJournal,
   reconcileLogMutationRecoveryRecord,
+  retryLogMutationRecoveryRecord,
   upsertLogMutationRecoveryRecord,
   type RecoveryStorage,
 } from "../src/features/logging/recovery/logMutationRecovery";
@@ -960,6 +961,56 @@ describe("E2-09 local Daily Logs", () => {
       expect(await reopened.getDailySummary(input.logged_date)).toEqual(before);
       expect(before.is_complete).toBe(false);
     } finally { client.clear(); }
+  });
+
+  test.each(["delete", "edit"] as const)("delayed local recovery retry preserves current cache after later %s", async (later) => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const remaining = await runtime.create(createInput("00000000-0000-4000-8000-000000000475"));
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000476");
+    const input = createInput("00000000-0000-4000-8000-000000000477");
+    const authority = localAuthorityIdentity(OWNER);
+    const storage = memoryRecoveryStorage();
+    const record = createLogMutationRecoveryRecord({ authority, clientRequestId: input.client_request_id, mutationType: "create", sourceDate: input.logged_date, payload: { operation: "create", input }, displayContext: { item_name: "Oats", amount_label: "2 servings", meal_label: null } });
+    await upsertLogMutationRecoveryRecord(record, storage);
+    let reportCommit!: () => void;
+    let releaseResponse!: () => void;
+    const committed = new Promise<void>((resolve) => { reportCommit = resolve; });
+    const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
+    let accepted!: Awaited<ReturnType<typeof runtime.create>>;
+    const wrapped = Object.create(runtime) as typeof runtime;
+    const create = jest.fn(async (payload: Parameters<typeof runtime.create>[0]) => {
+      accepted = await runtime.create(payload);
+      reportCommit();
+      await responseGate;
+      return accepted;
+    });
+    wrapped.create = create;
+    const client = new QueryClient();
+    const retry = retryLogMutationRecoveryRecord(record, client, { authority, dailyLogs: wrapped }, storage);
+    try {
+      await committed;
+      expect(await runtime.list(input.logged_date)).toHaveLength(2);
+      if (later === "delete") await runtime.delete(accepted.id);
+      else await runtime.update(accepted.id, { amount_quantity: "3", notes: "later edit" });
+      const current = await runtime.list(input.logged_date);
+      const summary = await runtime.getDailySummary(input.logged_date);
+      const snapshots = await database.getAllAsync('SELECT * FROM daily_log_nutrient_snapshots ORDER BY id');
+      client.setQueryData(["logs", input.logged_date], current);
+      releaseResponse();
+      await expect(retry).resolves.toBe("confirmed");
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(await loadLogMutationRecoveryJournal(authority, storage)).toHaveLength(0);
+      expect(client.getQueryData(["logs", input.logged_date])).toEqual(current);
+      expect(client.getQueryState(["logs", input.logged_date])?.isInvalidated).toBe(true);
+      expect(await runtime.list(input.logged_date)).toEqual(current);
+      expect(await runtime.getDailySummary(input.logged_date)).toEqual(summary);
+      expect(await database.getAllAsync('SELECT * FROM daily_log_nutrient_snapshots ORDER BY id')).toEqual(snapshots);
+      expect(current.some(log => log.id === remaining.id)).toBe(true);
+      // Exact retry after settlement also preserves the current-resource cache.
+      await expect(retryLogMutationRecoveryRecord(record, client, { authority, dailyLogs: runtime }, storage)).resolves.toBe("confirmed");
+      expect(client.getQueryData(["logs", input.logged_date])).toEqual(current);
+      expect(await runtime.list(input.logged_date)).toEqual(current);
+    } finally { releaseResponse(); await retry; client.clear(); }
   });
 
   test.each(["incomplete receipt", "malformed JSON", "wrong identity", "invalid quantity", "incomplete response"])(
