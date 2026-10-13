@@ -165,7 +165,10 @@ different committed Food generations.
 
 The service locks and resolves the immutable publication revision and an exact amount definition.
 The Daily Log stores both IDs. It does not recalculate against the currently authored Recipe or the
-latest active revision.
+latest active revision. Generated 100 g Recipe amounts resolve against the published mass basis;
+counts of those amounts are not counts of default portions. An explicit amount edit preserves the
+selected immutable identity and stores coherent consumed mass and nutrient snapshots. It does not
+recalculate other historical Logs or change publication rounding.
 
 ### Snapshot contents
 

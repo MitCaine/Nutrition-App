@@ -1566,7 +1566,7 @@ function resolveAmount(
   nutrients: readonly SourceNutrient[],
   input: Pick<NormalizedCreate, "amountQuantity" | "amountUnit"> & Partial<Pick<NormalizedCreate, "amountQuantityRaw">>,
   servingDefinitionId: string | null,
-  gramConversionAmount?: AmountDefinition | null,
+  servingBasisAmount?: AmountDefinition | null,
 ): { amount: AmountDefinition; servingDefinitionId: string | null; gramAmount: ExactDecimal | null; snapshots: ResolvedSnapshot[] } {
   const amountUnit = input.amountUnit;
   const rawQuantity = input.amountQuantityRaw ?? parseResponseDecimal(input.amountQuantity);
@@ -1577,9 +1577,16 @@ function resolveAmount(
       ? null
       : multiplyResponseDecimalsInContext(rawQuantity, amount.gramEquivalent);
     servingMultiplier = rawQuantity;
+    if (servingBasisAmount !== undefined && amount.id !== servingBasisAmount?.id) {
+      // Recipe per-serving nutrients describe its default published portion,
+      // not a count of an independently selected generated mass amount.
+      servingMultiplier = rawGramAmount !== null && servingBasisAmount?.gramEquivalent != null
+        ? divideResponseDecimals(rawGramAmount, servingBasisAmount.gramEquivalent)
+        : amount.displayUnit === "g" ? null : rawQuantity;
+    }
   } else {
     rawGramAmount = rawQuantity;
-    const conversion = gramConversionAmount === undefined ? amount : gramConversionAmount;
+    const conversion = servingBasisAmount === undefined ? amount : servingBasisAmount;
     servingMultiplier = conversion?.gramEquivalent == null
       ? null
       : divideResponseDecimals(rawQuantity, conversion.gramEquivalent);
@@ -1592,7 +1599,9 @@ function resolveAmount(
     gramAmount: rawGramAmount === null ? null : parseDecimal(rawGramAmount, NUMERIC_14_6),
     snapshots: resolveSnapshots(
       nutrients,
-      amountUnit,
+      // Only Recipe callers supply a published serving basis. Ordinary Food
+      // serving labels retain their existing nutrient-selection semantics.
+      servingBasisAmount !== undefined && amount.displayUnit === "g" ? "g" : amountUnit,
       servingMultiplier,
       rawGramAmount,
       servingDefinitionId,
