@@ -1154,3 +1154,13 @@ test("#103 E4-07 compact summary remains fixed to the four required nutrients", 
     independent.renderer.unmount(),
   );
 });
+
+test.each(["2011-12-29", "2011-12-30", "2011-12-31"])("unchanged picker confirmation preserves owner calendar date %s", async (selectedDate) => {
+  const rendered = await render(selectedDate);
+  try {
+    const trigger = rendered.renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel?.startsWith("Choose date, currently"))!;
+    await act(async () => trigger.props.onPress());
+    await act(async () => rendered.renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === "Confirm selected date")!.props.onPress());
+    expect(rendered.setDate).toHaveBeenCalledWith(selectedDate);
+  } finally { await act(async () => rendered.renderer.unmount()); }
+});

@@ -19,9 +19,7 @@ import {
   formatReadableDate,
   groupDailyLogs,
   legacyNoteNotice,
-  localDateToApiDate,
   mealAddContext,
-  parseLocalDateString,
   loggedFoodDisplayName,
   unsupportedMealNotice,
 } from "../utils/dailyLogDisplay";
@@ -200,7 +198,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
     total_fat: theme.colors.nutritionFatSeries,
   };
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [draftDate, setDraftDate] = useState(parseLocalDateString(date) ?? new Date());
+  const [draftDate, setDraftDate] = useState(date);
   const [clock, setClock] = useState(() => new Date());
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
@@ -1018,7 +1016,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         accessibilityHint="Opens direct date selection"
         accessibilityLabel={`Choose date, currently ${formatReadableDate(date)}`}
         onPress={() => {
-          setDraftDate(parseLocalDateString(date) ?? new Date());
+          setDraftDate(date);
           setPickerOpen(true);
         }}
         style={styles.dateButton}
@@ -1031,7 +1029,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         onChange={setDraftDate}
         onCancel={() => setPickerOpen(false)}
         onConfirm={(selectedDate) => {
-          selectDate(localDateToApiDate(selectedDate));
+          selectDate(selectedDate);
           setPickerOpen(false);
         }}
         returnFocusRef={datePickerTriggerRef}

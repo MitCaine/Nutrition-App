@@ -6,41 +6,63 @@ import { useAppTheme } from "../../../app/theme/AppTheme";
 import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import type { AccessibilityFocusTarget } from "../../../shared/accessibility/focus";
-import { formatReadableDate, localDateToApiDate } from "../utils/dailyLogDisplay";
+import { formatReadableDate } from "../utils/dailyLogDisplay";
 
 type Props = {
-  date: Date;
+  date: string;
   visible: boolean;
-  onChange: (date: Date) => void;
+  onChange: (date: string) => void;
   onCancel: () => void;
-  onConfirm: (date: Date) => void;
-  maximumDate?: Date;
+  onConfirm: (date: string) => void;
+  maximumDate?: string;
   returnFocusRef?: RefObject<AccessibilityFocusTarget | null>;
   fallbackFocusRef?: RefObject<AccessibilityFocusTarget | null>;
 };
 
-/** Shared date picker used by Daily Log browsing and existing-log editing. */
+// UTC is a native date-only coordinate, not a change to the owner's calendar.
+function nativePickerDate(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : null;
+}
+
+/** Shared date-only picker used by Daily Log browsing and existing-log editing. */
 export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, maximumDate, returnFocusRef, fallbackFocusRef }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
+  const nativeDate = nativePickerDate(date);
+  const nativeMaximum = maximumDate === undefined ? undefined : nativePickerDate(maximumDate);
+
   function handleValueChange(_event: DateTimePickerChangeEvent, selectedDate: Date) {
+    if (!Number.isFinite(selectedDate.getTime())) return;
+    const selected = selectedDate.toISOString().slice(0, 10);
     if (Platform.OS === "android") {
-      onChange(selectedDate);
-      onConfirm(selectedDate);
+      onChange(selected);
+      onConfirm(selected);
       return;
     }
-    onChange(selectedDate);
+    onChange(selected);
+  }
+
+  if (nativeDate === null || nativeMaximum === null) {
+    return visible ? (
+      <AccessibleModal visible title="Select Date" onRequestClose={onCancel} returnFocusRef={returnFocusRef} fallbackFocusRef={fallbackFocusRef}>
+        <Text accessibilityRole="alert">This date cannot be displayed. Cancel to keep the selected date unchanged.</Text>
+        <AccessiblePressable accessibilityLabel="Cancel date selection" onPress={onCancel}><Text>Cancel</Text></AccessiblePressable>
+      </AccessibleModal>
+    ) : null;
   }
 
   if (Platform.OS === "android") {
     return visible ? (
       <DateTimePicker
         accessibilityLabel="Select date"
-        value={date}
+        value={nativeDate}
         mode="date"
+        timeZoneName="UTC"
         display="default"
-        maximumDate={maximumDate}
+        maximumDate={nativeMaximum}
         onValueChange={handleValueChange}
         onDismiss={onCancel}
       />
@@ -59,13 +81,14 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
       contentStyle={styles.modalCard}
       headingStyle={styles.sectionTitle}
     >
-          <Text style={styles.datePreview}>{formatReadableDate(localDateToApiDate(date))}</Text>
+          <Text style={styles.datePreview}>{formatReadableDate(date)}</Text>
           <DateTimePicker
             accessibilityLabel="Selected date"
-            value={date}
+            value={nativeDate}
             mode="date"
+            timeZoneName="UTC"
             display="spinner"
-            maximumDate={maximumDate}
+            maximumDate={nativeMaximum}
             onValueChange={handleValueChange}
             onDismiss={onCancel}
             themeVariant={theme.mode}

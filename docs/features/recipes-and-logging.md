@@ -128,6 +128,8 @@ The projection is managed state:
 
 ## Daily Log creation
 
+Log date pickers keep the owner-calendar date as a date-only string. Their native date-only control uses explicit UTC coordinates, so a device timezone gap cannot substitute Today for a valid selected date. This adapter does not adopt UTC as the owner timezone or move history; unchanged confirmation preserves the selected date, and date moves remain explicit corrections.
+
 ```mermaid
 sequenceDiagram
     participant User

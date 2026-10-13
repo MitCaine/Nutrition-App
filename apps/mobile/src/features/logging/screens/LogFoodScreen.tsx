@@ -61,8 +61,6 @@ function isLocalRecoveryStorageError(error: unknown): boolean {
 }
 import {
   formatReadableDate,
-  localDateToApiDate,
-  parseLocalDateString,
 } from "../utils/dailyLogDisplay";
 
 type Props = {
@@ -174,7 +172,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   const [note, setNote] = useState(initialDraft?.note ?? log?.notes ?? "");
   const [noteTouched, setNoteTouched] = useState(false);
   const [editDate, setEditDate] = useState(date);
-  const [editPickerDate, setEditPickerDate] = useState(parseLocalDateString(date) ?? new Date());
+  const [editPickerDate, setEditPickerDate] = useState(date);
   const [editPickerOpen, setEditPickerOpen] = useState(false);
   const initializedCreateFoodId = useRef<string | null>(null);
   const restoredDraftRef = useRef(Boolean(initialDraft));
@@ -829,7 +827,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   }
 
   if (moveOnly && log) {
-    const destinationMaximum = parseLocalDateString(moveToday ?? date) ?? new Date();
+    const destinationMaximum = moveToday ?? date;
     const mealLabel = log.meal_type
       ? log.meal_type.charAt(0).toUpperCase() + log.meal_type.slice(1)
       : "Unassigned";
@@ -874,7 +872,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             accessibilityLabel="Choose move destination date"
             disabled={isSubmitting}
             onPress={() => {
-              setEditPickerDate(parseLocalDateString(editDate) ?? new Date());
+              setEditPickerDate(editDate);
               setEditPickerOpen(true);
             }}
             style={styles.dateButton}
@@ -888,7 +886,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             onChange={setEditPickerDate}
             onCancel={() => setEditPickerOpen(false)}
             onConfirm={(selectedDate) => {
-              const selected = localDateToApiDate(selectedDate);
+              const selected = selectedDate;
               if (!moveToday || selected > moveToday) {
                 setError("Choose Today or an earlier date for this move.");
                 return;
@@ -966,7 +964,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               accessibilityRole="button"
               accessibilityLabel="Edit log date"
               onPress={() => {
-                setEditPickerDate(parseLocalDateString(editDate) ?? new Date());
+                setEditPickerDate(editDate);
                 setEditPickerOpen(true);
               }}
               style={styles.dateButton}
@@ -979,7 +977,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               onChange={setEditPickerDate}
               onCancel={() => setEditPickerOpen(false)}
               onConfirm={(selectedDate) => {
-                setEditDate(localDateToApiDate(selectedDate));
+                setEditDate(selectedDate);
                 setEditPickerOpen(false);
               }}
             />

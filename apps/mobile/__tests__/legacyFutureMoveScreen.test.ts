@@ -35,11 +35,11 @@ jest.mock("../src/features/logging/utils/clientRequestId", () => ({
   createClientRequestId: () => mockCreateClientRequestId(),
 }));
 jest.mock("../src/features/logging/screens/DatePickerModal", () => ({
-  DatePickerModal: ({ visible, onConfirm }: { visible: boolean; onConfirm: (date: Date) => void }) => (
+  DatePickerModal: ({ visible, onConfirm }: { visible: boolean; onConfirm: (date: string) => void }) => (
     visible
       ? require("react").createElement(
           require("react-native").Pressable,
-          { accessibilityLabel: "Choose valid mocked destination", onPress: () => onConfirm(new Date(2026, 6, 13)) },
+          { accessibilityLabel: "Choose valid mocked destination", onPress: () => onConfirm("2026-07-13") },
           require("react").createElement(require("react-native").Text, null, "Mock date picker"),
         )
       : null

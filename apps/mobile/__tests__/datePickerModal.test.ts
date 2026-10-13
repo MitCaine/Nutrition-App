@@ -1,5 +1,5 @@
 import React from "react";
-import { Platform } from "react-native";
+import { Platform, Pressable, Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import { DatePickerModal } from "../src/features/logging/screens/DatePickerModal";
@@ -58,8 +58,8 @@ test("iOS uses the supported value and dismissal callbacks without auto-confirmi
   const onChange = jest.fn();
   const onCancel = jest.fn();
   const onConfirm = jest.fn();
-  const date = new Date(2026, 6, 14, 12);
-  const selected = new Date(2026, 6, 13, 12);
+  const date = "2026-07-14";
+  const selected = new Date("2026-07-13T12:00:00.000Z");
 
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -74,12 +74,13 @@ test("iOS uses the supported value and dismissal callbacks without auto-confirmi
   });
 
   expect(mockDateTimePickerProps?.onChange).toBeUndefined();
-  expect(mockDateTimePickerProps?.maximumDate).toBe(date);
+  expect(mockDateTimePickerProps?.maximumDate).toEqual(new Date("2026-07-14T12:00:00.000Z"));
+  expect(mockDateTimePickerProps?.timeZoneName).toBe("UTC");
 
   await act(async () => {
     pickerCallback<(event: unknown, value: Date) => void>("onValueChange")({}, selected);
   });
-  expect(onChange).toHaveBeenCalledWith(selected);
+  expect(onChange).toHaveBeenCalledWith(selected.toISOString().slice(0, 10));
   expect(onConfirm).not.toHaveBeenCalled();
 
   await act(async () => {
@@ -95,8 +96,8 @@ test("Android preserves immediate selection confirmation and dismissal cancellat
   const onChange = jest.fn();
   const onCancel = jest.fn();
   const onConfirm = jest.fn();
-  const date = new Date(2026, 6, 14, 12);
-  const selected = new Date(2026, 6, 12, 12);
+  const date = "2026-07-14";
+  const selected = new Date("2026-07-12T12:00:00.000Z");
 
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -113,8 +114,8 @@ test("Android preserves immediate selection confirmation and dismissal cancellat
   await act(async () => {
     pickerCallback<(event: unknown, value: Date) => void>("onValueChange")({}, selected);
   });
-  expect(onChange).toHaveBeenCalledWith(selected);
-  expect(onConfirm).toHaveBeenCalledWith(selected);
+  expect(onChange).toHaveBeenCalledWith(selected.toISOString().slice(0, 10));
+  expect(onConfirm).toHaveBeenCalledWith(selected.toISOString().slice(0, 10));
 
   await act(async () => {
     pickerCallback<() => void>("onDismiss")();
@@ -122,4 +123,28 @@ test("Android preserves immediate selection confirmation and dismissal cancellat
   expect(onCancel).toHaveBeenCalledTimes(1);
 
   await act(async () => renderer.unmount());
+});
+
+
+test.each(["2011-12-29", "2011-12-30", "2011-12-31"])("native date-only UTC coordinate preserves %s on unchanged Done", async (date) => {
+  setPlatform("ios");const onConfirm = jest.fn();let renderer!: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => { renderer = TestRenderer.create(React.createElement(DatePickerModal, { date, visible: true, onChange: jest.fn(), onCancel: jest.fn(), onConfirm, maximumDate: "2026-07-14" })); });
+    expect(mockDateTimePickerProps?.timeZoneName).toBe("UTC");expect((mockDateTimePickerProps?.value as Date).toISOString()).toBe(`${date}T12:00:00.000Z`);
+    expect((mockDateTimePickerProps?.maximumDate as Date).toISOString()).toBe("2026-07-14T12:00:00.000Z");
+    await act(async () => renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === "Confirm selected date")!.props.onPress());
+    expect(onConfirm).toHaveBeenCalledWith(date);
+  } finally { if (renderer) await act(async () => renderer.unmount()); }
+});
+
+test("invalid native value is ignored and an unsupported initial date never becomes Today", async () => {
+  setPlatform("ios");const onChange = jest.fn(), onConfirm = jest.fn(), onCancel = jest.fn();let renderer!: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => { renderer = TestRenderer.create(React.createElement(DatePickerModal, { date: "2026-02-30", visible: true, onChange, onCancel, onConfirm })); });
+    expect(mockDateTimePickerProps).toBeNull();expect(renderer.root.findAllByType(Text).some(node => String(node.props.children).includes("cannot be displayed"))).toBe(true);
+    await act(async () => renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === "Cancel date selection")!.props.onPress());expect(onCancel).toHaveBeenCalledTimes(1);expect(onConfirm).not.toHaveBeenCalled();
+    await act(async () => renderer.update(React.createElement(DatePickerModal, { date: "2011-12-30", visible: true, onChange, onCancel, onConfirm })));
+    await act(async () => pickerCallback<(event: unknown, value: Date) => void>("onValueChange")({}, new Date(NaN)));
+    expect(onChange).not.toHaveBeenCalled();expect(onConfirm).not.toHaveBeenCalled();
+  } finally { if (renderer) await act(async () => renderer.unmount()); }
 });
