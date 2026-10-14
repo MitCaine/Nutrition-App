@@ -164,11 +164,10 @@ byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.m
 [worker Role index](engineering/workflow/shared/worker-instructions.md#role-index)
 and the [role assignment rule](engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs).
 The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional
-on setup or replacement. New tasks normally use six-heading Markdown capsules and the standard controller. For a
-bounded change whose objective, scope, decisions and verification are sufficiently understood, the
-controller may select optional maintenance after confirming eligibility under the
-[governing rule](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route) and recording
-the brief handoff in the existing task record. Before dispatch, run
+on setup or replacement. Select the [capsule format](engineering/workflow/shared/start-an-issue.md#capsule-format) or
+[maintenance route](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route)
+under the selected procedure.
+Before dispatch, run
 `./scripts/task validate-record --task-record PATH --route normal` or explicitly select
 `--route maintenance`; direct Work controller maintenance also supplies `--repo-root` and requires
 the exact local-map permission described in [the route map](docs/local_project_map.md#nutrition-permissions-and-routing).
@@ -176,14 +175,13 @@ The direct record carries `Requested route: maintenance` and
 `Implementation execution: direct Work controller`. The read-only validator checks those fields
 and the selected map permission only; it does not authenticate owner authority, semantic eligibility,
 actual author identity, reviewer independence, live assignments, qualification, or acceptance.
-Use the selected [maintenance and role sequence](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route);
-the author must receive fresh nonauthor review before controller approval and protected integration.
 Apply the [local map's per-worker launch settings and confirmation policy](docs/local_project_map.md#nutrition-permissions-and-routing)
 separately to each assigned role; do not infer configuration from tool names, backing metadata or another
-worker's confirmation. Workers do not recruit. Use blocking completion while an assignment is
-active unless its exact idle-wake route is verified; consume a terminal result already delivered
-without requiring idle-wake proof. The sequence is orient → capsule → implement → independent
-review → authorized integration → verify closeout. RI pins record instruction/runtime provenance
+worker's confirmation. Role duties, recruitment boundaries, independent review and execution order follow the
+[selected role assignment rule](engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs)
+and [phase sequence](engineering/workflow/shared/start-an-issue.md#complete-the-phases).
+Use the [selected waiting rules](engineering/workflow/shared/start-an-issue.md#wait-for-completion).
+RI pins record instruction/runtime provenance
 and do not create permission. The trusted task controller owns authenticated external
 authorization, required qualification and protected integration.
 No RI SDK transport, mandatory declaration report, frozen launcher or timed model gateway applies.

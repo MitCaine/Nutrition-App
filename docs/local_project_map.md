@@ -90,22 +90,19 @@ checkpoint. Loading a skill or this map supplies no grant. Existing Nutrition ow
 authorization and protected procedures still govern publication, qualification, review and integration;
 no additional host/account/security permissions or cross-chat disclosure are implied.
 
-The selected [daily procedure](../engineering/workflow/shared/start-an-issue.md) and
-[worker instructions](../engineering/workflow/shared/worker-instructions.md#role-index) own route
-selection, serial assignments, role boundaries, read scopes, waits, recovery and corrections. The
-controller authenticates the exact candidate, authorized scope, required check completion and
-evidence identity. The fresh independent reviewer assesses substantive correctness and test adequacy.
+Use the selected [daily procedure](../engineering/workflow/shared/start-an-issue.md) and
+[worker role index](../engineering/workflow/shared/worker-instructions.md#role-index)
+for execution and role duties.
 The selected shared handoff message boundary governs all controller/dispatcher exchanges;
 qualification, review, integration, closeout and queue progress stay in controller records.
 
-The optional maintenance route is selected only after controller-confirmed eligibility and the
-existing task record holds its brief handoff. Direct Work controller maintenance is available only
+Select eligibility and the brief handoff under the
+[canonical maintenance rule](../engineering/workflow/shared/start-an-issue.md#optional-maintenance-route).
+Direct Work controller maintenance is available only
 while the exact permission line above remains present once in this section and current external
 authority and live checkpoint are authenticated. A direct selection records `Requested route:
 maintenance` and `Implementation execution: direct Work controller` in that task record, plus the
-actual author in the existing handoff or operational record. The controller uses its already selected
-Work settings, assumes implementor duties and scope limits, and cannot review its own work; a fresh
-nonauthor review, qualification, verification, approval, integration and closeout remain separate.
+actual author in the existing handoff or operational record. Execution duties and independent review follow that same canonical maintenance rule.
 This map gives no additional task, host, Git, issue or settings authority.
 
 The project-scoped Codex kickoff folders are `.agents/skills/ri-work-kickoff/` and

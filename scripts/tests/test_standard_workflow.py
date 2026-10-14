@@ -290,7 +290,10 @@ def test_direct_work_route_instructions_keep_scope_and_review_controller_owned()
     ):
         assert direct_rule in " ".join(maintenance.split())
     assert "selected implementation actor address in-scope findings" in " ".join(procedure.split())
-    assert "fresh nonauthor" in normalized_map
+    _assert_canonical_guidance(
+        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/start-an-issue.md",
+        "optional-maintenance-route", ("a fresh independent reviewer", "The author cannot review"),
+    )
     assert "selected shared handoff message boundary governs all controller/dispatcher exchanges" in normalized_map.lower()
     assert "qualification, review, integration, closeout and queue progress stay in controller records" in normalized_map
     assert "requested route: maintenance" in normalized_map.lower()
@@ -1622,9 +1625,14 @@ def test_project_map_records_role_correct_nutrition_dispatch():
     text = (ROOT / "docs/local_project_map.md").read_text()
     routing = " ".join(text.split("## Nutrition permissions and routing\n", 1)[1].split("\n## ", 1)[0].split())
     routing_lower = routing.lower()
-    assert "route selection, serial assignments, role boundaries" in routing_lower
-    assert "controller authenticates the exact candidate, authorized scope" in routing_lower
-    assert "fresh independent reviewer assesses substantive correctness and test adequacy" in routing_lower
+    _assert_canonical_guidance(
+        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/start-an-issue.md",
+        "complete-the-phases", ("Independent reviewer", "full change", "implementation correctness", "test adequacy"),
+    )
+    _assert_canonical_guidance(
+        ROOT, "AGENTS.md", "engineering/workflow/shared/start-an-issue.md",
+        "optional-maintenance-route", ("controller confirms eligibility", "fresh independent reviewer", "The author cannot review"),
+    )
     assert "selected shared handoff message boundary governs all controller/dispatcher exchanges" in routing_lower
     assert "qualification, review, integration, closeout and queue progress stay in controller records" in routing_lower
     assert "direct work controller maintenance: permitted" in routing_lower
