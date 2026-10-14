@@ -18,9 +18,12 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from lib.task_authorization import (
+    AUTHORIZATION_MARKERS,
     AuthorizationError,
     ResolvedAuthorization,
     build_payload,
+    extract_payload,
+    validate_payload,
     canonical_json,
     render_authorization_comment,
     resolve_comment,
@@ -59,6 +62,11 @@ _ACTIVE_QUALIFICATION_OWNERSHIP: dict[object, dict[str, Any]] = {}
 
 
 class IssueAuthorizationTransport(Protocol):
+    def list_issue_comments(
+        self, repository: str, issue_number: int,
+    ) -> list[dict[str, Any]]:
+        ...
+
     def create_issue_comment(
         self,
         repository: str,
@@ -150,6 +158,12 @@ class GhIssueAuthorizationTransport:
             )
 
         return document
+
+    def list_issue_comments(
+        self, repository: str, issue_number: int,
+    ) -> list[dict[str, Any]]:
+        # Reuse the existing complete, validated pagination route.
+        return GhQualificationTransport().list_issue_comments(repository, issue_number)
 
     def create_issue_comment(
         self,
@@ -960,6 +974,7 @@ def _prepare_task_unlocked(
     document: dict[str, Any] = {
         "schema_version": 1,
         "phase": "PREPARED",
+        "authorization_publication": None,
         "issue_number": issue_number,
         "task_id": task_id,
         "repository": repository,
@@ -1039,6 +1054,7 @@ def authorize_task(
     state: dict[str, Any],
     *,
     transport: IssueAuthorizationTransport,
+    persist: Callable[[dict[str, Any]], None],
 ) -> dict[str, Any]:
     if state.get("phase") != "PREPARED":
         raise TaskControllerError(
@@ -1094,28 +1110,82 @@ def authorize_task(
     ):
         raise TaskControllerError("WORKFLOW_DRAFT_SELECTION_MISMATCH")
 
-    created = transport.create_issue_comment(
-        state["repository"],
-        state["issue_number"],
-        body,
+    payload = validate_payload(
+        extract_payload(body),
+        expected_repository=state["repository"],
+        expected_issue_number=state["issue_number"],
+        expected_task_id=state["task_id"],
+        expected_revision=authorization_state["revision"],
+        expected_payload_sha256=authorization_state["payload_sha256"],
     )
+    if (payload["nonce"] != authorization_state["nonce"]
+            or payload["base_sha"] != authorization_state["base_sha"]):
+        raise TaskControllerError("AUTHORIZATION_DRAFT_IDENTITY_MISMATCH")
+    identity = {
+        "repository": state["repository"], "issue_number": state["issue_number"],
+        "task_id": state["task_id"], "trusted_author": state["trusted_author"],
+        "revision": authorization_state["revision"], "nonce": authorization_state["nonce"],
+        "base_sha": authorization_state["base_sha"],
+        "payload_sha256": authorization_state["payload_sha256"],
+        "workflow_selection_sha256": prepared_selection_sha256,
+        "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+    }
+    pending = state.get("authorization_publication")
+    if pending is not None and (
+        not isinstance(pending, dict) or pending.get("identity") != identity
+        or pending.get("status") != "pending"
+        or (pending.get("comment_id") is not None
+            and (type(pending["comment_id"]) is not int or pending["comment_id"] < 1))
+    ):
+        raise TaskControllerError("AUTHORIZATION_PUBLICATION_IDENTITY_MISMATCH")
 
-    comment_id = created.get("id")
-
-    if type(comment_id) is not int or comment_id < 1:
-        raise TaskControllerError(
-            "AUTHORIZATION_COMMENT_CREATE_INVALID"
+    comments = transport.list_issue_comments(state["repository"], state["issue_number"])
+    if not isinstance(comments, list) or any(not isinstance(item, dict) for item in comments):
+        raise TaskControllerError("ISSUE_COMMENTS_RESPONSE_INVALID")
+    # A malformed marked observation must not be mistaken for absence.
+    for item in comments:
+        if isinstance(item.get("body"), str) and any(
+            marker in item["body"] for marker in AUTHORIZATION_MARKERS
+        ):
+            extract_payload(item["body"])
+    try:
+        existing = resolve_comments(
+            comments, trusted_author=state["trusted_author"],
+            expected_repository=state["repository"],
+            expected_issue_number=state["issue_number"],
+            expected_task_id=state["task_id"],
+            expected_revision=authorization_state["revision"],
         )
-
-    observed = transport.get_issue_comment(
-        state["repository"],
-        comment_id,
-    )
-
-    if observed.get("id") != comment_id:
-        raise TaskControllerError(
-            "AUTHORIZATION_COMMENT_REFETCH_MISMATCH"
-        )
+    except AuthorizationError as exc:
+        if exc.code != "AUTHORIZATION_MISSING":
+            raise
+        if pending is not None or "authorization_publication" not in state:
+            # Empty lookup cannot disprove an earlier POST, including legacy records.
+            raise TaskControllerError("AUTHORIZATION_PUBLICATION_UNRESOLVED") from exc
+        pending = {"identity": identity, "comment_id": None, "status": "pending"}
+        state = json.loads(json.dumps(state))
+        state["authorization_publication"] = pending
+        persist(state)  # Existing issue lock is held; durable before any external POST.
+        created = transport.create_issue_comment(state["repository"], state["issue_number"], body)
+        if not isinstance(created, dict):
+            raise TaskControllerError("AUTHORIZATION_COMMENT_CREATE_INVALID")
+        comment_id = created.get("id")
+        if type(comment_id) is not int or comment_id < 1:
+            raise TaskControllerError("AUTHORIZATION_COMMENT_CREATE_INVALID")
+        pending["comment_id"] = comment_id
+        persist(state)  # Retain the known ID even if refetch fails or the process stops.
+        observed = transport.get_issue_comment(state["repository"], comment_id)
+    else:
+        comment_id = existing.comment_id
+        if pending is not None and pending["comment_id"] not in (None, comment_id):
+            raise TaskControllerError("AUTHORIZATION_COMMENT_REFETCH_MISMATCH")
+        observed = next(item for item in comments if item.get("id") == comment_id)
+    if not isinstance(observed, dict) or observed.get("id") != comment_id:
+        raise TaskControllerError("AUTHORIZATION_COMMENT_REFETCH_MISMATCH")
+    if not isinstance(observed.get("body"), str):
+        raise TaskControllerError("AUTHORIZATION_PUBLICATION_BODY_MISMATCH")
+    if hashlib.sha256(observed["body"].encode("utf-8")).hexdigest() != identity["body_sha256"]:
+        raise TaskControllerError("AUTHORIZATION_PUBLICATION_BODY_MISMATCH")
 
     resolved = resolve_comment(
         observed,
@@ -1187,6 +1257,9 @@ def authorize_task(
         "selection_sha256": observed_selection_sha256,
     }
 
+    updated["authorization_publication"] = {
+        "identity": identity, "comment_id": resolved.comment_id, "status": "complete",
+    }
     updated["phase"] = "AUTHORIZED"
 
     return updated
@@ -4437,6 +4510,9 @@ def command_authorize(
         lambda current: authorize_task(
             current,
             transport=GhIssueAuthorizationTransport(),
+            persist=lambda pending: atomic_write_json(
+                state_path(args.state_dir, args.issue_number), pending,
+            ),
         ),
     )
 

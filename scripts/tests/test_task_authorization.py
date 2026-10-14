@@ -440,3 +440,190 @@ class RealGitAuthorizationMatcherTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# Exercise real command/checkpoint/issue-lock paths with a synthetic transport.
+# No GitHub publication, live assignment, or repository ref mutation occurs.
+import argparse
+import concurrent.futures
+import threading
+import pytest
+import task
+
+
+class PublicationTransport:
+    def __init__(self, state_dir):
+        self.state_dir = state_dir
+        self.comments = []
+        self.posts = 0
+        self.failure = None
+        self.hidden = False
+        self.entered = None
+        self.release = None
+
+    def list_issue_comments(self, repository, issue):
+        return [] if self.hidden else copy.deepcopy(self.comments)
+
+    def create_issue_comment(self, repository, issue, body):
+        persisted = task.load_state(self.state_dir, issue)
+        assert persisted["phase"] == "PREPARED"
+        assert persisted["authorization_publication"]["status"] == "pending"
+        assert persisted["authorization_publication"]["identity"]["body_sha256"] == task.hashlib.sha256(body.encode()).hexdigest()
+        self.posts += 1
+        observed = {"id": 7001, "body": body, "user": {"login": TRUSTED_AUTHOR}}
+        self.comments.append(observed)
+        if self.entered is not None:
+            self.entered.set()
+            assert self.release.wait(5)
+        if self.failure == "lost_reply":
+            raise task.TaskControllerError("synthetic lost create reply")
+        return copy.deepcopy(observed)
+
+    def get_issue_comment(self, repository, comment_id):
+        persisted = task.load_state(self.state_dir, 901)
+        assert persisted["authorization_publication"]["comment_id"] == comment_id
+        if self.failure == "refetch":
+            raise task.TaskControllerError("synthetic refetch failure")
+        return copy.deepcopy(self.comments[0])
+
+
+def publication_case(tmp_path, monkeypatch):
+    monkeypatch.setattr(task, "git", lambda *args: BASE_SHA)
+    prepared = task.prepare_task(
+        repo=ROOT, state_dir=tmp_path, issue_number=901, task_id="GH-901",
+        trusted_author=TRUSTED_AUTHOR, repository=REPOSITORY, base_sha=BASE_SHA,
+        allowed_paths=["scripts/task.py"], forbidden_paths=[], profiles=["repository"],
+        revision=1, nonce="0123456789abcdef",
+    )
+    assert prepared["authorization_publication"] is None
+    draft = Path(prepared["authorization"]["draft_path"])
+    transport = PublicationTransport(tmp_path)
+    monkeypatch.setattr(task, "GhIssueAuthorizationTransport", lambda: transport)
+    monkeypatch.setattr(task, "git", lambda *args: "")
+    monkeypatch.setattr(task, "require_trusted_main_controller", lambda *args, **kwargs: None)
+    args = argparse.Namespace(state_dir=tmp_path, issue_number=901, repo_root=ROOT)
+    return args, transport, draft
+
+
+@pytest.mark.parametrize("failure", [None, "lost_reply", "refetch"])
+def test_publication_recovers_without_duplicate_post(tmp_path, monkeypatch, failure):
+    args, transport, _ = publication_case(tmp_path, monkeypatch)
+    transport.failure = failure
+    if failure:
+        with pytest.raises(task.TaskControllerError):
+            task.command_authorize(args)
+        pending = task.load_state(tmp_path, 901)
+        assert pending["phase"] == "PREPARED"
+        assert pending["authorization_publication"]["status"] == "pending"
+        # Invoke the command again from persisted state, as after a restart.
+        transport.failure = None
+    assert task.command_authorize(args) == 0
+    complete = task.load_state(tmp_path, 901)
+    assert complete["phase"] == "AUTHORIZED"
+    assert complete["authorization"]["comment_id"] == 7001
+    assert complete["workflow"]["authority"]["comment_id"] == 7001
+    assert complete["authorization_publication"]["status"] == "complete"
+    assert len(transport.comments) == transport.posts == 1
+    with pytest.raises(task.TaskControllerError, match="REQUIRES_PREPARED"):
+        task.command_authorize(args)
+    assert transport.posts == 1
+
+
+def test_empty_recovery_lookup_never_reposts(tmp_path, monkeypatch):
+    args, transport, _ = publication_case(tmp_path, monkeypatch)
+    transport.failure = "lost_reply"
+    with pytest.raises(task.TaskControllerError):
+        task.command_authorize(args)
+    before = task.state_path(tmp_path, 901).read_bytes()
+    transport.hidden = True
+    for _ in range(3):
+        with pytest.raises(task.TaskControllerError, match="PUBLICATION_UNRESOLVED"):
+            task.command_authorize(args)
+        assert task.state_path(tmp_path, 901).read_bytes() == before
+    assert transport.posts == 1
+
+
+@pytest.mark.parametrize("change", ["duplicate", "author", "nonce", "revision", "workflow", "malformed", "incomplete", "known-id", "draft"])
+def test_uncertain_publication_refuses_mismatched_observations(tmp_path, monkeypatch, change):
+    args, transport, draft = publication_case(tmp_path, monkeypatch)
+    transport.failure = "refetch" if change == "known-id" else "lost_reply"
+    with pytest.raises(task.TaskControllerError):
+        task.command_authorize(args)
+    original = copy.deepcopy(transport.comments[0])
+    if change == "duplicate":
+        transport.comments.append({**original, "id": 7002})
+    elif change == "author":
+        transport.comments[0]["user"]["login"] = "untrusted"
+    elif change in {"nonce", "revision"}:
+        payload_value = extract_payload(original["body"])
+        payload_value[change] = "different-nonce-012345" if change == "nonce" else 2
+        payload_value.pop("payload_sha256")
+        changed = build_payload(**payload_value)
+        transport.comments[0]["body"] = render_authorization_comment(changed) + task._render_workflow_selection(task._normalize_workflow_selection("standard", None))
+    elif change == "workflow":
+        transport.comments[0]["body"] = original["body"].replace('"standard"', '"compatibility"')
+    elif change == "malformed":
+        transport.comments[0]["body"] = AUTHORIZATION_MARKER + " malformed"
+    elif change == "incomplete":
+        transport.comments = [None]
+    elif change == "known-id":
+        transport.comments[0]["id"] = 7002
+    elif change == "draft":
+        draft.write_text(draft.read_text() + "changed draft")
+    before = task.state_path(tmp_path, 901).read_bytes()
+    with pytest.raises((task.TaskControllerError, AuthorizationError)):
+        task.command_authorize(args)
+    assert task.state_path(tmp_path, 901).read_bytes() == before
+    assert transport.posts == 1
+
+
+def test_legacy_prepared_unknown_empty_lookup_does_not_publish(tmp_path, monkeypatch):
+    args, transport, _ = publication_case(tmp_path, monkeypatch)
+    state = task.load_state(tmp_path, 901)
+    del state["authorization_publication"]
+    task.atomic_write_json(task.state_path(tmp_path, 901), state)
+    with pytest.raises(task.TaskControllerError, match="PUBLICATION_UNRESOLVED"):
+        task.command_authorize(args)
+    assert transport.posts == 0
+
+
+def test_concurrent_retry_rereads_pending_publication_under_issue_lock(tmp_path, monkeypatch):
+    args, transport, _ = publication_case(tmp_path, monkeypatch)
+    transport.failure = "lost_reply"
+    transport.entered, transport.release = threading.Event(), threading.Event()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as workers:
+        first = workers.submit(task.command_authorize, args)
+        assert transport.entered.wait(5)
+        second = workers.submit(task.command_authorize, args)
+        transport.release.set()
+        with pytest.raises(task.TaskControllerError, match="lost create reply"):
+            first.result(timeout=10)
+        assert second.result(timeout=10) == 0
+    assert transport.posts == len(transport.comments) == 1
+    assert task.load_state(tmp_path, 901)["phase"] == "AUTHORIZED"
+
+
+def test_pending_persistence_failure_prevents_external_post(tmp_path, monkeypatch):
+    args, transport, _ = publication_case(tmp_path, monkeypatch)
+    def fail_write(*args):
+        raise OSError("synthetic fsync failure")
+    monkeypatch.setattr(task, "atomic_write_json", fail_write)
+    with pytest.raises(OSError, match="fsync failure"):
+        task.command_authorize(args)
+    assert transport.posts == 0
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_existing_exact_comment_recovers_without_post(tmp_path, monkeypatch, legacy):
+    args, transport, draft = publication_case(tmp_path, monkeypatch)
+    if legacy:
+        state = task.load_state(tmp_path, 901)
+        del state["authorization_publication"]
+        task.atomic_write_json(task.state_path(tmp_path, 901), state)
+    transport.comments = [{"id": 7001, "body": draft.read_text(), "user": {"login": TRUSTED_AUTHOR}}]
+    assert task.command_authorize(args) == 0
+    assert transport.posts == 0
+    state = task.load_state(tmp_path, 901)
+    assert state["authorization"]["nonce"] == "0123456789abcdef"
+    assert state["authorization"]["revision"] == 1
+    assert state["phase"] == "AUTHORIZED"

@@ -89,6 +89,16 @@ also revalidate the current candidate-bound qualification, verification, review 
 authority before persisting a transition. Finalize/cancel/cleanup intents use the same
 read-modify-write contract and preserve newer fields, stops and history.
 
+Authorization publication uses that same issue lock and checkpoint. New preparation records
+explicitly record that publication has not started. Before posting, `task authorize` persists
+the exact task/repository/base/revision/nonce/payload/workflow and draft-body identity as
+pending, then retains a known created comment ID before refetch. Lost replies and refetch
+failures leave this intent intact. Retry lists all issue comments through existing validated
+pagination and recovers only one fully validated matching comment; it never reposts pending
+or legacy-unknown publication. Empty, malformed, mismatched and ambiguous observations remain
+unresolved/refused. A single empty lookup does not prove that an earlier POST never occurred.
+Completed authorization retains publication identity; no comments or historical records are deleted.
+
 Qualification also holds an issue-scoped process-held qualification ownership lock, separate
 from the checkpoint transaction lock, from operation persistence through hosted work and cleanup.
 The persisted binding is valid only for its supported local host and controller-state location.
