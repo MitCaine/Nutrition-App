@@ -627,3 +627,22 @@ def test_existing_exact_comment_recovers_without_post(tmp_path, monkeypatch, leg
     assert state["authorization"]["nonce"] == "0123456789abcdef"
     assert state["authorization"]["revision"] == 1
     assert state["phase"] == "AUTHORIZED"
+
+
+@pytest.mark.parametrize("pending", [False, True])
+@pytest.mark.parametrize("body", [None, 42, {"unavailable": True}, "missing"])
+def test_incomplete_comment_content_cannot_prove_absence_or_uniqueness(tmp_path, monkeypatch, pending, body):
+    args, transport, _ = publication_case(tmp_path, monkeypatch)
+    if pending:
+        transport.failure = "lost_reply"
+        with pytest.raises(task.TaskControllerError):
+            task.command_authorize(args)
+    incomplete = {"id": 7002, "user": {"login": TRUSTED_AUTHOR}}
+    if body != "missing":
+        incomplete["body"] = body
+    transport.comments.append(incomplete)
+    before = task.state_path(tmp_path, 901).read_bytes()
+    with pytest.raises(task.TaskControllerError, match="ISSUE_COMMENTS_RESPONSE_INVALID"):
+        task.command_authorize(args)
+    assert task.state_path(tmp_path, 901).read_bytes() == before
+    assert transport.posts == (1 if pending else 0)

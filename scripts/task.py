@@ -1140,7 +1140,11 @@ def authorize_task(
         raise TaskControllerError("AUTHORIZATION_PUBLICATION_IDENTITY_MISMATCH")
 
     comments = transport.list_issue_comments(state["repository"], state["issue_number"])
-    if not isinstance(comments, list) or any(not isinstance(item, dict) for item in comments):
+    if not isinstance(comments, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get("body"), str)
+        for item in comments
+    ):
+        # Unavailable content cannot establish absence or uniqueness of authorization.
         raise TaskControllerError("ISSUE_COMMENTS_RESPONSE_INVALID")
     # A malformed marked observation must not be mistaken for absence.
     for item in comments:
