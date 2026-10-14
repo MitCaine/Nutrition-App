@@ -1184,8 +1184,6 @@ def authorize_task(
         raise TaskControllerError("AUTHORIZATION_COMMENT_REFETCH_MISMATCH")
     if not isinstance(observed.get("body"), str):
         raise TaskControllerError("AUTHORIZATION_PUBLICATION_BODY_MISMATCH")
-    if hashlib.sha256(observed["body"].encode("utf-8")).hexdigest() != identity["body_sha256"]:
-        raise TaskControllerError("AUTHORIZATION_PUBLICATION_BODY_MISMATCH")
 
     resolved = resolve_comment(
         observed,
@@ -1209,6 +1207,8 @@ def authorize_task(
             "payload_sha256"
         ],
     )
+    if hashlib.sha256(observed["body"].encode("utf-8")).hexdigest() != identity["body_sha256"]:
+        raise TaskControllerError("AUTHORIZATION_PUBLICATION_BODY_MISMATCH")
     observed_selection, observed_selection_sha256 = _parse_workflow_selection(
         observed.get("body")
     )

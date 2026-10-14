@@ -1614,6 +1614,11 @@ class FakeIssueAuthorizationTransport:
         self.created: list[dict] = []
         self.comments: dict[int, dict] = {}
 
+    def list_issue_comments(self, repository: str, issue_number: int) -> list[dict]:
+        assert repository == "owner/repo"
+        assert issue_number == 999
+        return list(self.comments.values())
+
     def create_issue_comment(
         self,
         repository: str,
@@ -1670,6 +1675,21 @@ class FakeIssueAuthorizationTransport:
         )
 
 
+def authorize_prepared_state(state: dict, *, transport) -> dict:
+    """Use the real persisted issue transaction for authorization fixtures."""
+    state_dir = Path(state["authorization"]["draft_path"]).parent
+    issue_number = state["issue_number"]
+    return TASK.checkpoint_transaction(
+        state_dir, issue_number,
+        lambda current: TASK.authorize_task(
+            current, transport=transport,
+            persist=lambda pending: TASK.atomic_write_json(
+                TASK.state_path(state_dir, issue_number), pending,
+            ),
+        ),
+    )
+
+
 def prepared_external_state(
     tmp_path: Path,
     *,
@@ -1708,7 +1728,7 @@ def test_authorize_records_refetched_external_comment_identity(
         FakeIssueAuthorizationTransport()
     )
 
-    updated = TASK.authorize_task(
+    updated = authorize_prepared_state(
         state,
         transport=transport,
     )
@@ -1751,7 +1771,7 @@ def test_compatibility_mode_is_bound_to_the_trusted_owner_comment(
         compatibility_reason="Existing automation is still in flight.",
     )
     transport = FakeIssueAuthorizationTransport()
-    authorized = TASK.authorize_task(state, transport=transport)
+    authorized = authorize_prepared_state(state, transport=transport)
 
     assert authorized["workflow"]["mode"] == "compatibility"
     assert authorized["workflow"]["reason"] == "Existing automation is still in flight."
@@ -1884,7 +1904,7 @@ def test_authorize_rejects_untrusted_comment_author(
         AuthorizationError,
         match="AUTHORIZATION_AUTHOR_UNTRUSTED",
     ):
-        TASK.authorize_task(
+        authorize_prepared_state(
             state,
             transport=transport,
         )
@@ -1912,7 +1932,7 @@ def test_authorize_rejects_posted_content_digest_drift(
         AuthorizationError,
         match="AUTHORIZATION_DIGEST_MISMATCH",
     ):
-        TASK.authorize_task(
+        authorize_prepared_state(
             state,
             transport=transport,
         )
@@ -1929,7 +1949,7 @@ def test_authorize_is_not_repeatable_after_external_binding(
         FakeIssueAuthorizationTransport()
     )
 
-    authorized = TASK.authorize_task(
+    authorized = authorize_prepared_state(
         state,
         transport=transport,
     )
@@ -1938,7 +1958,7 @@ def test_authorize_is_not_repeatable_after_external_binding(
         TASK.TaskControllerError,
         match="AUTHORIZATION_REQUIRES_PREPARED_STATE",
     ):
-        TASK.authorize_task(
+        authorize_prepared_state(
             authorized,
             transport=transport,
         )
@@ -2829,7 +2849,7 @@ def authorized_repo_state(
         )
     )
 
-    state = TASK.authorize_task(
+    state = authorize_prepared_state(
         state,
         transport=issue_transport,
     )
@@ -3300,7 +3320,7 @@ def test_authorize_and_qualify_guidance_tracks_workflow_mode(
             workflow_mode=mode,
             compatibility_reason=reason,
         )
-        authorized = TASK.authorize_task(
+        authorized = authorize_prepared_state(
             prepared,
             transport=FakeIssueAuthorizationTransport(),
         )
@@ -3312,7 +3332,7 @@ def test_authorize_and_qualify_guidance_tracks_workflow_mode(
         monkeypatch.setattr(TASK, "resolve_repo_root", lambda _root: repo)
         monkeypatch.setattr(TASK, "git", lambda *_args: "")
         monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_args, **_kwargs: prepared["authorization"]["base_sha"])
-        monkeypatch.setattr(TASK, "authorize_task", lambda _state, *, transport, value=authorized: value)
+        monkeypatch.setattr(TASK, "authorize_task", lambda _state, *, transport, persist, value=authorized: value)
         monkeypatch.setattr(TASK, "state_path", lambda *_args: state_dir / "state.json")
         monkeypatch.setattr(TASK, "atomic_write_json", lambda *_args: None)
         monkeypatch.setattr(TASK, "emit", outputs.append)
