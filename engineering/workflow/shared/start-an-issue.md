@@ -427,8 +427,13 @@ and in-scope correction need no repeated human approval. The assigned implemento
 may diagnose and repair ordinary compile, lint and test failures throughout the
 accepted task scope and authorized edit boundaries without a new grant or handoff
 for each fix. Check fixture-dependent expectations against the actual setup before
-prescribing a correction; a failed check never permits weakening tests or guessing
-acceptance decisions. Requirement changes, protected inputs, wider scope or new
+prescribing a correction. When a failure reveals a repeated assumption or
+incomplete migration, search relevant source, tests and callers for affected
+occurrences, inspect matches in context, and repair related mistakes within
+authorized edits before restarting costly qualification. Preserve intentional
+historical behavior; this requires neither whole-file reading nor blanket
+replacement. A failed check never permits weakening tests or guessing acceptance
+decisions. Requirement changes, protected inputs, wider scope or new
 permissions return to the controller. STOP_REPLAN, replan,
 scope expansion and requests for broader authority are last resorts. First verify
 the blocker against exact source, controlling requirements and existing authorized

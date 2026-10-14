@@ -1,7 +1,7 @@
 # Set up RI in a project
 
 Use the [controller workflow](capsule-controller-workflow.md) for RI-assisted
-capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/c776a82a224187c0c46b1e1b3cc92c65f9a2cd18/docs/consumer-guide.md) for ordinary navigation.
+capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/docs/consumer-guide.md) for ordinary navigation.
 RI does not require an execution framework or every optional skill to be installed.
 
 ## Minimal setup
@@ -245,8 +245,12 @@ Use `docs/local_project_map.md` in every consumer project. Keep it short:
   grant, candidate capture/publication and integration/issue actions.
 - Supported completion route and existing active-task/checkpoint location.
 
-Reference project-owned requirements rather than copying their text. This map
-holds local bindings, not a second shared workflow. During migration, reconcile
+RI owns reusable workflow behavior; consumers own concrete configuration,
+commands, permissions, domain contracts and genuinely different acceptance
+requirements. Give each instruction one authoritative home. Consumer summaries
+link to selected RI sections rather than repeat their procedural prose; reference
+project-owned requirements at their local owners. This map holds local bindings,
+not a second shared workflow. During migration, reconcile
 an existing map into this file, repair incoming links, and leave old map locations
 as pointers where needed; do not keep two authoritative maps. Preserve active
 frozen task identities and historical records. Do not repin an active attempt

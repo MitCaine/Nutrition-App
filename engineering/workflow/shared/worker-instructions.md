@@ -107,8 +107,18 @@ For a new or changed path to existing behavior, inspect the established contract
 validation and relevant callers. Preserve applicable invariants unless a difference
 is explicitly authorized, and test distinguishing valid and invalid cases through
 the affected paths. Restoration examples include terminal states, ownership,
-allocation limits and ordinary application callers. Passing counts alone do not
-prove a required behavior.
+allocation limits and ordinary application callers.
+
+Before writing or extending tests, derive concrete scenarios from accepted
+behavior: initial state, actions, expected outcome and plausible incorrect
+behavior each case must distinguish. Ground expectations independently of the
+implementation under test. Exercise the relevant caller through the outcome
+claimed; ask what plausible broken implementation could still pass the assertions.
+Preserve legitimate historical-version expectations and test corrected current
+behavior separately when applicable. A focused unit test is sufficient when it
+proves the claimed outcome; this is not a blanket integration-test requirement.
+Missing product decisions still go to the controller. Passing counts alone do
+not prove a required behavior.
 
 Follow the [command readiness and check-order rules](start-an-issue.md#command-readiness).
 Retain actual commands, source/environment identities and results/logs, including
@@ -143,6 +153,8 @@ RI navigation is supporting evidence, not a substitute for direct inspection.
 Assess each acceptance outcome and applicable standard, distinguishing concrete
 defects, missing proof and uncertainty. Check evidence’s source, command/workflow
 identity and reuse eligibility; a passing name or aggregate count is insufficient.
+Assess the [implementor's scenario-based proof](#implementor): do the scenarios
+distinguish plausible failures and do their assertions prove the claimed behavior?
 
 Remain read-only: no source/Git/issue/checkpoint mutation or recruitment. Execute
 checks only if the assigned review route permits them; otherwise request required

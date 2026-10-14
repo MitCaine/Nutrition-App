@@ -93,10 +93,30 @@ PYTHONPATH=src .venv/bin/python -m repository_intelligence.adoption --request ad
 Supply expected destination identities before application, inspect preview
 conflicts and retain prior evidence. Dirty or drifting destinations are not
 silently overwritten. Repeat application of already matching resources is a
-no-op. The consumer separately updates its declared selection/identity records,
+no-op. Consumers may select a generated identity sidecar below; consumer-owned
+selection prose, runtime pins and authority still require separate reconciliation. The consumer
 checks local validators and links, reviews the full candidate and verifies
 installed closeout. Resource equality alone does not prove usable skills, host
 availability or adoption correctness.
+
+Optional `metadata_output` has exactly `destination` and
+`expected_destination_sha256` (null for an absent sidecar). When selected, every
+resource must also supply `expected_source_sha256` and `expected_output_sha256`.
+These bind the controlled inventory to pinned upstream bytes and exact transformed
+bytes; missing or mismatched identities refuse the entire plan before writes.
+The standalone UTF-8 JSON sidecar contains `metadata_schema_version: 1`, the exact
+`revision`, and destination-sorted resource entries with source/destination paths,
+Git blob, raw/output SHA-256 and byte counts, and declared replacements. It is
+canonical sorted-key, two-space-indented JSON with a trailing newline; excludes
+machine paths, modes, transient destination status, runtime pins and local prose.
+Preview/verify calculate the same bytes; apply includes the explicitly named
+sidecar in existing destination safety, identity conflict and rollback handling.
+Do not target an existing historical SOURCE prose record: use a dedicated sidecar
+and preserve other consumer-local declarations. This is an additive request/report
+option; the existing adoption report schema remains 1. Metadata format has its
+own version; it does not change source/navigation/runtime compatibility versions.
+Resource inventory completeness remains caller-controlled, not inferred from a
+repository crawl or a consumer's historical record.
 
 The request shape is:
 
@@ -148,10 +168,10 @@ evidence location; the helper does not create a state store.
 
 ## Existing optional evidence helpers
 
-The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/c776a82a224187c0c46b1e1b3cc92c65f9a2cd18/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
+The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
 contains pure input-equivalence predicates; unknown relevant inputs are not
 cacheable. Its extended packet validation remains optional and is not required
-by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/c776a82a224187c0c46b1e1b3cc92c65f9a2cd18/scripts/check%5Fdocs%5Fand%5Fskills.py),
-the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/c776a82a224187c0c46b1e1b3cc92c65f9a2cd18/docs/consumer-guide.md) and
-[review bundles](https://github.com/MitCaine/repository-intelligence/blob/c776a82a224187c0c46b1e1b3cc92c65f9a2cd18/docs/review-evidence.md) retain their existing separate scopes.
+by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/scripts/check%5Fdocs%5Fand%5Fskills.py),
+the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/docs/consumer-guide.md) and
+[review bundles](https://github.com/MitCaine/repository-intelligence/blob/f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/docs/review-evidence.md) retain their existing separate scopes.
 None authenticates task authority or proves runtime availability.
