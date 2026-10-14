@@ -1030,3 +1030,22 @@ retained stages are never silently reused or removed: later cleanup requires the
 owned identity and verified quiescence. Prelaunch setup failures alone remove their exact
 owned stage. Original home/source permissions, child temporary state, substantive test
 selection and runtime protection remain unchanged.
+
+### Accepted portable audit controls
+
+The mobile Jest suite includes `calendarRuntimeBoundaries`,
+`acceptedSelectionPersistence`, `acceptedNutritionMatrix` and
+`acceptedProcessInterruption` controls alongside the maintained product regressions.
+They preserve synthetic controls from the accepted #371/#374/#375/#377/#378 audits:
+actual SQLite calendar transitions, rendered save/cancel choices, independent literal
+nutrition/history expectations, and actual child SIGKILL at transaction/import
+checkpoints with fresh verifier processes and an atomic file journal.
+
+The bounded subprocess fixtures use the existing locked TypeScript compiler and
+Node SQLite with explicit native/storage substitutes. Temporary synthetic directories
+are removed by the tests. These desktop controls do not establish Expo/native
+lifecycle durability or real rendered query polling. Original failed observations and
+platform-specific evidence remain external; no private databases are imported.
+Installed documentation-check reuse remains conditional on complete relevant-input
+and environment equivalence under the selected evidence rules. Tracked-source
+equality alone does not suffice; rerun affected checks when equivalence is unknown.
