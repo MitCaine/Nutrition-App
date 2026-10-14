@@ -168,10 +168,79 @@ evidence location; the helper does not create a state store.
 
 ## Existing optional evidence helpers
 
-The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
+The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/c03d43b6cbcca8a002ed3e0292d0cdd354738d48/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
 contains pure input-equivalence predicates; unknown relevant inputs are not
 cacheable. Its extended packet validation remains optional and is not required
-by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/scripts/check%5Fdocs%5Fand%5Fskills.py),
-the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/docs/consumer-guide.md) and
-[review bundles](https://github.com/MitCaine/repository-intelligence/blob/f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/docs/review-evidence.md) retain their existing separate scopes.
+by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/c03d43b6cbcca8a002ed3e0292d0cdd354738d48/scripts/check%5Fdocs%5Fand%5Fskills.py),
+the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/c03d43b6cbcca8a002ed3e0292d0cdd354738d48/docs/consumer-guide.md) and
+[review bundles](https://github.com/MitCaine/repository-intelligence/blob/c03d43b6cbcca8a002ed3e0292d0cdd354738d48/docs/review-evidence.md) retain their existing separate scopes.
 None authenticates task authority or proves runtime availability.
+
+## Prepared worker execution linkage
+
+The optional `repository_intelligence.worker_execution` helper links an explicitly
+prepared disposable workspace to consumer-authorized edit/capture commands, a
+consumer check runner and mechanically validated terminal facts. The consumer
+still owns commands, permissions, request/result formats and substantive review.
+It does not publish refs, connect chats or replace the check executor. Select it
+only under existing task authority; no remote-free capture policy is imposed.
+
+```sh
+PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --request execution.json --evidence /absolute/private/evidence --mode prepare
+PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --request execution.json --evidence /absolute/private/evidence --mode run
+```
+
+Version 1 request fields are `assignment`, unique `attempt`, absolute `workspace`
+and separate `protected_repository`, full `base`, `inputs` (absolute regular-file
+`path`/`sha256` bindings for the handoff, instructions and relevant consumer tools),
+exact relative `allowed_changes`, `capture_authority` (consumer grant reference),
+selected child `environment`, optional `edit`, required `capture` and `runner`,
+`require_new_candidate` (explicit boolean), `check_request`, `runner_result` and
+`result_bindings`. Optional `timeout_seconds` is 1–3600 per operation. Each operation
+contains only `argv` and the selected executable's `executable_sha256`; use its
+absolute resolved non-symlink path. Bind interpreted scripts and relevant toolchain
+inputs in `inputs`, not merely the interpreter. Authority references record a
+consumer selection, not independent authentication of a human grant.
+
+Preparation verifies a clean base and stores workspace/Git directory filesystem
+identities, shared Git configuration identity and selected input/operation/request/environment hashes in exclusive
+`PREPARED.json`. Run requires that identical preparation, then creates an exclusive
+`LAUNCHED` marker: retries cannot repeat capture/execution after failure or lost
+reply. Reconcile retained partial evidence under the existing consumer recovery
+route; this helper does not resume interrupted operations. Edits occur only through
+the optional selected edit invocation, which may itself be a consumer launcher;
+manual source changes between prepare/run are refused. This is an optional selected
+operation path, not a replacement for interactive implementation tools.
+
+Exact argv tokens `{workspace}`, `{attempt}` (private attempt directory),
+`{candidate}` and `{check_request}` resolve per invocation. Capture must leave a
+clean descendant Git commit in the same workspace, limited to declared changed
+paths; a consumer can explicitly permit a no-change capture. After capture, exact
+string tokens in the JSON `check_request` template bind `{workspace}`, `{candidate}`
+and `{attempt}` (attempt ID). The helper saves `CHECK_REQUEST.json` and passes its
+path to the runner when selected in argv. A consumer adapter invokes its actual
+runner and projects its actual results into the selected binding shape; it must
+not synthesize passing evidence from plain logs.
+
+`runner_result` names a new direct attempt JSON filename. `result_bindings` maps
+`candidate`, `workspace`, `attempt`, `request_sha256`, `ready` and `references` to
+nonempty lists of object keys in that consumer result. Readiness must be exact
+boolean true, candidate/workspace/attempt/request hash must agree, and references
+must be a nonempty bounded list of regular absolute `path`/`sha256` files. The
+consumer's result bindings must cover its required gate outcomes and coverage;
+RI does not infer that those were adequate from a readiness boolean. Keep private
+request/environment values out of public summaries; do not put credential values
+in selected input files or request templates. The return contains identities,
+operation exits, selected source/base/changed paths and references, not raw child
+configuration. Consumer runners retain their own exclusive per-gate outputs; only
+edit/capture/runner invocation stdout/stderr are retained by this linkage helper.
+
+`RETURN.json` is persisted before operations and after each observed transition;
+failed/blocked/incomplete returns never acquire `review_ready: true`. A completed
+return is mechanical source/reference consistency, not independent review,
+semantic acceptance, delivery consumption or permission to integrate. Existing
+result-report schema versions remain unchanged; this helper's packets use
+`schema_version: 1`. Before/after identity checks and cwd selection are not
+filesystem isolation, continuous observation, or protection against arbitrary
+outside writes. Consumer capture permissions and active instruction pins remain
+unchanged until separately adopted.

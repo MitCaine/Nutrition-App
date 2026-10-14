@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `f2bf2e1b365c7fcc7b588abdcc9896efb1c80240`: controllers use the complete
+future task intake is pinned at `c03d43b6cbcca8a002ed3e0292d0cdd354738d48`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -52,7 +52,7 @@ rules for its arguments and output.
 
 Optional section-reader and adoption helpers are separate from producer/runtime `20a5039` and are
 selected from the authenticated RI checkout `/Users/mipoo/Projects/Repository Intelligence` at
-revision `f2bf2e1b365c7fcc7b588abdcc9896efb1c80240`. Before use, confirm that exact HEAD and a clean
+revision `c03d43b6cbcca8a002ed3e0292d0cdd354738d48`. Before use, confirm that exact HEAD and a clean
 worktree, then authenticate imports with the existing
 `/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python` (Python 3.14.8), `PYTHONPATH=src`,
 and module source paths. The compatible installed helper dependencies are tree-sitter 0.25.1 and
@@ -70,6 +70,14 @@ and retain results in the existing task evidence location. Apply only under exis
 after complete inventory validation and preview inspection. Incomplete reads, preview differences,
 unavailable filesystem capabilities and refusals remain explicit; they do not authorize substitution
 or dependency installation.
+
+Optional worker-execution linkage is discoverable from that same selected source with
+`PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --help`.
+Its [binding contract](../engineering/workflow/shared/workflow-tools.md#prepared-worker-execution-linkage)
+is the authority for required consumer inputs. Nutrition has not selected a consumer execution
+adapter or edit/capture/runner binding for it. Resource adoption and imports/help do not select
+that integration or grant capture authority; the existing authored runner and protected lifecycle
+remain selected. A future use requires its separately authenticated consumer binding and authority.
 
 ## Nutrition permissions and routing
 

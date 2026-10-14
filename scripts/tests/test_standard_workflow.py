@@ -153,7 +153,7 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
     normalized_provenance = " ".join(provenance.split())
-    current_revision = "f2bf2e1b365c7fcc7b588abdcc9896efb1c80240"
+    current_revision = "c03d43b6cbcca8a002ed3e0292d0cdd354738d48"
 
     assert f"future task intake is pinned at {current_revision}" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
@@ -173,10 +173,10 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
         'start-an-issue.md': (33818, '429bc99a1c716e1e523cac6715bf0a21a46ff7b62ef8c8e462101b48cbb4f76a'),
         'worker-instructions.md': (16152, 'a7923ad8150511759eb1c930220110903b460507b5383afa1b8f095d2e44e3b4'),
         'capsule-controller-workflow.md': (16328, '925323b4edc6595faa04b99b55ca98dabc3dc49d1cea5e6d4a83ac8d486fdd0a'),
-        'new-project-setup.md': (15446, '744c1d06f950824140e08272df58c13d5a37eeb45c05df11021e0d5397ca8c5e'),
-        'skill-templates/README.md': (9019, 'f056cfb4d78681f11783a06077387ae5d4ab46fe7cf4f9043125478862a47ccc'),
-        'skill-templates/capsule-queue/SKILL.md': (2029, 'cc49ddb3c8d6e1ea6e3e8feb9a18542baa43a397a8217b2a1272540599275936'),
-        'workflow-tools.md': (10721, '5fee386b2b4060d4b96857cef3646dd05604f1521e3afae50d611abca8a27857'),
+        'new-project-setup.md': (15446, '8f9228023c6327ba1c0bac3d5cc3f272db1a69f4ccf007e2a84fdd68f68fe0eb'),
+        'skill-templates/README.md': (9019, '377d0886baa21cbb53027d7d47a69d1047631b3d8716043ea3f91ba89e25788f'),
+        'skill-templates/capsule-queue/SKILL.md': (2029, '4c013449e6b351de2c2b1e7460fd6152a0c49c0a554f312308db4c337c587378'),
+        'workflow-tools.md': (15534, '18a936c7f6968af4603768dd5c9bbabd60fb8cd8b9773ccc1bb4f7c12439c62b'),
     }
     for name, (size, digest) in current_resources.items():
         data = (shared / name).read_bytes()
@@ -1325,7 +1325,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "f2bf2e1b365c7fcc7b588abdcc9896efb1c80240/docs/skill-templates/capsule-queue/")
+              "c03d43b6cbcca8a002ed3e0292d0cdd354738d48/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1339,7 +1339,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "f2bf2e1b365c7fcc7b588abdcc9896efb1c80240"
+    revision = "c03d43b6cbcca8a002ed3e0292d0cdd354738d48"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     import html
