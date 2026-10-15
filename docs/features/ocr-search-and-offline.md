@@ -213,7 +213,8 @@ opens.
 
 A failed replacement restores the prior database from the rollback snapshot when one exists; a
 failed restore on a previously empty installation removes the unsuccessful active database. If the
-application cannot restore the rollback snapshot safely, bootstrap raises a fatal activation error
+application cannot verify removal of that unsuccessful active file or restore the rollback snapshot
+safely, bootstrap raises a fatal activation error
 instead of opening an ambiguous local authority. Success/failure restore evidence is retained in
 AsyncStorage for Settings/startup presentation.
 

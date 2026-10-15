@@ -610,9 +610,19 @@ Promise<LocalRestoreEvidence | null> {
       pending = null;
 
       if (!activeExisted) {
-        await deleteDatabaseQuietly(
-          SQLITE_DATABASE_NAME,
-        );
+        try {
+          await deleteDatabaseQuietly(SQLITE_DATABASE_NAME);
+          if (databaseFile(SQLITE_DATABASE_NAME).exists) {
+            throw new Error("The unsuccessful active database still exists.");
+          }
+        } catch (cleanupError) {
+          const detail = cleanupError instanceof Error
+            ? cleanupError.message
+            : String(cleanupError);
+          throw new LocalBackupActivationFatalError(
+            `Restore failed and the unsuccessful local database could not be removed safely: ${detail}`,
+          );
+        }
       } else if (rollbackCreated) {
         let rollbackSource: SQLiteDatabase | null = null;
         let rollbackTarget: SQLiteDatabase | null = null;

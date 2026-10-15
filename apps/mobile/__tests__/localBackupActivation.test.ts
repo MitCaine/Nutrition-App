@@ -941,3 +941,60 @@ test("version7 staging migration failure preserves selected backup and existing 
   expect(database(ACTIVE_DATABASE).marker).toBe("preserved active authority");
   expect(mockFileMove).not.toHaveBeenCalled();
 });
+
+
+test.each(["throws", "no-op"])(
+  "empty-install cleanup %s is fatal and blocks the actual application bootstrap",
+  async (mode) => {
+    seedDatabase(PENDING_DATABASE, "backup-state");
+    const copied = database(ACTIVE_DATABASE);
+    copied.execAsync.mockImplementation(async (sql) => {
+      if (sql === "PRAGMA application_id = 0") {
+        expect(copied.marker).toBe("backup-state");
+        throw new Error("marker reset failed after copy");
+      }
+    });
+    mockDeleteDatabaseAsync.mockImplementation(async (name) => {
+      if (name === ACTIVE_DATABASE) {
+        if (mode === "throws") throw new Error("SQLite deletion failed");
+        return;
+      }
+      mockFiles.delete(databaseUri(name));
+    });
+    mockFileDelete.mockImplementation(async (uri) => {
+      if (uri === databaseUri(ACTIVE_DATABASE)) {
+        if (mode === "throws") throw new Error("File deletion failed");
+        return;
+      }
+      mockFiles.delete(uri);
+    });
+    const { bootstrapApplicationRuntime } = require("../src/runtime/applicationRuntimeBootstrap") as
+      typeof import("../src/runtime/applicationRuntimeBootstrap");
+    const openLocalRuntime = jest.fn(async () => { throw new Error("must not open"); });
+    await expect(bootstrapApplicationRuntime(
+      { dataAuthority: "local", deploymentMode: "production" },
+      {
+        activatePendingLocalRestore: async () => { await activatePendingLocalRestore(); },
+        openLocalRuntime,
+        loadRemoteRuntime: jest.fn(),
+      },
+    )).rejects.toBeInstanceOf(LocalBackupActivationFatalError);
+    expect(mockFiles.has(databaseUri(ACTIVE_DATABASE))).toBe(true);
+    expect(mockBackupDatabaseAsync).toHaveBeenCalledTimes(1);
+    expect(mockFileDelete).toHaveBeenCalledWith(databaseUri(ACTIVE_DATABASE));
+    expect(openLocalRuntime).not.toHaveBeenCalled();
+    expect(mockSetItem).not.toHaveBeenCalled();
+    expect(hasPendingLocalRestore()).toBe(false);
+  },
+);
+
+test("empty-install replacement failure continues only after verified active-file removal", async () => {
+  seedDatabase(PENDING_DATABASE, "backup-state");
+  const copied = database(ACTIVE_DATABASE);
+  copied.execAsync.mockImplementation(async (sql) => {
+    if (sql === "PRAGMA application_id = 0") throw new Error("marker reset failed");
+  });
+  await expect(activatePendingLocalRestore()).resolves.toMatchObject({ status: "failure" });
+  expect(mockFiles.has(databaseUri(ACTIVE_DATABASE))).toBe(false);
+  expect(hasPendingLocalRestore()).toBe(false);
+});
