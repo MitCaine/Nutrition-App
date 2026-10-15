@@ -168,12 +168,12 @@ evidence location; the helper does not create a state store.
 
 ## Existing optional evidence helpers
 
-The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/5319549b0c1d5da91d4f8e7be3eac64e622f2075/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
+The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/9eaee94fbec1e68d267fa88d498262391d7df18d/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
 contains pure input-equivalence predicates; unknown relevant inputs are not
 cacheable. Its extended packet validation remains optional and is not required
-by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/5319549b0c1d5da91d4f8e7be3eac64e622f2075/scripts/check%5Fdocs%5Fand%5Fskills.py),
-the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/5319549b0c1d5da91d4f8e7be3eac64e622f2075/docs/consumer-guide.md) and
-[review bundles](https://github.com/MitCaine/repository-intelligence/blob/5319549b0c1d5da91d4f8e7be3eac64e622f2075/docs/review-evidence.md) retain their existing separate scopes.
+by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/9eaee94fbec1e68d267fa88d498262391d7df18d/scripts/check%5Fdocs%5Fand%5Fskills.py),
+the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/9eaee94fbec1e68d267fa88d498262391d7df18d/docs/consumer-guide.md) and
+[review bundles](https://github.com/MitCaine/repository-intelligence/blob/9eaee94fbec1e68d267fa88d498262391d7df18d/docs/review-evidence.md) retain their existing separate scopes.
 None authenticates task authority or proves runtime availability.
 
 ## Prepared worker execution linkage
@@ -304,6 +304,13 @@ this local ownership contract and must use a selected consumer completion route;
 immediate-child success alone cannot qualify them. Unsupported platforms refuse
 local operation ownership. Helper termination by an unhandled signal or host crash does not establish cleanup.
 This is not universal process supervision.
+
+Static operation preflight also checks POSIX executable permission for selected
+argv[0] before dependent work, including generation and run reauthentication.
+It never chmods files. This check is not proof of interpreter/dependency availability,
+mount/ACL behavior or freedom from permission changes after inspection; actual
+launch failures still retain their failed/partial results. Other platforms report
+unsupported static executable readiness rather than asserting POSIX support.
 
 Return writes use exclusive unpredictable temporary files and replacement; residue
 from an older write cannot block a normal new write. Uncertain launch markers and

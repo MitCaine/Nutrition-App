@@ -294,7 +294,7 @@ candidate edits or omission of required checks.
 ### Complete the phases
 
 For maintenance, the controller verifies the brief handoff against intake and
-project controls, then follows steps 3–6; under the permitted direct-controller
+project controls, including the route-feasibility rule in step 2, then follows steps 3–6; under the permitted direct-controller
 exception it performs step 3 itself and still obtains fresh review in step 5.
 Steps 1–2 apply to the normal route.
 
