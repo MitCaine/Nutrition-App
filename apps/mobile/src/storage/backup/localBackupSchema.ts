@@ -1,3 +1,5 @@
+import { SQLITE_BASELINE_SCHEMA_STATEMENTS } from "../sqlite/schema";
+
 /**
  * Complete SQLite column contract for every backup schema version admitted by
  * this app. Column order is intentionally absent: migration 003 adds nullable
@@ -389,4 +391,50 @@ export function localBackupDefaultsMatch(
 ): boolean {
   if (actual === null || expected === null) return actual === expected;
   return normalizeLocalBackupDefault(actual) === normalizeLocalBackupDefault(expected);
+}
+
+
+export type LocalBackupTriggerRequirement = Readonly<{ name: string; table: string; sql: string }>;
+
+// Supported v7 baseline guards plus migration002's Food guards. Index-only v8
+// retains these exact definitions; no applied migration is rewritten or run here.
+const VERSION_7_TRIGGER_SQL = [
+  ...SQLITE_BASELINE_SCHEMA_STATEMENTS.filter((sql) => /^CREATE TRIGGER /i.test(sql.trim())),
+  `CREATE TRIGGER IF NOT EXISTS "trg_food_nutrients_nonnegative_insert"
+      BEFORE INSERT ON "food_nutrients"
+      WHEN NEW."amount" IS NOT NULL AND substr(NEW."amount", 1, 1) = '-'
+      BEGIN
+        SELECT RAISE(ABORT, 'constraint_failed: Food nutrient amount must be non-negative');
+      END;`,
+  `CREATE TRIGGER IF NOT EXISTS "trg_food_nutrients_nonnegative_update"
+      BEFORE UPDATE OF "amount" ON "food_nutrients"
+      WHEN NEW."amount" IS NOT NULL AND substr(NEW."amount", 1, 1) = '-'
+      BEGIN
+        SELECT RAISE(ABORT, 'constraint_failed: Food nutrient amount must be non-negative');
+      END;`,
+];
+const VERSION_7_TRIGGER_REQUIREMENTS = Object.freeze(VERSION_7_TRIGGER_SQL.map((sql) => {
+  const header = /^CREATE TRIGGER(?: IF NOT EXISTS)? "([^"]+)"[\s\S]*?\bON "([^"]+)"/i.exec(sql.trim());
+  if (!header) throw new Error("Invalid required backup trigger declaration");
+  return Object.freeze({ name: header[1], table: header[2], sql });
+}));
+
+export function getLocalBackupTriggerRequirements(version: number): readonly LocalBackupTriggerRequirement[] {
+  if (version !== 7 && version !== 8) throw new Error("Unsupported backup trigger contract version");
+  return VERSION_7_TRIGGER_REQUIREMENTS;
+}
+
+/** Compare the known definitions, not arbitrary SQL semantic equivalence.
+ * Preserve quoted identifiers/literals and token boundaries; ignore only
+ * unquoted case/whitespace and SQLite's omitted CREATE IF NOT EXISTS clause.
+ */
+export function localBackupTriggerDefinitionsMatch(actual: string | null, expected: string): boolean {
+  if (actual === null) return false;
+  const tokens = (sql: string): string => {
+    const declaration = sql.trim().replace(/^CREATE\s+TRIGGER\s+IF\s+NOT\s+EXISTS\s+/i, "CREATE TRIGGER ")
+      .replace(/;\s*$/, "");
+    const pieces = declaration.match(/'(?:''|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`|\[[^\]]*\]|[a-zA-Z_][a-zA-Z_0-9]*|[^\s]/g) ?? [];
+    return JSON.stringify(pieces.map((token) => /^[a-zA-Z_]/.test(token) ? token.toUpperCase() : token));
+  };
+  return tokens(actual) === tokens(expected);
 }

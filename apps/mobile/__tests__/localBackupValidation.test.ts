@@ -153,10 +153,12 @@ async function seedFoodWithBrand(
 
 async function createValidArtifact(
   ownerId = OWNER_ID,
+  version = SQLITE_SCHEMA_VERSION,
 ): Promise<LocalSQLiteTestDatabase> {
   const database = new LocalSQLiteTestDatabase();
   await migrateNutritionDatabase(
     database.asExpoDatabase(),
+    SQLITE_MIGRATIONS.slice(0, version),
   );
 
   await seedLocalOwner(database, ownerId);
@@ -953,4 +955,39 @@ test.each([
     if (admitted) await expect(result).resolves.toMatchObject({ schemaVersion: 8 });
     else await expect(result).rejects.toMatchObject({ code: "backup_exact_value_invalid" });
   } finally { database.close(); }
+});
+
+
+describe.each([7, 8])("required trigger definitions at supported version %s", (version) => {
+  test.each(["body", "table", "timing", "event"])("rejects same-name changed %s", async (part) => {
+    const database = await createValidArtifact(OWNER_ID, version);
+    try {
+      const name = "phase0020_snapshot_immutable_update";
+      const original = await database.getFirstAsync<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?", [name],
+      );
+      if (!original) throw new Error("missing original control trigger");
+      let changed = original.sql;
+      if (part === "body") changed = changed.replace(/BEGIN[\s\S]*END$/, "BEGIN SELECT 1; END");
+      if (part === "table") changed = changed.replace('ON "daily_log_nutrient_snapshots"', 'ON "recipe_publication_nutrients"');
+      if (part === "timing") changed = changed.replace("BEFORE UPDATE", "AFTER UPDATE");
+      if (part === "event") changed = changed.replace("BEFORE UPDATE", "BEFORE INSERT");
+      expect(changed).not.toBe(original.sql);
+      await database.execAsync(`DROP TRIGGER "${name}"; ${changed}`);
+      await expect(validateLocalBackupDatabase(database.asExpoDatabase(), "artifact", { allowVersion7Artifact: true }))
+        .rejects.toMatchObject({ code: "backup_schema_invalid" });
+    } finally { database.close(); }
+  });
+
+  test("accepts original required definitions with case/spacing-insensitive SQL tokens", async () => {
+    const database = await createValidArtifact(OWNER_ID, version);
+    try {
+      const name = "phase0020_revision_immutable_update";
+      const original = await database.getFirstAsync<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name=?", [name]);
+      if (!original) throw new Error("missing original control trigger");
+      await database.execAsync(`DROP TRIGGER "${name}"; ${original.sql.replace("BEFORE UPDATE", "before    update")}`);
+      await expect(validateLocalBackupDatabase(database.asExpoDatabase(), "artifact", { allowVersion7Artifact: true }))
+        .resolves.toMatchObject({ schemaVersion: version });
+    } finally { database.close(); }
+  });
 });

@@ -17,6 +17,8 @@ import {
 } from "../../shared/exact/canonicalValues";
 import {
   getLocalBackupSchemaRequirements,
+  getLocalBackupTriggerRequirements,
+  localBackupTriggerDefinitionsMatch,
   localBackupDefaultsMatch,
   type LocalBackupColumnRequirement,
 } from "./localBackupSchema";
@@ -73,25 +75,6 @@ type MigrationLedgerRow = Readonly<{
   version: number;
   migration_id: string;
 }>;
-
-const REQUIRED_TRIGGER_NAMES = Object.freeze([
-  "nutrition_snapshot_scope_validate_insert",
-  "phase0020_revision_immutable_update",
-  "phase0020_revision_immutable_delete",
-  "phase0020_revision_nutrient_immutable_update",
-  "phase0020_revision_nutrient_immutable_delete",
-  "phase0020_revision_amount_immutable_update",
-  "phase0020_revision_amount_immutable_delete",
-  "phase0020_ocr_trace_immutable_update",
-  "phase0020_ocr_trace_immutable_delete",
-  "phase0020_snapshot_immutable_update",
-  "phase0020_snapshot_immutable_delete",
-  "phase0020_snapshot_replacement_delete_count",
-  "phase0020_daily_log_immutable_update",
-  "phase0020_daily_log_replacement_header_touched",
-  "trg_food_nutrients_nonnegative_insert",
-  "trg_food_nutrients_nonnegative_update",
-] as const);
 
 const REQUIRED_INDEX_NAMES = Object.freeze([
   "ix_food_items_active_source_identity",
@@ -376,17 +359,15 @@ async function assertExpectedSchemaObjects(
 
   await assertVersionedColumnSchema(database, expectedTables, schemaVersion);
 
-  const triggerRows = await database.getAllAsync<{ name: string }>(
-    `SELECT "name" FROM "sqlite_master" WHERE "type" = 'trigger'`,
+  const triggerRows = await database.getAllAsync<{ name: string; tbl_name: string; sql: string | null }>(
+    `SELECT "name", "tbl_name", "sql" FROM "sqlite_master" WHERE "type" = 'trigger'`,
   );
-  const triggers = new Set(triggerRows.map((row) => row.name));
-
-  for (const name of REQUIRED_TRIGGER_NAMES) {
-    if (!triggers.has(name)) {
-      fail(
-        "backup_schema_invalid",
-        `Required integrity trigger ${name} is missing.`,
-      );
+  const triggers = new Map(triggerRows.map((row) => [row.name, row]));
+  for (const required of getLocalBackupTriggerRequirements(schemaVersion)) {
+    const actual = triggers.get(required.name);
+    if (!actual || actual.tbl_name !== required.table ||
+        !localBackupTriggerDefinitionsMatch(actual.sql, required.sql)) {
+      fail("backup_schema_invalid", `Required integrity trigger ${required.name} is missing or has an unsupported definition.`);
     }
   }
 
