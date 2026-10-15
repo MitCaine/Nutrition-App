@@ -74,10 +74,15 @@ or dependency installation.
 Optional worker-execution linkage is discoverable from that same selected source with
 `PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --help`.
 Its [binding contract](../engineering/workflow/shared/workflow-tools.md#prepared-worker-execution-linkage)
-is the authority for required consumer inputs. Nutrition has not selected a consumer execution
-adapter or edit/capture/runner binding for it. Resource adoption and imports/help do not select
-that integration or grant capture authority; the existing authored runner and protected lifecycle
-remain selected. A future use requires its separately authenticated consumer binding and authority.
+is the authority for required consumer inputs. Nutrition's optional
+[`scripts/worker-execution`](../scripts/worker-execution) binding is selected only when named in an
+authorized handoff; its [consumer contract](operations/testing.md#prepared-worker-execution-binding)
+defines disposable detached capture, the existing authored runner and terminal evidence mapping.
+The handoff supplies the frozen tool location, exact request, allowed inputs/edits, capture grant,
+evidence location and return destination. Workers use the assigned wrapper's `run` command after
+controller preparation. Ordinary supported routes remain available for unselected assignments.
+Resource copies, generated readiness and helper availability grant no authority. The controller
+retains publication, qualification, independent review, approval, integration and installed closeout.
 
 ## Nutrition permissions and routing
 

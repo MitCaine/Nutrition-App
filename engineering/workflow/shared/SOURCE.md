@@ -276,6 +276,10 @@ These separate helper identities select source availability through the local ma
 | <code>src&#47;repository&#95;intelligence&#47;worker&#95;execution.py</code> | `8c02a772ef753ecef8cb7233e31bd87a90a6732d` | 15600 | `c5c5c4da7e66b3d7a3be4eeffa9bae43e6fd1a5694ac7ac65190e74fcd25ebe5` | Authenticated existing source checkout; import/help verified; no consumer execution binding |
 
 ## Current selection: e0b82f52cdd728b4ef80986a3541fc8f1d07486a
+The following GH-400 paragraph is its historical adoption snapshot. Current consumer-binding
+selection belongs to the local project map; this provenance record does not assert current
+consumer integration status. Its selected instruction bytes and prior inventories remain preserved.
+
 GH-400 adopts this authenticated published RI revision for future intake only; this attempt retains its original c03d43b6cbcca8a002ed3e0292d0cdd354738d48 instructions. Complete upstream eight-file diff adds operation finality/static preparation validation, optional adapter conformance/full-integration/recovery frames, consequential evidence dispositions/due-obligation coverage and complete-finding-set corrections. Existing selected controller/worker/tooling copies are aligned with exact declared relocations. Nutrition has no selected consumer worker-execution/adapter/conformance/capture binding; consumer integration and unrelated editorial changes are outside this adoption. Four kickoff files remain unchanged. All active/stopped instruction selections, historical evidence and parked work are preserved. Producer/runtime remains `20a5039e7731eaa1303443b782caa81a383a0af1`; existing Python 3.14.8, tree-sitter 0.25.1 and tree-sitter-markdown 0.5.1 unchanged. Imports/help establish source availability only, not live consumer execution, semantic acceptance or host skill discovery. Optional sidecar generation remains unselected.
 
 | Upstream resource | Git blob | Bytes | Source SHA-256 | Destination / declared relocation | Installed SHA-256 |

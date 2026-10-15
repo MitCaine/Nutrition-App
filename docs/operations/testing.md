@@ -152,6 +152,75 @@ an exact-candidate-SHA dedicated-App `Main qualification` check. Ordinary CI rem
 separate regression signal. Shared substantive commands prevent drift without running
 another copy of a suite within a selected job.
 
+### Prepared worker execution binding
+
+For an assignment explicitly selecting the map's optional Nutrition binding, the controller supplies
+an exact request and a frozen location of `scripts/worker-execution` outside the worker's edit scope.
+It runs `./scripts/worker-execution prepare --request /absolute/execution.json --evidence
+/absolute/private/evidence`; the assigned worker makes only its authorized edits, then uses the same
+wrapper and arguments with `run` in place of `prepare`. The evidence directory must already exist.
+Selected Work/Codex role routing and message permissions still apply. The wrapper does not launch
+agents or authenticate the human grant recorded by `capture_authority`.
+
+The request uses the selected shared helper's fields below, with consumer-owned capture/runner and
+conformance operations inserted by the wrapper. Inputs list only authorized regular files, never a
+recursive directory inventory. The controller supplies original input hashes and checks suitable for
+the assignment; a miniature request is:
+
+```json
+{
+  "assignment": "assigned-task", "attempt": "unique-attempt",
+  "workspace": "/absolute/disposable/workspace", "protected_repository": "/absolute/project",
+  "base": "FULL_ORIGINAL_BASE_COMMIT", "route": "interactive",
+  "inputs": [{"path": "/absolute/assigned-handoff.md", "sha256": "EXACT_SHA256"}],
+  "allowed_changes": ["selected-file.txt"], "capture_authority": "authenticated owner/handoff reference",
+  "environment": {"PATH": "/absolute/prepared/python/bin:/usr/bin:/bin", "HOME": "/absolute/private/home"},
+  "require_new_candidate": true,
+  "check_request": {
+    "schema_version": 1, "repository": "{workspace}", "expected_head": "{candidate}", "attempt": "{attempt}",
+    "steps": [{"id": "check", "argv": ["/absolute/prepared/python", "-c", "print('assigned check')"],
+               "cwd": ".", "env": {}, "prerequisites": [], "designation": "mandatory"}]
+  },
+  "runner_result": "NUTRITION_RESULT.json",
+  "result_bindings": {
+    "candidate": ["candidate"], "workspace": ["workspace"], "attempt": ["attempt"],
+    "request_sha256": ["request_sha256"], "ready": ["ready"], "references": ["references"]
+  }
+}
+```
+
+This shape example is not an authorization or executable check selection. Optional `integration_base`
+retains B for the full B→C2 integration diff while `base` retains C1 for the C1→C2 correction delta.
+The adopted helper's process timeout and recovery limits still apply. Preparation binds the original
+request, handoff inputs, wrapper, map, interpreter, native runner files and selected RI module bytes.
+The existing clean RI source must match the map selection; no installation or runtime upgrade occurs.
+Bindings changing these selected inputs require explicit reconciliation and a fresh attempt, not
+repreparation over retained evidence. Tasks editing the native runner or binding tools use another
+supported route or an explicitly selected stable tool source; they cannot silently rebind active inputs.
+
+Capture accepts only a separate disposable workspace with detached HEAD, checks original allowed
+paths including rename endpoints and hidden index flags, and creates a local descendant commit using
+Git's existing index/tree/commit projection and detached-HEAD compare-and-swap. It does not run hooks,
+publish refs, move named branches, change Git settings or integrate main. Capture authority must be
+explicitly assigned. Shared linkage then generates `CHECK_REQUEST.json` and calls the actual copied
+`run-review.sh`; native runner files must match the selected consumer tool source.
+
+The consumer projection verifies the complete accepted command set, each command's designation,
+outcome and hashes, native request/candidate/source observations, bundle, terminal `complete.json`
+and attempt state. `eligible: true` means source stability; it is insufficient for readiness.
+Intermediate `finalize` exit zero can describe a consistently recorded failure. Every mandatory
+outcome must pass; advisory failures remain observations even when the native runner exits one.
+The adapter retains that native exit and maps readiness separately. Missing, blocked, unlaunched,
+incomplete or stale required evidence cannot become review-ready. `NUTRITION_RESULT.json` and the
+shared `RETURN.json` are generated from actual operations; workers relay those authoritative paths
+without rebuilding facts from plain logs. Native exclusive per-gate outputs and bundles remain the
+logger. Interrupted/failed launch markers and prior attempts are retained, with no blind retry.
+
+These facts are mechanical evidence, not semantic acceptance, independent review, delivery consumption,
+integration or issue completion. The controller consumes the actual returned source/results, obtains
+qualification and independent review, separately approves, integrates and verifies installed closeout.
+The one bounded integration exercise used to establish this binding is not a routine per-task stage.
+
 ### Authored command review attempts
 
 Authored results report `opt_in_qualification_status: unspecified` and omit a fixed
