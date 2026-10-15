@@ -8,7 +8,9 @@ Use it as the entry point. Deeper operational authority remains in the linked re
 
 ## Session responsibilities
 
-Run all commands from the repository root. The canonical
+Invoke repository entrypoints from the repository root. Commands explicitly assigned a
+child working directory, including authored runner steps, run in that declared
+directory with their selected environment and checks. The canonical
 [actor and timing rule](docs/operations/session-contract.md#actor-and-timing) distinguishes
 assigned worker results from repository task acceptance. Read-only orientation,
 builder inspection and inspection-only review do not run acceptance commands;
@@ -56,7 +58,7 @@ When sources conflict, preserve executable facts and resolve the intended correc
 ## Working rules
 
 - Make bounded changes. Do not rewrite subsystems unless the active task explicitly requires it.
-- Preserve established architecture and public contracts unless a demonstrated correctness defect requires change.
+- Preserve established architecture and public contracts unless the authenticated owner intent and accepted task scope authorize their correction. A discovered defect alone does not authorize wider edits; repair in-scope defects under the existing grant and return uncovered changes to the controller.
 - Inspect actual code, migrations, tests, and repository state before proposing implementation.
 - Do not silently weaken validation, remove checks, suppress warnings, or broaden exception handling to make tests pass.
 - Do not add speculative abstractions, compatibility layers, or generalized infrastructure without a current requirement.
