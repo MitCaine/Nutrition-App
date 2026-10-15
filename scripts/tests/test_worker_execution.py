@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -65,7 +66,10 @@ def case(tmp_path):
                    "HOME": str(root), "PYTHONDONTWRITEBYTECODE": "1"}
     step = {"id": "check", "argv": [sys.executable, "-c", "assert open('tracked.txt').read() == 'after\\n'"],
             "cwd": ".", "env": {}, "designation": "mandatory", "prerequisites": []}
-    request = dict(assignment="fixture", attempt="fixture", workspace=str(workspace),
+    selected_map = (ROOT / "docs/local_project_map.md").read_text()
+    source = dict(repository=re.search(r"authenticated RI checkout `([^`]+)`", selected_map).group(1),
+                  revision=re.search(r"future task intake is pinned at `([0-9a-f]{40})`", selected_map).group(1))
+    request = dict(assignment="fixture", attempt="fixture", workspace=str(workspace), ri_source=source,
                    protected_repository=str(protected), base=git(workspace, "rev-parse", "HEAD"),
                    inputs=[dict(path=str(handoff), sha256=sha(handoff))], allowed_changes=["tracked.txt"],
                    capture_authority=str(handoff), environment=environment, require_new_candidate=True,
@@ -313,6 +317,15 @@ def test_public_input_drift_refused_before_capture(case, shared):
     assert public(case, "run").returncode == 1
     assert git(case["workspace"], "rev-parse", "HEAD") == case["request"]["base"]
     assert not (case["evidence"] / "fixture/LAUNCHED").exists()
+
+
+def test_worker_run_uses_prepared_source_without_loading_controller_map(case, shared, adapter, monkeypatch):
+    assert public(case, "prepare").returncode == 0
+    (case["workspace"] / "tracked.txt").write_text("after\n")
+    def forbidden_controller_read():
+        raise AssertionError("Worker must not reorient from the controller map")
+    monkeypatch.setattr(adapter, "map_selection", forbidden_controller_read)
+    assert adapter.main(["run", "--request", str(case["path"]), "--evidence", str(case["evidence"])]) == 0
 
 
 def test_public_full_integration_and_recovery_frames(case, shared):

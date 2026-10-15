@@ -46,14 +46,23 @@ def git(root: Path, *args: str) -> str:
     return native._git(root, *args).decode().strip()
 
 
-def selected_ri():
-    """Authenticate the map-selected source, without installing or changing it."""
+def map_selection() -> dict:
+    """Controller preparation resolves configuration; workers receive it bound."""
     text = (ROOT / "docs/local_project_map.md").read_text()
     selected = re.search(r"future task intake is pinned at `([0-9a-f]{40})`", text)
     location = re.search(r"authenticated RI checkout `([^`]+)`", text)
     require(selected is not None and location is not None, "Selected helper binding is absent")
-    source = native._canonical_root(location.group(1))
-    require(git(source, "rev-parse", "HEAD") == selected.group(1), "RI source HEAD differs from selection")
+    return {"repository": location.group(1), "revision": selected.group(1)}
+
+
+def selected_ri(selection=None):
+    """Authenticate explicitly selected helper source; no installation occurs."""
+    selection = map_selection() if selection is None else selection
+    require(isinstance(selection, dict) and set(selection) == {"repository", "revision"}
+            and isinstance(selection["revision"], str)
+            and re.fullmatch("[0-9a-f]{40}", selection["revision"]) is not None, "Invalid selected RI source")
+    source = native._canonical_root(selection["repository"])
+    require(git(source, "rev-parse", "HEAD") == selection["revision"], "RI source HEAD differs from selection")
     require(not git(source, "status", "--porcelain"), "RI source is dirty")
     sys.path.insert(0, str(source / "src"))
     module = importlib.import_module("repository_intelligence.worker_execution")
@@ -62,15 +71,18 @@ def selected_ri():
         item = importlib.import_module("repository_intelligence." + name)
         path = Path(item.__file__).resolve()
         require(path == source / "src/repository_intelligence" / (name + ".py"), "Substituted helper import")
-        expected = native._git(source, "show", selected.group(1) + ":" + str(path.relative_to(source)))
+        expected = native._git(source, "show", selection["revision"] + ":" + str(path.relative_to(source)))
         require(path.read_bytes() == expected, "Helper bytes differ from selected source")
         paths.append(path)
     return module, paths
 
 
-def binding(path: Path) -> dict:
+def binding(path: Path, *, preparing: bool = False) -> tuple:
     """Complete the selected RI request with this consumer's actual operations."""
     value = read(path)
+    selection = value.pop("ri_source")
+    if preparing:
+        require(selection == map_selection(), "Preparation must select the current project helper binding")
     require(not {"capture", "runner", "edit", "conformance", "required_outcomes"} & value.keys(),
             "Nutrition owns capture/runner/conformance; interactive worker edits only")
     require(value.get("route", "interactive") == "interactive", "Nutrition selects interactive edits")
@@ -81,7 +93,7 @@ def binding(path: Path) -> dict:
     for name in TOOLS:
         require((root / name).read_bytes() == (ROOT / name).read_bytes(), "Substituted native runner tool: " + name)
     require(os.access(root / "scripts/run-review.sh", os.X_OK), "Selected native runner is not executable")
-    module, helper_paths = selected_ri()
+    module, helper_paths = selected_ri(selection)
     executable = Path(sys.executable).resolve()
     command = [str(executable), str(SCRIPT)]
     checked = dict(value["check_request"])
@@ -93,7 +105,7 @@ def binding(path: Path) -> dict:
     env = native._validate_env(value["environment"], "worker environment")
     require(not any(name.startswith("GIT_") for name in env), "Git environment redirection is unsupported")
     inputs = list(value["inputs"])
-    for item in [path, SCRIPT, ROOT / "docs/local_project_map.md", executable,
+    for item in [path, SCRIPT, executable,
                  *(root / name for name in TOOLS), *helper_paths]:
         record = identity(item)
         existing = [entry for entry in inputs if entry.get("path") == record["path"]]
@@ -112,7 +124,7 @@ def binding(path: Path) -> dict:
             ("candidate", "workspace", "attempt", "request_sha256", "ready", "references")}, "Unsupported Nutrition result mapping")
     require(value["runner_result"] == "NUTRITION_RESULT.json", "Unsupported Nutrition result filename")
     # The shared prepare checks every remaining field before creating an attempt.
-    return value
+    return value, module
 
 
 def capture(request: dict) -> str:
@@ -135,7 +147,12 @@ def capture(request: dict) -> str:
     changed += native._git(root, "diff", "--cached", "--no-renames", "--name-only", "-z")
     changed += native._git(root, "ls-files", "--others", "--exclude-standard", "-z")
     require(not {x.decode() for x in changed.split(b"\0") if x} - set(paths), "Capture exceeds allowed paths")
-    native._git(root, "add", "-A", "--", *paths)
+    indexed = {x.decode() for x in native._git(root, "ls-files", "-z").split(b"\0") if x}
+    stage = [p for p in paths if p in indexed or (root / p).exists() or (root / p).is_symlink()]
+    # Deleted rename sources may already be absent from the index. Their staged
+    # deletion is retained, rather than passing a nonexistent pathspec to add.
+    if stage:
+        native._git(root, "add", "-A", "--", *stage)
     tree = git(root, "write-tree")
     if tree != git(root, "rev-parse", "HEAD^{tree}"):
         candidate = git(root, "commit-tree", tree, "-p", head, "-m", "Capture authorized worker candidate")
@@ -269,9 +286,8 @@ def main(argv=None) -> int:
         native._no_symlink_components(args.request)
         if args.mode in ("prepare", "run"):
             require(args.evidence is not None, "Evidence directory required")
-            request = binding(args.request)
+            request, module = binding(args.request, preparing=args.mode == "prepare")
             native._external_output_path(Path(request["workspace"]), args.evidence)
-            module, _ = selected_ri()
             result = module.execute(request, args.evidence, args.mode)
             print(json.dumps(result, sort_keys=True))
             return 0 if args.mode == "prepare" or result["review_ready"] else 1

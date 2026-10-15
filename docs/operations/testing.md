@@ -170,6 +170,7 @@ the assignment; a miniature request is:
 ```json
 {
   "assignment": "assigned-task", "attempt": "unique-attempt",
+  "ri_source": {"repository": "/absolute/selected/RI", "revision": "FULL_SELECTED_RI_COMMIT"},
   "workspace": "/absolute/disposable/workspace", "protected_repository": "/absolute/project",
   "base": "FULL_ORIGINAL_BASE_COMMIT", "route": "interactive",
   "inputs": [{"path": "/absolute/assigned-handoff.md", "sha256": "EXACT_SHA256"}],
@@ -191,8 +192,10 @@ the assignment; a miniature request is:
 
 This shape example is not an authorization or executable check selection. Optional `integration_base`
 retains B for the full B→C2 integration diff while `base` retains C1 for the C1→C2 correction delta.
-The adopted helper's process timeout and recovery limits still apply. Preparation binds the original
-request, handoff inputs, wrapper, map, interpreter, native runner files and selected RI module bytes.
+The adopted helper's process timeout and recovery limits still apply. Controller preparation checks
+`ri_source` against its selected map, then binds the original request, handoff inputs, wrapper,
+interpreter, native runner files and selected RI module bytes. Worker `run` uses that prepared source
+selection without loading or hashing controller-only map/instruction documents.
 The existing clean RI source must match the map selection; no installation or runtime upgrade occurs.
 Bindings changing these selected inputs require explicit reconciliation and a fresh attempt, not
 repreparation over retained evidence. Tasks editing the native runner or binding tools use another
