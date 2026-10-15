@@ -109,24 +109,37 @@ is explicitly authorized, and test distinguishing valid and invalid cases throug
 the affected paths. Restoration examples include terminal states, ownership,
 allocation limits and ordinary application callers.
 
-Before writing or extending tests, derive concrete scenarios from accepted
-behavior: initial state, actions, expected outcome and plausible incorrect
-behavior each case must distinguish. Ground expectations independently of the
-implementation under test. Exercise the relevant caller through the outcome
+Before substantive edits, record a brief source-grounded implementation sketch
+connecting accepted outcomes to intended code and tests: existing interfaces,
+consequential transitions or invariants, and assumptions. Resolve technical
+uncertainties through targeted inspection or permitted focused probes before
+building on them; return missing product decisions to the controller. Reuse
+accepted detail, scale the sketch to the change, and revise it when evidence
+changes the approach. Use existing assignment notes or plan facilities, not
+private reasoning, a mandatory new file, capsule edit, handoff or approval gate.
+Trivial maintenance may need one sentence; complex logic a compact flow. Format
+is optional; no complete upfront understanding or whole-file reading is required.
+
+Derive test scenarios from accepted behavior: initial state, actions, expected
+outcome and plausible incorrect behavior each case must distinguish. Ground
+expectations independently of the proposed implementation. Exercise the relevant caller through the outcome
 claimed; ask what plausible broken implementation could still pass the assertions.
 Preserve legitimate historical-version expectations and test corrected current
 behavior separately when applicable. A focused unit test is sufficient when it
 proves the claimed outcome; this is not a blanket integration-test requirement.
-Missing product decisions still go to the controller. Passing counts alone do
-not prove a required behavior.
+Passing counts alone do not prove a required behavior.
 
 Follow the [command readiness and check-order rules](start-an-issue.md#command-readiness).
 Retain actual commands, source/environment identities and results/logs, including
 failures/skips, under [evidence eligibility](start-an-issue.md#evidence-eligibility-and-corrections).
-Report changed inputs or missing results; do not infer acceptance.
+Report changed inputs or missing results; do not infer acceptance. When the
+handoff selects an available adopted [consumer execution binding](workflow-tools.md#prepared-worker-execution-linkage),
+use its prepared edit/capture/check/return operations under the assigned authority;
+do not invoke unselected helpers. Other supported project routes remain valid.
 Preserve useful work for bounded corrections; confirm scope changes with the controller.
 
-Return the full change, criterion evidence and unresolved obligations for controller
+Return the full change, criterion evidence and unresolved obligations under the
+[shared disposition contract](workflow-tools.md#consequential-dispositions) for controller
 verification and independent review. Commit/push only under an explicit grant.
 A worker implementor must not approve, integrate, close the issue, edit controller
 state or self-review. Under the project-permitted

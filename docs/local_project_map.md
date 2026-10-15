@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `c03d43b6cbcca8a002ed3e0292d0cdd354738d48`: controllers use the complete
+future task intake is pinned at `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -52,7 +52,7 @@ rules for its arguments and output.
 
 Optional section-reader and adoption helpers are separate from producer/runtime `20a5039` and are
 selected from the authenticated RI checkout `/Users/mipoo/Projects/Repository Intelligence` at
-revision `c03d43b6cbcca8a002ed3e0292d0cdd354738d48`. Before use, confirm that exact HEAD and a clean
+revision `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`. Before use, confirm that exact HEAD and a clean
 worktree, then authenticate imports with the existing
 `/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python` (Python 3.14.8), `PYTHONPATH=src`,
 and module source paths. The compatible installed helper dependencies are tree-sitter 0.25.1 and

@@ -426,13 +426,20 @@ sweep to consolidate real failures and unknowns. Routine clarification, diagnosi
 and in-scope correction need no repeated human approval. The assigned implementor
 may diagnose and repair ordinary compile, lint and test failures throughout the
 accepted task scope and authorized edit boundaries without a new grant or handoff
-for each fix. Check fixture-dependent expectations against the actual setup before
-prescribing a correction. When a failure reveals a repeated assumption or
-incomplete migration, search relevant source, tests and callers for affected
-occurrences, inspect matches in context, and repair related mistakes within
-authorized edits before restarting costly qualification. Preserve intentional
-historical behavior; this requires neither whole-file reading nor blanket
-replacement. A failed check never permits weakening tests or guessing acceptance
+for each fix. Before nontrivial correction, inspect the complete supplied review/failure
+set. Establish the observed failure and causal evidence; reexamine implementation,
+fixture, independently justified expectations and execution setup when they conflict.
+Inspect relevant source, tests and callers for related uses sharing the assumption,
+including incomplete migrations, and choose a distinguishing check. Revise only
+affected implementation-sketch portions before building on changed assumptions.
+Incomplete evidence permits bounded probes and explicit uncertainty, not a confident
+diagnosis. Scale obvious compile/format fixes proportionately; no new planning stage,
+whole-file mandate or grant is required. Repair related mistakes within authorized
+edits before costly qualification, preserving intentional historical behavior.
+The terminal handoff accounts for every applicable finding as addressed with new
+evidence, unresolved or needing a controller decision; a partial repair cannot claim
+correction-complete. Never weaken tests or change expectations merely to match output,
+or guess acceptance
 decisions. Requirement changes, protected inputs, wider scope or new
 permissions return to the controller. STOP_REPLAN, replan,
 scope expansion and requests for broader authority are last resorts. First verify
@@ -463,6 +470,10 @@ Reference unchanged instructions/evidence by authenticated accessible location;
 repeat only to resolve ambiguity. Workers still read their required role-specific inputs.
 
 ### Evidence eligibility and corrections
+
+Use the [shared disposition contract](workflow-tools.md#consequential-dispositions)
+for consequential judgments and obligation coverage; workers and controller retain
+separate stage authority.
 
 Checks must use a stable, identifiable source snapshot. Authenticate tested source,
 command/workflow and evidence identity; a matching name or aggregate exit code

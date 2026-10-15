@@ -168,12 +168,12 @@ evidence location; the helper does not create a state store.
 
 ## Existing optional evidence helpers
 
-The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/c03d43b6cbcca8a002ed3e0292d0cdd354738d48/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
+The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/e0b82f52cdd728b4ef80986a3541fc8f1d07486a/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
 contains pure input-equivalence predicates; unknown relevant inputs are not
 cacheable. Its extended packet validation remains optional and is not required
-by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/c03d43b6cbcca8a002ed3e0292d0cdd354738d48/scripts/check%5Fdocs%5Fand%5Fskills.py),
-the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/c03d43b6cbcca8a002ed3e0292d0cdd354738d48/docs/consumer-guide.md) and
-[review bundles](https://github.com/MitCaine/repository-intelligence/blob/c03d43b6cbcca8a002ed3e0292d0cdd354738d48/docs/review-evidence.md) retain their existing separate scopes.
+by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/e0b82f52cdd728b4ef80986a3541fc8f1d07486a/scripts/check%5Fdocs%5Fand%5Fskills.py),
+the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/e0b82f52cdd728b4ef80986a3541fc8f1d07486a/docs/consumer-guide.md) and
+[review bundles](https://github.com/MitCaine/repository-intelligence/blob/e0b82f52cdd728b4ef80986a3541fc8f1d07486a/docs/review-evidence.md) retain their existing separate scopes.
 None authenticates task authority or proves runtime availability.
 
 ## Prepared worker execution linkage
@@ -193,7 +193,8 @@ PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --re
 Version 1 request fields are `assignment`, unique `attempt`, absolute `workspace`
 and separate `protected_repository`, full `base`, `inputs` (absolute regular-file
 `path`/`sha256` bindings for the handoff, instructions and relevant consumer tools),
-exact relative `allowed_changes`, `capture_authority` (consumer grant reference),
+exact relative `allowed_changes`, optional `route` (`subprocess`, the compatible
+default, or explicitly selected `interactive`), `capture_authority` (consumer grant reference),
 selected child `environment`, optional `edit`, required `capture` and `runner`,
 `require_new_candidate` (explicit boolean), `check_request`, `runner_result` and
 `result_bindings`. Optional `timeout_seconds` is 1–3600 per operation. Each operation
@@ -209,8 +210,16 @@ identities, shared Git configuration identity and selected input/operation/reque
 reply. Reconcile retained partial evidence under the existing consumer recovery
 route; this helper does not resume interrupted operations. Edits occur only through
 the optional selected edit invocation, which may itself be a consumer launcher;
-manual source changes between prepare/run are refused. This is an optional selected
-operation path, not a replacement for interactive implementation tools.
+manual source changes are refused on that compatible subprocess route. On the
+explicit interactive route, prepare authenticates the clean original base before
+worker edits; run reauthenticates the original assignment, selected inputs and
+workspace/Git configuration, checks all committed and working changes against
+original allowed paths, and invokes the unchanged selected capture/runner.
+Authorized local descendant commits are supported without silently repreparing
+or changing the original base. Interactive requests cannot also select an edit
+launcher. A blocked or interrupted run still requires a new explicitly reconciled
+attempt, not rerunning its launch marker. This is an optional selected operation
+path, not filesystem isolation or an agent-launch service.
 
 Exact argv tokens `{workspace}`, `{attempt}` (private attempt directory),
 `{candidate}` and `{check_request}` resolve per invocation. Capture must leave a
@@ -244,3 +253,92 @@ result-report schema versions remain unchanged; this helper's packets use
 filesystem isolation, continuous observation, or protection against arbitrary
 outside writes. Consumer capture permissions and active instruction pins remain
 unchanged until separately adopted.
+
+Structured request/result parsing remains bounded to 1,000,000 bytes. Regular
+executable/input/output/evidence identity hashing streams 64 KiB chunks up to
+1,000,000,000 bytes, rejects nonregular/symlink endpoints and checks file identity,
+size and modification observations before/after reading. It does not omit large
+interpreters or logs merely because they exceed the JSON parsing limit. Every
+known result-binding key path is validated during preparation, before operations.
+These additive options retain helper schema version 1; existing subprocess
+bindings retain their selected behavior. Consumer adapters and actual host return
+consumption need their own bounded proof when selected, not routine live exercises.
+
+### Operation finality and adapter conformance
+
+Local operation launch supports owned POSIX process groups. A timeout or interruption handled by the helper
+terminates the selected group and waits for completion before hashing final output;
+descendants that outlive their immediate parent make the operation incomplete.
+Unknown remaining activity retains output paths as not-final, never final hashes
+or review-ready status. Escaped process groups and external host jobs are outside
+this local ownership contract and must use a selected consumer completion route;
+immediate-child success alone cannot qualify them. Unsupported platforms refuse
+local operation ownership. Helper termination by an unhandled signal or host crash does not establish cleanup.
+This is not universal process supervision.
+
+Return writes use exclusive unpredictable temporary files and replacement; residue
+from an older write cannot block a normal new write. Uncertain launch markers and
+partial evidence still require reconciliation, not blind retry. Final capture scope
+always considers rename source deletion and destination addition independently of
+Git rename configuration. Known output filenames, argv and environment forms are
+validated during preparation; runtime capability failures remain honest failures.
+
+The optional `adapter_conformance.assess` accepts a consumer projection, not a
+replacement native result format: `source_stable`, `terminal_complete`, explicit
+`outcomes` with boolean `mandatory` and `status`, and named `request_digests`.
+Statuses are passed/failed/blocked/unlaunched/incomplete/pending. Due required outcomes must
+pass independently of source stability, command exit or an intermediate finalize;
+advisory failures remain observations. Empty/malformed or unknown observations
+cannot qualify. A selected `conformance` object-key path in the execution request
+applies this check to the actual mapped consumer result before review-ready status.
+Consumer adapters own authentic projection and required-outcome coverage; the helper
+cannot certify a deliberately false adapter.
+
+`raw_file_sha256` hashes actual CHECK_REQUEST bytes; `canonical_json_sha256` hashes
+parsed JSON serialized with sorted keys, compact separators and ASCII escaping.
+Verify each selected representation under its own name. Other native formats need
+an explicit supported mapping; never relabel canonical hashes as raw file hashes.
+Existing raw request/source/reference validation remains required. Consumers own
+actual adapter and selected-worker integration tests, including interrupted and
+failed native results; shared fixtures supply small reusable conformance controls.
+
+Optional `integration_base` is a full ancestor commit of the original recovery
+`base`. Return `integration_changed_paths` describes B→C2; `changed_paths` describes
+C1→C2 and `recovery_base` retains C1. This uses existing Git projection, not a new
+ledger or acceptance narrowing. Existing requests default integration base to base;
+all additions retain packet schema1. No consumer adoption or active pin changes
+follow automatically. See the [selected role entrypoint](worker-instructions.md#implementor)
+when an available binding is explicitly assigned; other project routes remain valid.
+
+### Consequential dispositions
+
+Keep distinct meanings in existing handoffs and records; consumers may retain native
+statuses with explicit translation. **Execution outcome** describes what actually ran
+and its tool-reported exits/results, including partial work before a block.
+**Evidence eligibility** describes whether source, inputs and provenance permit using
+those results: successful execution can still supply ineligible evidence.
+**Review** judges the candidate against due criteria; **approval** is the authorized
+controller decision; **integration** is the verified repository transition. Review PASS
+creates neither approval nor integration. **Sent** records attempted transmission,
+**delivered** records destination availability, and **consumed** records receiver use;
+each requires observable supporting facts. Unknown stays unknown, without a new
+acknowledgment ritual.
+
+Each consequential disposition cites its supporting evidence and accounts for all
+applicable unresolved obligations against the accepted required set, not just the
+returned subset. Evaluate obligations when due: installed checks remain explicitly
+pending before integration, rather than premature review blockers. An unresolved due
+finding prevents correction-complete. Give judgment a brief checkable basis in existing
+notes/results, not private reasoning or a new document. Preserve mechanical tool reasons,
+exits and logs; explain meaningful changes through newly resolving evidence while
+retaining prior failures. Dispatcher relay preserves unchanged authoritative references
+rather than reconstructing acceptance matrices or evidence.
+
+For selected adapter coverage, optional `required_outcomes` in the prepared request maps
+accepted obligation IDs to boolean due flags. It requires `conformance`; mapped outcomes
+carry unique `id` values. Every accepted obligation must appear; due obligations must
+pass even if the adapter marks them advisory. Not-yet-due obligations may be `pending`
+with `mandatory: false`, retaining visibility without premature gating. Without this
+binding, adapters retain responsibility for independently proving required-set coverage.
+This additive mapping does not certify semantic judgment, consumer adoption or honesty
+of the accepted obligation inventory. Actual consumer adapters require their own tests.
