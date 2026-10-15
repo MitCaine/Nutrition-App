@@ -732,7 +732,22 @@ class IosNativeQualificationTests(
             invocation["environment"]["NODE_BINARY"],
             manifest["node_binary"],
         )
-        self.assertTrue(manifest["generated_build_command"].startswith("NODE_BINARY="))
+        self.assertIn("NODE_BINARY=", manifest["generated_build_command"])
+        expected = {
+            "NODE_ENV": "development",
+            "EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY": "remote",
+            "EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE": "test",
+            "EXPO_PUBLIC_NUTRITION_API_URL": "http://127.0.0.1:8000",
+        }
+        self.assertEqual(
+            (evidence / "xcodebuild-config.txt").read_text().splitlines(),
+            list(expected.values()),
+        )
+        self.assertEqual(invocation["environment"], {"NODE_BINARY": manifest["node_binary"], **expected})
+        self.assertEqual(manifest["generated_build_environment"], invocation["environment"])
+        for name, value in expected.items():
+            self.assertIn(f"{name}={value}", manifest["generated_build_command"])
+
 
     def test_qualifier_fails_closed_on_timing_write_failure(self):
         result, evidence = self._run_fixture_qualification(
@@ -898,6 +913,12 @@ elif printf "%s\\n" "$*" | grep -Fq -- "-list"; then
   printf '%s\\n' '{"workspace":{"schemes":["Nutrition App"]}}'
 else
   printf '%s\\0' "$@" > "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/xcodebuild-argv.nul"
+  test "${NODE_ENV-}" = development || exit 91
+  test "${EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY-}" = remote || exit 92
+  test "${EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE-}" = test || exit 93
+  test "${EXPO_PUBLIC_NUTRITION_API_URL-}" = http://127.0.0.1:8000 || exit 94
+  printf '%s\\n' "$NODE_ENV" "$EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY" "$EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE" "$EXPO_PUBLIC_NUTRITION_API_URL" > "$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/xcodebuild-config.txt"
+
   derived=""
   previous=""
   for argument in "$@"; do

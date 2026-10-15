@@ -390,8 +390,10 @@ build_invocation = document("IOS_NATIVE_BUILD_INVOCATION_FILE")
 build_command = None
 if build_invocation:
     build_command = (
-        "NODE_BINARY="
-        + shlex.quote(build_invocation["environment"]["NODE_BINARY"])
+        " ".join(
+            name + "=" + shlex.quote(value)
+            for name, value in build_invocation["environment"].items()
+        )
         + " "
         + shlex.join(
             [build_invocation["executable"], *build_invocation["argv"]]
@@ -1042,7 +1044,13 @@ document = {
     "schema_version": 1,
     "executable": executable,
     "argv": argv,
-    "environment": {"NODE_BINARY": node_binary},
+    "environment": {
+        "NODE_BINARY": node_binary,
+        "NODE_ENV": "development",
+        "EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY": "remote",
+        "EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE": "test",
+        "EXPO_PUBLIC_NUTRITION_API_URL": "http://127.0.0.1:8000",
+    },
     "workspace": workspace,
     "scheme": scheme,
     "derived_data_path": derived_data,
@@ -2014,6 +2022,10 @@ NODE
 
   xcodebuild_exit=0
   NODE_BINARY="$node_binary" \
+  NODE_ENV=development \
+  EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
+  EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=test \
+  EXPO_PUBLIC_NUTRITION_API_URL=http://127.0.0.1:8000 \
     "$xcodebuild_binary" \
       "${build_args[@]}" \
       > "$evidence_dir/xcodebuild.log" \
