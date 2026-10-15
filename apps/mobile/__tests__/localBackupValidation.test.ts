@@ -925,3 +925,32 @@ test.each([
     await expect(validateLocalBackupDatabase(database.asExpoDatabase())).rejects.toMatchObject({ code: "backup_schema_invalid" });
   } finally { database.close(); }
 });
+
+
+test.each([
+  ["known", "0.000000", true],
+  ["known", "1.000000", true],
+  ["estimated", "0.000000", true],
+  ["estimated", "1.000000", true],
+  ["zero", "0.000000", true],
+  ["unknown", null, true],
+  ["zero", "1.000000", false],
+] as const)("snapshot admission preserves %s/%s semantics", async (status, amount, admitted) => {
+  const database = await createValidArtifact();
+  try {
+    await seedLocalFood(database, { id: FOOD_ID, ownerId: OWNER_ID, servingId: SERVING_ID, gramWeight: "28.000000" });
+    const logId = "00000000-0000-4000-8000-000000000201";
+    await database.runAsync(
+      `INSERT INTO daily_logs(id,user_id,food_item_id,logged_date,amount_quantity,amount_unit)
+       VALUES(?,?,?,'2026-10-13','1.000000','serving')`, [logId, OWNER_ID, FOOD_ID],
+    );
+    await database.runAsync(
+      `INSERT INTO daily_log_nutrient_snapshots(id,daily_log_id,source_food_item_id,nutrient_id,amount,unit,data_status,consumed_amount_quantity,consumed_amount_unit)
+       VALUES('00000000-0000-4000-8000-000000000202',?,?,'protein',?,'g',?,'1.000000','serving')`,
+      [logId, FOOD_ID, amount, status],
+    );
+    const result = validateLocalBackupDatabase(database.asExpoDatabase());
+    if (admitted) await expect(result).resolves.toMatchObject({ schemaVersion: 8 });
+    else await expect(result).rejects.toMatchObject({ code: "backup_exact_value_invalid" });
+  } finally { database.close(); }
+});

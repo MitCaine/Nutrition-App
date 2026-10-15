@@ -4,11 +4,11 @@ import {
   divideResponseDecimalByPowerOfTen,
   multiplyResponseDecimalsInContext,
   NUMERIC_14_6,
-  parseDecimal,
   parseResponseDecimal,
   type ExactDecimal,
   type ResponseDecimal,
 } from "../../shared/exact/decimal";
+import { parseStoredSnapshotAmount } from "../../shared/nutrition/storedSnapshot";
 import type { NutrientUnit } from "../../shared/nutrition/types";
 
 export type SnapshotAggregate = Readonly<{
@@ -54,18 +54,9 @@ export function accumulateSnapshot(
   if (sourceUnit !== current.unit && !(MASS_FACTORS[sourceUnit] && MASS_FACTORS[current.unit])) {
     throw invalidStored();
   }
-  if (row.data_status === "unknown") {
-    if (row.amount !== null) throw invalidStored();
-    return { ...current, unknown: current.unknown + 1 };
-  }
-  if (!["known", "estimated", "zero"].includes(row.data_status) || row.amount === null) {
-    throw invalidStored();
-  }
-  let amount: ExactDecimal;
-  try { amount = parseDecimal(row.amount, NUMERIC_14_6); }
-  catch { throw invalidStored(); }
+  const amount = parseStoredSnapshotAmount(row, invalidStored);
+  if (amount === null) return { ...current, unknown: current.unknown + 1 };
   const isZero = compareDecimals(amount, "0", NUMERIC_14_6) === 0;
-  if (row.data_status === "zero" && !isZero) throw invalidStored();
   const converted = isZero ? parseResponseDecimal("0") : convertAmount(amount, sourceUnit, current.unit);
   return {
     ...current,

@@ -197,6 +197,11 @@ Cancellation reports success only after the pending path is gone; if both the SQ
 cleanup routes fail, Settings keeps the pending affordance and reports the failure so the staged
 backup remains truthfully eligible for activation.
 
+Backup admission also applies the immutable Daily Log reader's status/value contract: unknown
+snapshots have no amount, explicit zero has an exact zero amount, and numeric known/estimated
+values retain their existing exact-decimal semantics. An inconsistent external artifact is rejected
+before replacement; admission never repairs historical rows.
+
 ### Restart-time activation and rollback
 
 Pending restore activation occurs at the local-runtime bootstrap boundary before a normal local

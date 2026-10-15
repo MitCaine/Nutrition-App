@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
+import { parseStoredSnapshotAmount } from "../../shared/nutrition/storedSnapshot";
 
 import {
   SQLITE_DATABASE_NAME,
@@ -558,6 +559,18 @@ async function assertOwnerGraph(
   return ownerId;
 }
 
+async function assertStoredSnapshotValues(database: SQLiteDatabase): Promise<void> {
+  const rows = await database.getAllAsync<{ amount: string | null; data_status: string }>(
+    `SELECT "amount", "data_status" FROM "daily_log_nutrient_snapshots"`,
+  );
+  for (const row of rows) {
+    parseStoredSnapshotAmount(row, () => new LocalBackupValidationError(
+      "backup_exact_value_invalid",
+      "A Daily Log snapshot has inconsistent stored status and amount.",
+    ));
+  }
+}
+
 async function assertCanonicalColumnValues(
   database: SQLiteDatabase,
 ): Promise<void> {
@@ -745,6 +758,7 @@ export async function validateLocalBackupDatabase(
   await assertSQLiteIntegrity(database);
   const ownerId = await assertOwnerGraph(database);
   await assertCanonicalColumnValues(database);
+  await assertStoredSnapshotValues(database);
   const counts = await countSemanticRows(database);
 
   return Object.freeze({
