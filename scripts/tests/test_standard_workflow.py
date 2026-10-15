@@ -153,7 +153,7 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
     normalized_provenance = " ".join(provenance.split())
-    current_revision = "e0b82f52cdd728b4ef80986a3541fc8f1d07486a"
+    current_revision = "5319549b0c1d5da91d4f8e7be3eac64e622f2075"
 
     assert f"future task intake is pinned at {current_revision}" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
@@ -170,13 +170,13 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "live GH-305" not in provenance
 
     current_resources = {
-        'start-an-issue.md': (34577, 'b0687f7a66f10795cc570e2d2cec862f369f5eaeb045434738ce6454166ad047'),
-        'worker-instructions.md': (17218, 'd8c8d76e9615a3650c14d587c80d53722e40aea14e3b73fe3ec2899d9df88755'),
+        'start-an-issue.md': (35024, 'c2206093ddde5dcbc5757693a99562b4a9d6c7ccf34bf7af597124f10c6ebe99'),
+        'worker-instructions.md': (17311, 'dbfef9d610f95b913a6ae267dd5f2657de28cbb6044c2c377f09116bfc6ccaa5'),
         'capsule-controller-workflow.md': (16328, '925323b4edc6595faa04b99b55ca98dabc3dc49d1cea5e6d4a83ac8d486fdd0a'),
-        'new-project-setup.md': (15446, 'a5173e2275447fd83dd43fb05eee69f90865f1309fc79d5aa5a8fe98c24befd3'),
-        'skill-templates/README.md': (9019, '0af7eedd6cda0fba4dcaf6f691fdc7f045a9918d664279a3e6dd19693800c2a4'),
-        'skill-templates/capsule-queue/SKILL.md': (2029, '54d52b96d0d77492efe3b4db6b7a73398975f527517eb479216a3d0aac1cddc4'),
-        'workflow-tools.md': (22544, 'e07ab30022c948ced240d6ad30d92590332ea794fc7c6958d2ef3a611b467815'),
+        'new-project-setup.md': (15446, 'ba71f7c5a70b9e7c0a616de8850cfb69211693efe1f4ac1fcfaa3cf0c2830c8d'),
+        'skill-templates/README.md': (9019, '5ca13b645b87e14293cd7fedd0146f4aebbcf12c72528bfb4817bfa7e5656f52'),
+        'skill-templates/capsule-queue/SKILL.md': (2029, '9671d4e9e13700697a41ffa16e6bad2fd6a37b5152140f2112ed96c97cee6cb6'),
+        'workflow-tools.md': (24852, '5db9af8e4a98f92088bd0b6e99f73194f1089e9d194b97291523177618fa3a9d'),
     }
     for name, (size, digest) in current_resources.items():
         data = (shared / name).read_bytes()
@@ -1325,7 +1325,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "e0b82f52cdd728b4ef80986a3541fc8f1d07486a/docs/skill-templates/capsule-queue/")
+              "5319549b0c1d5da91d4f8e7be3eac64e622f2075/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1339,7 +1339,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "e0b82f52cdd728b4ef80986a3541fc8f1d07486a"
+    revision = "5319549b0c1d5da91d4f8e7be3eac64e622f2075"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     import html
@@ -1638,3 +1638,21 @@ def test_project_map_records_role_correct_nutrition_dispatch():
     assert "direct work controller maintenance: permitted" in routing_lower
     assert "collaboration.spawn_agent" in routing_lower
     assert "native work policy" in routing_lower
+
+
+def test_current_task_docs_preserve_historical_qualification_without_selecting_it():
+    workflow = (ROOT / "docs/project/github-workflow.md").read_text()
+    current, historical = workflow.split("### Historical TOML capsule recovery", 1)
+    assert "engineering/tasks/TASK-ID.md" in current and "./scripts/task" in current
+    assert "Bounded maintenance/tooling issues" in current
+    assert "not new task intake" in historical
+    testing = (ROOT / "docs/operations/testing.md").read_text()
+    profiles, history = testing.split("### Historical TOML qualification metadata", 1)
+    assert "--profile NAME" in profiles and "changed paths" in profiles
+    assert "specialized_qualification" not in profiles
+    assert "specialized_qualification" in history and "recovery metadata" in history
+    # Both real command interfaces survive; current selection is task.prepare/profile.
+    parsed = task.build_parser().parse_args(["prepare", "404", "--task-id", "GH-404",
+        "--allowed-path", "AGENTS.md", "--profile", "repository"])
+    assert parsed.profile == ["repository"]
+    assert (ROOT / "scripts/capsule").exists()

@@ -305,7 +305,12 @@ Steps 1–2 apply to the normal route.
    the map's explicit capsule-only grant.
 2. **Controller:** check the returned plan against the original orientation, issue
    and relevant source, including scope, criteria, documentation and proof routes.
-   Resolve scope/specification gaps. An independent scope
+   Establish that the selected implementation route, prerequisites, sequence and
+   evidence obligations are jointly executable from the starting source, or through
+   explicitly authorized setup that does not depend circularly on the capability
+   being built. Distinguish the route used to implement from routes the finished
+   capability must demonstrate; carry exceptions consistently into stage-specific
+   evidence obligations. Resolve scope/specification gaps before dispatch. An independent scope
    challenge is permitted only for a concrete unresolved scope finding or an
    explicit project requirement. The controller may resolve findings through its
    plan check, but may satisfy a required review only when that requirement permits

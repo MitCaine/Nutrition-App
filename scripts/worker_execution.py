@@ -49,7 +49,7 @@ def git(root: Path, *args: str) -> str:
 def map_selection() -> dict:
     """Controller preparation resolves configuration; workers receive it bound."""
     text = (ROOT / "docs/local_project_map.md").read_text()
-    selected = re.search(r"future task intake is pinned at `([0-9a-f]{40})`", text)
+    selected = re.search(r"Optional helper source revision: `([0-9a-f]{40})`", text)
     location = re.search(r"authenticated RI checkout `([^`]+)`", text)
     require(selected is not None and location is not None, "Selected helper binding is absent")
     return {"repository": location.group(1), "revision": selected.group(1)}

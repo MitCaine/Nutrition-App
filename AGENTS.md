@@ -49,7 +49,7 @@ controller acceptance. Implementors run their assigned checks and preserve resul
 Authority depends on the question being decided:
 
 - Authenticated current owner decisions and external controller state establish product intent, permissions, accepted risk, and integration authorization. Existing repository behavior cannot grant permission or defeat an owner-authorized intended correction.
-- The accepted task capsule records authorized scope and acceptance criteria; it does not create owner authorization.
+- The accepted Markdown task record in `engineering/tasks/` (normal capsule or maintenance handoff, as selected) records authorized scope and acceptance criteria; it does not create owner authorization. Historical TOML capsule contracts retain their own recovery authority and are not current intake.
 - Current migrations, database constraints, repository scripts, and executable tests establish and validate current behavior. Preserve those observations as evidence; they do not alone define product policy or grant permission.
 - Current engineering guides and runbooks govern procedures within that authority. Historical and archived material is evidence, not current instruction.
 

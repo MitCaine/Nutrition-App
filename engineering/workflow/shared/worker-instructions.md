@@ -65,7 +65,9 @@ intake, select a workflow or recruit additional roles.
 
 Write one decision-complete task using the [shared capsule format](start-an-issue.md#capsule-format).
 Inspect relevant callers, tests and documentation to identify bounded edit paths,
-requirements and viable proof routes. Make the accepted capsule self-contained for
+requirements and viable proof routes under the controller's
+[route-feasibility plan check](start-an-issue.md#complete-the-phases).
+Make the accepted capsule self-contained for
 implementation, carrying required decisions and behavior rather than requiring
 the implementor to retrieve issue or decision history. Map each acceptance outcome to a concrete
 check or inspectable evidence; include literal commands and their required environment.

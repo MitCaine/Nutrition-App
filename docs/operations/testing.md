@@ -134,9 +134,12 @@ for an iOS Simulator.
 
 ## Main qualification profiles
 
-Task Capsules may select machine-executable qualification profiles through
-`specialized_qualification` entries using `profile:lowercase-name`. The
-repository registry owns five profiles:
+Current Markdown accepted task records live at `engineering/tasks/TASK-ID.md`, using the selected
+normal capsule or maintenance handoff. The trusted controller authenticates owner authorization,
+then selects profiles with `./scripts/task prepare ISSUE --profile NAME` before `authorize` and
+`qualify`. Complete authorized scope and changed paths determine the required floors under
+[test selection](#test-selection-by-change); record validation alone supplies no authority.
+The repository registry owns five profiles:
 
 | Profile | Required GitHub check |
 | --- | --- |
@@ -151,6 +154,13 @@ planner selects only authorized profiles; its finalizer aggregates those job res
 an exact-candidate-SHA dedicated-App `Main qualification` check. Ordinary CI remains a
 separate regression signal. Shared substantive commands prevent drift without running
 another copy of a suite within a selected job.
+
+### Historical TOML qualification metadata
+
+Preserved experimental TOML Task Capsules use `specialized_qualification` entries such as
+`profile:ios-native`. These are historical/recovery metadata under the original capsule contracts,
+not the current `./scripts/task` profile-selection interface. Preserve their examples and evidence;
+current path-selected gates, independent review and installed obligations remain required.
 
 ### Prepared worker execution binding
 

@@ -561,8 +561,10 @@ visible rather than trading a known dependency issue for an unsupported mobile d
 
 ## Native iOS qualification
 
-Changes that cross the generated Apple-native boundary must select the `ios-native` Task Capsule
-qualification profile. The minimum fail-closed path floor includes `.nvmrc`, mobile dependency
+Changes that cross the generated Apple-native boundary must select the `ios-native`
+qualification profile through the current Markdown task/controller route (`./scripts/task prepare`
+with `--profile ios-native`), under authenticated owner authorization and the
+[selected map](../local_project_map.md). Historical TOML Task Capsule metadata is recovery-only. The minimum fail-closed path floor includes `.nvmrc`, mobile dependency
 manifests, `apps/mobile/app.json`, repository-owned config plugins, Expo-module configuration,
 module `ios/` sources/podspecs, and the native qualification/profile workflow itself. Path detection
 is only a safety floor; a task may still declare `ios-native` for another change when its reviewed

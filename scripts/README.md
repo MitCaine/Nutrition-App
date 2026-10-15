@@ -5,6 +5,8 @@
 
 Run the commands below from the repository root. Each script resolves repository paths internally
 and does not depend on the caller's shell configuration.
+Current execution uses accepted Markdown records in `engineering/tasks/` and `./scripts/task`;
+`./scripts/capsule` lifecycle commands remain historical/recovery-only under original TOML contracts.
 For new tasks follow [local project map](../docs/local_project_map.md), the ordinary
 standard controller and serial native-subagent route. Historical attached records remain
 preserved; RI SDK execution/evidence commands are retired.
@@ -23,9 +25,9 @@ preserved; RI SDK execution/evidence commands are retired.
 | `python3 scripts/validate-docs.py` | Validates repository Markdown links, anchors, navigation reachability, executable references, and required current-state contracts. |
 | `python3 scripts/validate-task-capsules.py --all` | Validates task-capsule schema, authority paths, state transitions, scope metadata, completion records, and execution prerequisites. |
 | `python3 scripts/render-task-handoff.py engineering/capsules/active/TASK-ID.md` | Historical capsule recovery helper; not a current dispatch route. |
-| `./scripts/capsule status TASK-ID` | Reports exact active-capsule, branch, HEAD, base, cleanliness, and selected qualification-profile identity using the repository Python 3.14 authority even from linked worktrees. |
-| `./scripts/capsule transition TASK-ID STATE --actor ... --reason ...` | Performs one legal non-terminal Task Capsule state transition, appends State History, revalidates, and commits only the capsule transition. Semantic aliases include `start`, `implemented`, `verify`, and `review`. |
-| `./scripts/capsule qualify TASK-ID --evidence-dir PATH` | Publishes the exact clean task HEAD to a temporary `qualification/TASK-ID/SHA` ref, waits for the repository-owned `Main qualification` check, retains its artifact/evidence, and removes the temporary ref after PASS. |
+| `./scripts/capsule status TASK-ID` | Historical/recovery-only TOML capsule interface; reports exact active-capsule, branch, HEAD, base, cleanliness, and selected qualification-profile identity using the repository Python 3.14 authority even from linked worktrees. |
+| `./scripts/capsule transition TASK-ID STATE --actor ... --reason ...` | Historical/recovery-only TOML capsule interface; performs one legal non-terminal Task Capsule state transition, appends State History, revalidates, and commits only the capsule transition. Semantic aliases include `start`, `implemented`, `verify`, and `review`. |
+| `./scripts/capsule qualify TASK-ID --evidence-dir PATH` | Historical/recovery-only TOML capsule qualification; publishes the exact clean task HEAD to a temporary `qualification/TASK-ID/SHA` ref, waits for the repository-owned `Main qualification` check, retains its artifact/evidence, and removes the temporary ref after PASS. |
 | `./scripts/task prepare ISSUE ...` | Creates a canonical candidate-independent authorization draft and compact local controller state. The trusted author defaults to the repository owner or `NUTRITION_TASK_TRUSTED_AUTHOR`. |
 | `./scripts/task authorize ISSUE` | Posts that exact authorization to the GitHub Issue, refetches the exact comment, and fails closed unless comment ID, trusted author, payload identity, and SHA-256 digest all match the prepared authority. |
 | `./scripts/task qualify ISSUE --candidate-root PATH` | From trusted synchronized `main`, validates current authorization and candidate scope; standard tasks use independent source/diff review. It then publishes the exact SHA to a temporary ref, dispatches the trusted default-branch workflow, waits for its dedicated-App check, records evidence, and removes the ref. Historical compatibility and terminal tasks retain their own bindings. |

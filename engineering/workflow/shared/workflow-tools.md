@@ -168,12 +168,12 @@ evidence location; the helper does not create a state store.
 
 ## Existing optional evidence helpers
 
-The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/e0b82f52cdd728b4ef80986a3541fc8f1d07486a/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
+The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/5319549b0c1d5da91d4f8e7be3eac64e622f2075/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
 contains pure input-equivalence predicates; unknown relevant inputs are not
 cacheable. Its extended packet validation remains optional and is not required
-by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/e0b82f52cdd728b4ef80986a3541fc8f1d07486a/scripts/check%5Fdocs%5Fand%5Fskills.py),
-the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/e0b82f52cdd728b4ef80986a3541fc8f1d07486a/docs/consumer-guide.md) and
-[review bundles](https://github.com/MitCaine/repository-intelligence/blob/e0b82f52cdd728b4ef80986a3541fc8f1d07486a/docs/review-evidence.md) retain their existing separate scopes.
+by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/5319549b0c1d5da91d4f8e7be3eac64e622f2075/scripts/check%5Fdocs%5Fand%5Fskills.py),
+the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/5319549b0c1d5da91d4f8e7be3eac64e622f2075/docs/consumer-guide.md) and
+[review bundles](https://github.com/MitCaine/repository-intelligence/blob/5319549b0c1d5da91d4f8e7be3eac64e622f2075/docs/review-evidence.md) retain their existing separate scopes.
 None authenticates task authority or proves runtime availability.
 
 ## Prepared worker execution linkage
@@ -202,6 +202,35 @@ contains only `argv` and the selected executable's `executable_sha256`; use its
 absolute resolved non-symlink path. Bind interpreted scripts and relevant toolchain
 inputs in `inputs`, not merely the interpreter. Authority references record a
 consumer selection, not independent authentication of a human grant.
+
+`--mode generate` derives a request without creating an attempt or running operations.
+Supply all existing task/authority/check selections, but omit `inputs` and executable
+hashes. Each operation supplies `argv` only. Supply `input_inventory` with absolute
+`path`, expected `sha256`, and `keys` (an object-key path, or `[]` for the root).
+The authenticated JSON projection at that location is a nonempty list of required
+`path`/expected `sha256` entries, exported automatically from the runner's authoritative dependency definition, which
+the selected consumer validator also uses. An agent-written inventory merely moves
+the manual omission risk and does not satisfy this contract.
+Generation authenticates every entry, adds the inventory itself to `inputs`, and hashes
+selected executable identities; it never imports the inventory or discovers dependencies.
+Prepare/run recheck the SAME inventory binding and exact ordered input set, catching
+manual omissions as well as drift. Consumers must expose their authoritative inventory
+projection; a separately hand-written list is not coverage proof. No consumer inventory
+integration follows automatically. A consumer regression must prove its normal route
+obtains this projection automatically from that same definition; shared fixtures alone
+do not establish that wiring or resolve its end-to-end manual-setup problem.
+
+Use the existing [pinned resource operation](#declared-resource-adoption) to provision
+an explicitly selected helper snapshot when authorized, retaining its revision and
+source/output hashes in the owning inventory. Bind that stable provisioned location,
+not a moving shared checkout. This reuses adoption's exact-commit reads and destination
+conflict checks; generation does not install tools, change Git configuration or select a
+revision. Missing capture authority or mismatched selected source refuses before static
+error collection. Independent safely inspectable environment/operation errors are
+collected read-only; no mismatched code is imported or executed. Git/source readiness
+checks remain read-only and fail closed; required Git setup belongs to authorized
+consumer setup. Existing returned candidate/request/reference facts remain generated
+from actual capture/runner records rather than manually restated by later roles.
 
 Preparation verifies a clean base and stores workspace/Git directory filesystem
 identities, shared Git configuration identity and selected input/operation/request/environment hashes in exclusive

@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`: controllers use the complete
+future task intake is pinned at `5319549b0c1d5da91d4f8e7be3eac64e622f2075`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -50,6 +50,8 @@ diff and source for acceptance.
 rules for its arguments and output.
 
 
+Optional helper source revision: `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`
+
 Optional section-reader and adoption helpers are separate from producer/runtime `20a5039` and are
 selected from the authenticated RI checkout `/Users/mipoo/Projects/Repository Intelligence` at
 revision `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`. Before use, confirm that exact HEAD and a clean
@@ -70,6 +72,12 @@ and retain results in the existing task evidence location. Apply only under exis
 after complete inventory validation and preview inspection. Incomplete reads, preview differences,
 unavailable filesystem capabilities and refusals remain explicit; they do not authorize substitution
 or dependency installation.
+
+Instruction source now includes optional generated execution, but Nutrition has not selected
+automatic runner-owned inventory export, generation wiring or immutable helper provisioning.
+The existing authored-input/TOOLS inventory remains explicit; shared source adoption and
+fixtures do not prove normal-route consumer integration. Helper source selection remains
+separate from future instruction intake; preparation reads its explicit pin above.
 
 Optional worker-execution linkage is discoverable from that same selected source with
 `PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --help`.

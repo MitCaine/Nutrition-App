@@ -7,7 +7,7 @@ role permissions and completion routing. This guide retains its product/planning
 > become GitHub execution records. Product and architecture decisions remain authoritative in the
 > repository documents; GitHub organizes delivery without replacing those documents.
 
-## Workflow
+## Product planning workflow
 
 ```mermaid
 flowchart TD
@@ -23,8 +23,10 @@ flowchart TD
     Review --> Merge["Merge"]
 ```
 
-The sequence is a gate, not merely a suggested reading order. Implementation begins from approved
-GitHub Issues only after the preceding product and architecture artifacts are complete.
+For feature work requiring these product and architecture artifacts, this sequence is a gate.
+Bounded maintenance/tooling issues use the selected [maintenance route](../../engineering/workflow/shared/start-an-issue.md#optional-maintenance-route)
+when eligible; they do not require an unrelated Roadmap, Grill or PRD. Owner authority and
+applicable accepted requirements still govern every issue.
 
 ## Artifact responsibilities
 
@@ -112,44 +114,27 @@ During implementation:
 Closing a child issue updates the Epic checklist and progress summary on the next tooling rerun.
 
 
-### Task capsules
+### Current accepted task and controller route
 
-A repository [task capsule](../../engineering/capsules/README.md) may bind one
-approved child issue to an exact base commit, execution boundary, verification
-plan, return evidence, and escalation conditions. It is an execution contract,
-not a new product, architecture, or delivery authority. It may narrow an issue
-into a reviewable stage but may not reinterpret acceptance, bypass
-dependencies, or expand scope without updating the owning artifact or issue
-first.
+Use the [local map](../local_project_map.md) and selected daily procedure. The accepted Markdown
+record lives at `engineering/tasks/TASK-ID.md`: a normal-route capsule or an eligible maintenance
+handoff. It records scope and checks, while authenticated owner authority remains separate.
+`./scripts/task` owns authorization, exact-candidate qualification, verification, independent review
+and protected integration. Installed verification precedes issue closure and safe owned-ref cleanup.
+Select profiles from authorized scope and actual changed paths under the
+[testing guide](../operations/testing.md#test-selection-by-change); required floors remain additive.
+The `ios-native` profile is selected when the reviewed change crosses the Apple-native boundary,
+not merely because a task record or historical evidence is edited.
 
-When a capsule is used, its full non-terminal form remains under
-`engineering/capsules/active/` through review. Integration or cancellation is
-then recorded in the unique terminal entry in
-`engineering/capsules/HISTORY.md`, with the historical capsule recovery
-locator, and terminal closeout removes the active capsule.
+### Historical TOML capsule recovery
 
-During Workflow v3's experimental period, capsule use remains explicit and
-evidence-backed rather than repository-wide mandatory. The GitHub Issue
-remains the delivery record. Formal workflow promotion requires accountable
-human approval under the
-[Workflow Changelog](../../engineering/workflow/CHANGELOG.md).
-
-Protected Task Capsule qualification may select the explicit `ios-native` profile when a reviewed
-change crosses the Apple-native boundary. Repository validation enforces a minimum native-trigger
-path floor so obvious mobile dependency, Expo configuration/plugin, local-module iOS, or native
-qualification-tooling changes cannot silently omit that profile. The profile remains an execution
-requirement, not an acceptance or review decision, and documentation/HISTORY bookkeeping alone does
-not imply an expensive native build. The profile's workflows pass `--compilation-mode clean`
-explicitly, which is the qualifier's only supported mode; incremental requests fail instead of
-silently using clean compilation. A historical same-candidate experiment on source
-`591ac008e56219474ddd326c673a8e85b24f9744` produced no measured benefit: both runs took 97 seconds
-overall, Xcode took 71/70 seconds, clean regeneration changed the generated project identity and
-caused a warm-cache miss, and each external DerivedData cache retained about 3.38 GB. No hosted
-qualification builds were eliminated because the trusted finalizer has no accepted
-evidence-adoption interface. The qualifier retains all candidate application link maps and
-generated provider inputs before validation and cleanup. It accepts either a map whose product is
-the final app executable or a thin architecture map proven byte-identical to a `lipo`-extracted
-final-app slice; foreign products and search paths do not establish module linkage.
+Workflow v3's experimental TOML capsule lifecycle, `engineering/capsules/active/` and terminal
+`engineering/capsules/HISTORY.md` remain historical/recovery contracts, not new task intake.
+Preserve their original state, qualification evidence and authority under
+[STATES](../../engineering/workflow/STATES.md) and
+[TASK_CAPSULE](../../engineering/workflow/TASK_CAPSULE.md). Their real recovery tools remain available;
+they do not replace the current Markdown task-controller route. Historical native compilation/cache
+experiments and their limits remain in the [testing guide](../operations/testing.md#ios-native-qualification).
 
 ### GitHub Milestones
 

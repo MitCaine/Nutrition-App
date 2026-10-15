@@ -68,7 +68,7 @@ def case(tmp_path):
             "cwd": ".", "env": {}, "designation": "mandatory", "prerequisites": []}
     selected_map = (ROOT / "docs/local_project_map.md").read_text()
     source = dict(repository=re.search(r"authenticated RI checkout `([^`]+)`", selected_map).group(1),
-                  revision=re.search(r"future task intake is pinned at `([0-9a-f]{40})`", selected_map).group(1))
+                  revision=re.search(r"Optional helper source revision: `([0-9a-f]{40})`", selected_map).group(1))
     request = dict(assignment="fixture", attempt="fixture", workspace=str(workspace), ri_source=source,
                    protected_repository=str(protected), base=git(workspace, "rev-parse", "HEAD"),
                    inputs=[dict(path=str(handoff), sha256=sha(handoff))], allowed_changes=["tracked.txt"],
@@ -359,3 +359,15 @@ def test_public_timeout_retains_incomplete_attempt_without_retry(case, shared):
     assert not result["review_ready"]
     assert result["operations"][-1]["status"] == "incomplete"
     assert public(case, "run").returncode == 1 and output.read_bytes() == before
+
+
+def test_helper_selection_is_independent_of_future_instruction_pin(adapter, monkeypatch, tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "local_project_map.md").write_text(
+        "future task intake is pinned at `" + "a" * 40 + "`\n"
+        "Optional helper source revision: `" + "b" * 40 + "`\n"
+        "authenticated RI checkout `/selected/helper`\n"
+    )
+    monkeypatch.setattr(adapter, "ROOT", tmp_path)
+    assert adapter.map_selection() == {"repository": "/selected/helper", "revision": "b" * 40}
