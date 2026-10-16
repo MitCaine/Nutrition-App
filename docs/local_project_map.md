@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `9eaee94fbec1e68d267fa88d498262391d7df18d`: controllers use the complete
+future task intake is pinned at `e0d1767ec2ac09ec358749521c582dfbad01d6bf`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -91,6 +91,22 @@ evidence location and return destination. Workers use the assigned wrapper's `ru
 controller preparation. Ordinary supported routes remain available for unselected assignments.
 Resource copies, generated readiness and helper availability grant no authority. The controller
 retains publication, qualification, independent review, approval, integration and installed closeout.
+
+### Selected native dispatch decision binding
+
+Native dispatch guard source revision: `e0d1767ec2ac09ec358749521c582dfbad01d6bf`
+Native dispatch guard source checkout: `/Users/mipoo/Projects/Repository Intelligence`
+
+For selected native Work worker launch/resumption transitions, the controller uses
+[`scripts/native-dispatch`](../scripts/native-dispatch) before recording running or entering
+completion wait, and consumes terminal evidence through the same decision. Its
+[consumer contract](operations/testing.md#native-dispatch-transition-decisions) maps original
+native call/reply and bounded state records from the existing assignment checkpoint. This separate
+optional module selection does not repin the existing section/adoption/worker-execution helper
+selection above or producer/runtime. Direct Work maintenance has no implementation-worker dispatch;
+that nonapplicability does not exempt a later delegated review or normal worker path.
+The guard does not launch, resume, wait, authenticate host/settings, grant retries or change state.
+Source/module identity is checked before use; drift refuses, without installation or substitution.
 
 ## Nutrition permissions and routing
 

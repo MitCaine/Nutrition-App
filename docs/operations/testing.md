@@ -162,6 +162,51 @@ Preserved experimental TOML Task Capsules use `specialized_qualification` entrie
 not the current `./scripts/task` profile-selection interface. Preserve their examples and evidence;
 current path-selected gates, independent review and installed obligations remain required.
 
+### Native dispatch transition decisions
+
+The controller selects the current worker action in the existing task checkpoint's
+`execution.native_dispatch`: `assignment` (prefixed by task ID plus `/`), unique `attempt`
+(the native launch task name, or a new resume action name), `operation` (`launch`/`resume`),
+and existing `worker` for resumption. This is existing assignment bookkeeping, not a new registry.
+Retain an external record with exactly `selection`, `action`, `before`, `snapshot`.
+`action` is null for an unlaunched plan; otherwise it contains original `tool`, `arguments` and
+`reply` (null for a lost reply). Native action messages begin with these literal lines:
+
+```text
+Assignment: GH-ISSUE/role
+Attempt: unique_native_action_name
+Operation: launch
+```
+
+For a launch, use `collaboration.spawn_agent` with `task_name` equal to that unique attempt.
+For resumption, use `collaboration.followup_task` targeting the existing worker, a new attempt and
+`Operation: resume`; `before` retains that worker's existing terminal/idle inventory. Followup sent
+to an active worker is message delivery, not proof of a new active attempt. `before` and `snapshot`
+are original `collaboration.list_agents` results (use its task-prefix filter), or null. Retain actual
+call/reply/state evidence; never invent turn IDs or `accepted` flags. The adapter derives acceptance
+from the supported native successful response, not a planned handoff or environmental telemetry.
+
+Run `./scripts/native-dispatch --checkpoint /absolute/issue-N.json --record /absolute/native.json`
+with the prepared Python via `NUTRITION_CONTROLLER_PYTHON`. It is read-only and cannot start workers,
+write checkpoints or execute waits. Inspect the returned action/flags, not merely exit zero:
+`reconcile` means no running/wait; accepted means supported wait, and only an observed `running`
+state permits recording running. A matching terminal result selects `consume`. Terminal worker
+responses include an exact standalone `Attempt: ACTION_NAME` line so a retained old completion
+cannot stand in for a new resumption. Resume acceptance without attributable terminal/activity
+never consumes an old result. Missing/malformed evidence refuses or remains unresolved.
+
+A launch lost reply may reconcile one uniquely named current actor from supported native state;
+missing inventory is not absence and does not authorize duplicate spawn. For a lost resume reply,
+an old worker's existence alone cannot identify this new action; reconcile without duplicate followup.
+Native rejection returns a controller decision, not retry permission. Original records stay unchanged.
+The controller authenticates freshness and the records' origin; this is no host-authentication or
+telemetry system, and native tools do not enforce use of the helper. Requested Work/model/effort,
+launch acceptance, observed activity, terminal result and effective telemetry remain separate.
+Consumer record/transition tests and actual selected native usage have distinct proof limits;
+synthetic predicates alone prove neither native delivery nor idle wake-up. No watcher/poll loop,
+extra acknowledgement/release stage or product-command gate is added. Automatic execution inventory
+and immutable helper provisioning remain separate unimplemented mechanisms.
+
 ### Prepared worker execution binding
 
 For an assignment explicitly selecting the map's optional Nutrition binding, the controller supplies

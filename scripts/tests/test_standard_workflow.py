@@ -153,7 +153,7 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
     normalized_provenance = " ".join(provenance.split())
-    current_revision = "9eaee94fbec1e68d267fa88d498262391d7df18d"
+    current_revision = "e0d1767ec2ac09ec358749521c582dfbad01d6bf"
 
     assert f"future task intake is pinned at {current_revision}" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
@@ -171,12 +171,12 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
 
     current_resources = {
         'start-an-issue.md': (35072, 'faff4d6c2912eb9ff54999d1d6cbc34dbc0df84a14bd688e956698b3dac46827'),
-        'worker-instructions.md': (17311, 'dbfef9d610f95b913a6ae267dd5f2657de28cbb6044c2c377f09116bfc6ccaa5'),
+        'worker-instructions.md': (17648, 'aaede8344f8ad0c691fa9efa1c630866eb090badfe8a12831514f849b4d0459a'),
         'capsule-controller-workflow.md': (16328, '925323b4edc6595faa04b99b55ca98dabc3dc49d1cea5e6d4a83ac8d486fdd0a'),
-        'new-project-setup.md': (15446, '495cc01e0f7911505024e40c467386cf5557413b1d089191898cef49971ad0f7'),
-        'skill-templates/README.md': (9019, 'e34e0e9ca93ae56643301f429eaef11e265c36e9293f0e150728aae195bdaf4a'),
-        'skill-templates/capsule-queue/SKILL.md': (2029, '338aef76e7ae565784e68f44659b0fc5924617eb196f2b137bafe662343e65f7'),
-        'workflow-tools.md': (25336, '69e844c1ed466a4777e71dc98788f7cafeb5e06a5deba7337402e077e665ec11'),
+        'new-project-setup.md': (15446, 'd956d187d0cf83cfbd6f0f1d536456c83af6b745c8e74dad9f94107dc66bb62f'),
+        'skill-templates/README.md': (9019, '1c516c5fbde51c0525cc0795f42f410ef8ede1654fc2c87c9c646fb272483898'),
+        'skill-templates/capsule-queue/SKILL.md': (2029, '611401a56cbb0aec0a19e151aac878e112081e796fa02938cc84812d3f4f0f97'),
+        'workflow-tools.md': (28257, 'e8d1916a0b4fb9229216d2cf8091632e31bb63098061d78fbc94da31c0c25eab'),
     }
     for name, (size, digest) in current_resources.items():
         data = (shared / name).read_bytes()
@@ -1325,7 +1325,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "9eaee94fbec1e68d267fa88d498262391d7df18d/docs/skill-templates/capsule-queue/")
+              "e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1339,7 +1339,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "9eaee94fbec1e68d267fa88d498262391d7df18d"
+    revision = "e0d1767ec2ac09ec358749521c582dfbad01d6bf"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     import html
@@ -1656,3 +1656,15 @@ def test_current_task_docs_preserve_historical_qualification_without_selecting_i
         "--allowed-path", "AGENTS.md", "--profile", "repository"])
     assert parsed.profile == ["repository"]
     assert (ROOT / "scripts/capsule").exists()
+
+
+def test_native_dispatch_decisions_are_separate_from_execution_and_host_authentication():
+    local_map = (ROOT / "docs/local_project_map.md").read_text()
+    assert "Native dispatch guard source revision:" in local_map
+    assert "Optional helper source revision: `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`" in local_map
+    assert (ROOT / "scripts/native-dispatch").is_file()
+    contract = (ROOT / "docs/operations/testing.md").read_text().split("### Native dispatch transition decisions", 1)[1].split("### Prepared worker execution binding", 1)[0]
+    assert "before recording running" in local_map
+    assert "collaboration.spawn_agent" in contract and "collaboration.followup_task" in contract
+    assert "reconcile" in contract and "controller authenticates freshness" in contract
+    assert "does not authorize duplicate spawn" in contract

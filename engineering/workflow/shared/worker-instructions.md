@@ -231,7 +231,11 @@ explicitly assigned actor may commit/push; no main integration is granted here.
 
 ### Wait and return
 
-Use supported blocking completion, or a previously verified wake route. Do not
+Before recording an active worker or waiting for its completion, establish actual
+accepted launch/resumption identity for this assignment and attempt under the
+[dispatch decision contract](workflow-tools.md#accepted-dispatch-decisions).
+A planned/delivered handoff is insufficient; reconcile uncertain delivery without
+duplicate launch. Use supported blocking completion, or a previously verified wake route. Do not
 poll unfinished work, fill waiting time with inspection or launch duplicate work.
 Apply the [quiet-wait rule](start-an-issue.md#wait-for-completion): record routine
 progress quietly in existing records; do not send repeated “still waiting” or

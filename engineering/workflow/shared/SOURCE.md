@@ -1,7 +1,7 @@
 # Shared instruction identity
 
 The Repository Intelligence instruction set for future task intake is selected at
-`9eaee94fbec1e68d267fa88d498262391d7df18d`. This updates future intake only.
+`e0d1767ec2ac09ec358749521c582dfbad01d6bf`. This updates future intake only.
 Its complete resource inventory, prior destination identities, declared relocations
 and installed hashes are recorded in the current-selection section below.
 The GH-311 attempt's historical worker-instruction selection is
@@ -363,7 +363,7 @@ Historical inventories, recovery contracts and active instruction pins remain pr
 
 Consumer-owned queue redirect changes only future-intake links; installed SHA-256 `9671d4e9e13700697a41ffa16e6bad2fd6a37b5152140f2112ed96c97cee6cb6`.
 
-## Current selection: 9eaee94fbec1e68d267fa88d498262391d7df18d
+## Previous selected revision: 9eaee94fbec1e68d267fa88d498262391d7df18d
 
 GH-404 resumed under explicit owner authority to reconcile the new published RI head.
 Candidate570b1659 and its5319549 adoption inventory/checks remain preserved, with this
@@ -404,3 +404,53 @@ folders were inventoried, unchanged; this proves file contents only.
 | `docs/workflow-tools.md` | `44775ffb520ec0711e646d7680efca7aef4c5b63` | 24924 | `a6f9b78e235a1c719dad120d0b72cda12eaf6e580b35f855a98e7ef7c7f2df97` | engineering/workflow/shared/workflow-tools.md; &#40;skill-templates/capsule-preflight/scripts/evidence&#95;preflight.py&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/9eaee94fbec1e68d267fa88d498262391d7df18d/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py&#41; &#40;count 1&#41;; &#40;../scripts/check&#95;docs&#95;and&#95;skills.py&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/9eaee94fbec1e68d267fa88d498262391d7df18d/scripts/check%5Fdocs%5Fand%5Fskills.py&#41; &#40;count 1&#41;; &#40;consumer-guide.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/9eaee94fbec1e68d267fa88d498262391d7df18d/docs/consumer-guide.md&#41; &#40;count 1&#41;; &#40;review-evidence.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/9eaee94fbec1e68d267fa88d498262391d7df18d/docs/review-evidence.md&#41; &#40;count 1&#41; | `69e844c1ed466a4777e71dc98788f7cafeb5e06a5deba7337402e077e665ec11` |
 
 Consumer-owned queue redirect changes only future-intake links; installed SHA-256 `338aef76e7ae565784e68f44659b0fc5924617eb196f2b137bafe662343e65f7`.
+
+## Current selection: e0d1767ec2ac09ec358749521c582dfbad01d6bf
+
+GH-412 adopts this exact published instruction revision for future intake after verified audit
+closeout. This attempt retains its original9eaee94 procedure/role inputs externally. Complete
+six-file upstreamdiff was inspected: dispatcher acceptance guidance, workflow-tools contract,
+README/architecture discovery, optional read-only dispatch_guard module/tests. Ten destinations
+and all24selected resources are authenticated below. Both complete kickoff folders were
+inventoried unchanged; this proves file contents only, not Work registration or host telemetry.
+Existinge0b82 section/adoption/worker-execution helper selection and producer20a5039/runtime/
+dependencies remain unchanged. The dispatch module is explicitly selected separately in the map
+for the bounded Nutrition native-record→decision consumer; native tools still own launch/resume/
+wait and the controller owns authenticity, freshness and state. No new registry/watcher, extra
+acknowledgement/release stage or automatic retry. Directmaintenanceimplementation has no worker;
+the delegated nativeWork review/normalpath is selected separately. Cross-host Codex dispatcher
+messages are not native worker launch evidence and are not certified by this adapter. Automatic
+execution inventory/provisioning and previous historical/activeattempt selections remain separate.
+
+| Upstream resource | Git blob | Bytes | Source SHA-256 | Destination / declared relocation | Installed SHA-256 |
+| --- | --- | ---: | --- | --- | --- |
+| `docs/start-an-issue.md` | `ba6aa5a0b938e8ccf851ec34d98504a48ddfcf05` | 35072 | `faff4d6c2912eb9ff54999d1d6cbc34dbc0df84a14bd688e956698b3dac46827` | engineering/workflow/shared/start-an-issue.md | `faff4d6c2912eb9ff54999d1d6cbc34dbc0df84a14bd688e956698b3dac46827` |
+| `docs/worker-instructions.md` | `2efa8249dc8ad891f4c4d0f351f88a34b3f9f033` | 17640 | `6fabdf5e1c5466e371841e80b80ea75a0f6aaab2d6417ede576c16d3bace3f99` | engineering/workflow/shared/worker-instructions.md; &#40;skill-templates/ri-codex-dispatcher-kickoff/SKILL.md&#41; → &#40;../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md&#41; &#40;count 1&#41; | `aaede8344f8ad0c691fa9efa1c630866eb090badfe8a12831514f849b4d0459a` |
+| `docs/capsule-controller-workflow.md` | `0635a7f6a802c84bf1449f1603fc10c79c4c93b6` | 16328 | `925323b4edc6595faa04b99b55ca98dabc3dc49d1cea5e6d4a83ac8d486fdd0a` | engineering/workflow/shared/capsule-controller-workflow.md | `925323b4edc6595faa04b99b55ca98dabc3dc49d1cea5e6d4a83ac8d486fdd0a` |
+| `docs/new-project-setup.md` | `0563e8519d6166fc7c77760cf7c89a0aa1f1c093` | 15343 | `5cc9c15da7705beb253b59f96ac68e9376951eaca424ea5aba5cc2c97e56e98c` | engineering/workflow/shared/new-project-setup.md; &#40;consumer-guide.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/consumer-guide.md&#41; &#40;count 1&#41; | `d956d187d0cf83cfbd6f0f1d536456c83af6b745c8e74dad9f94107dc66bb62f` |
+| `docs/consumer-guide.md` | `19cf168338614208b2592c5e0111d223384da3a6` | 10705 | `069cd5607e52b2ef300f4c99d286faf30f4a6200b24a8b5ea0fa015a0e5980b3` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/README.md` | `54db08ecb4f44ddb1df7d4aa22988daef1e89f47` | 8251 | `3b119ff01a9e22c090d3f2f27be4acd6ac4da0279ac5a4faf0da32adc54db6b1` | engineering/workflow/shared/skill-templates/README.md; &#40;ri-work-kickoff/SKILL.md&#41; → &#40;../../../../.agents/skills/ri-work-kickoff/SKILL.md&#41; &#40;count 1&#41;; &#40;ri-codex-dispatcher-kickoff/SKILL.md&#41; → &#40;../../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md&#41; &#40;count 1&#41;; &#40;capsule-preflight/SKILL.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/capsule-preflight/SKILL.md&#41; &#40;count 1&#41;; &#40;capsule-scope-review/SKILL.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/capsule-scope-review/SKILL.md&#41; &#40;count 1&#41;; &#40;ri-evidence-handoff/SKILL.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/ri-evidence-handoff/SKILL.md&#41; &#40;count 1&#41;; &#40;capsule-independent-review/SKILL.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/capsule-independent-review/SKILL.md&#41; &#40;count 1&#41;; &#40;capsule-preflight/references/evidence-contract.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/capsule-preflight/references/evidence-contract.md&#41; &#40;count 1&#41;; &#40;capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes&#41; &#40;count 1&#41; | `1c516c5fbde51c0525cc0795f42f410ef8ede1654fc2c87c9c646fb272483898` |
+| `docs/skill-templates/capsule-independent-review/SKILL.md` | `7c0e18ce6d9a5de1331354b899a723379c792a6d` | 2359 | `3d4da861fdfa9eeb90bd22e1731f9a061015ac92b14ec4870bbb188765b7f73e` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/capsule-independent-review/references/project-procedure.md` | `117cb77ed0052de55f5bee9cc018d3a7a2e2eb24` | 1814 | `858210b4a2ab962948e53e788d79771e64ef6545e4a8705303d563bf4edc1ce0` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/capsule-preflight/SKILL.md` | `4615ba5327763abc2fd028adb77f163c34d0be8f` | 2532 | `19e72cd8c672a34301fe770699f51cb877b6a7f464e5386e2d56a9646c50d9cb` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/capsule-preflight/references/evidence-contract.md` | `35c018fa1c699b677e2f22794a69059b3ec81be7` | 16040 | `879ace62064ea2bba036f723a09ab7dd10265095f6f8f70f8b471847d56eb359` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/capsule-preflight/references/project-procedure.md` | `117cb77ed0052de55f5bee9cc018d3a7a2e2eb24` | 1814 | `858210b4a2ab962948e53e788d79771e64ef6545e4a8705303d563bf4edc1ce0` | Pinned optional source; not copied | `—` |
+| <code>docs&#47;skill-templates&#47;capsule-preflight&#47;scripts&#47;evidence&#95;preflight.py</code> | `8c520de6c35a40b690278d675463aba141562e74` | 27222 | `afdd20be1a0465d202aa133c79927bbb8f1a8b00b9e569d314df1382e86fab63` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/capsule-queue/SKILL.md` | `2e01cf01bb0830e5addc4d46c1257f737793e695` | 8811 | `ed9e3a3ebfe7c4639f58b6e2595a782ca577d0ba07a1175b6dbabc29c61d3f39` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/capsule-queue/references/project-procedure.md` | `117cb77ed0052de55f5bee9cc018d3a7a2e2eb24` | 1814 | `858210b4a2ab962948e53e788d79771e64ef6545e4a8705303d563bf4edc1ce0` | Pinned optional source; not copied | `—` |
+| <code>docs&#47;skill-templates&#47;capsule-queue&#47;scripts&#47;run&#95;and&#95;queue.py</code> | `cf5655ad3f5a66fa46831a06701aba295819bbaf` | 13857 | `9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/capsule-scope-review/SKILL.md` | `295253dda1a590f4b6bb303c9afba06e4d3acb41` | 1318 | `12fd1e9ff74a971f9d53dcdb68ac156a4bfbf9ecc31e3ec3f0eeac82695d4799` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/capsule-scope-review/references/project-procedure.md` | `117cb77ed0052de55f5bee9cc018d3a7a2e2eb24` | 1814 | `858210b4a2ab962948e53e788d79771e64ef6545e4a8705303d563bf4edc1ce0` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/ri-codex-dispatcher-kickoff/SKILL.md` | `5abe72319146eed679ee4876e152831af041a31f` | 1640 | `01d7933a5811c1d8341afe41dbe52556105bb4c338b8ba5cb2575c3859d5d31a` | .agents/skills/ri-codex-dispatcher-kickoff/SKILL.md | `01d7933a5811c1d8341afe41dbe52556105bb4c338b8ba5cb2575c3859d5d31a` |
+| `docs/skill-templates/ri-codex-dispatcher-kickoff/references/project-procedure.md` | `cebbac875ad0ec05982c9b7707e81d052f21b393` | 1387 | `eb42e3b90ab466e6e62e5d65ff3f76ad8c46ba2b590faf3dad09006956384551` | .agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md; workflow-tools contract → [workflow-tools contract]&#40;../../../../engineering/workflow/shared/workflow-tools.md&#41; &#40;count 1&#41; | `c1cea1280a89737d274f0f5d05a66d795f35331192fc5913e620c9f8978611a7` |
+| `docs/skill-templates/ri-evidence-handoff/SKILL.md` | `70ff680d4c2a1eef68905b6e1fe136061f998fe2` | 1321 | `701216b4fb1ce949078d38fa62f7022168b0b816d340e7c97fde19f7565719ce` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/ri-evidence-handoff/references/project-procedure.md` | `117cb77ed0052de55f5bee9cc018d3a7a2e2eb24` | 1814 | `858210b4a2ab962948e53e788d79771e64ef6545e4a8705303d563bf4edc1ce0` | Pinned optional source; not copied | `—` |
+| `docs/skill-templates/ri-work-kickoff/SKILL.md` | `86bab9c4db07e30994bccc74ddf7367319ecd0d0` | 1609 | `da59ae6229c966c9d8d092c28b9cde03d28fb4e52d0b09d21c2ad677e7d4179a` | .agents/skills/ri-work-kickoff/SKILL.md | `da59ae6229c966c9d8d092c28b9cde03d28fb4e52d0b09d21c2ad677e7d4179a` |
+| `docs/skill-templates/ri-work-kickoff/references/project-procedure.md` | `cebbac875ad0ec05982c9b7707e81d052f21b393` | 1387 | `eb42e3b90ab466e6e62e5d65ff3f76ad8c46ba2b590faf3dad09006956384551` | .agents/skills/ri-work-kickoff/references/project-procedure.md; workflow-tools contract → [workflow-tools contract]&#40;../../../../engineering/workflow/shared/workflow-tools.md&#41; &#40;count 1&#41; | `c1cea1280a89737d274f0f5d05a66d795f35331192fc5913e620c9f8978611a7` |
+| `docs/workflow-tools.md` | `9706b5a0ffd87a149ca19061af69e11054fd4fae` | 27746 | `6702a9ac0a518085a5a40abbcfc6b0461bbf59a3930b76f320318c68e7032a10` | engineering/workflow/shared/workflow-tools.md; &#40;skill-templates/capsule-preflight/scripts/evidence&#95;preflight.py&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py&#41; &#40;count 1&#41;; &#40;../scripts/check&#95;docs&#95;and&#95;skills.py&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/scripts/check%5Fdocs%5Fand%5Fskills.py&#41; &#40;count 1&#41;; &#40;consumer-guide.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/consumer-guide.md&#41; &#40;count 1&#41;; &#40;review-evidence.md&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/review-evidence.md&#41; &#40;count 1&#41;; &#40;../src/repository&#95;intelligence/dispatch&#95;guard.py&#41; → &#40;https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/src/repository%5Fintelligence/dispatch%5Fguard.py&#41; &#40;count 1&#41; | `e8d1916a0b4fb9229216d2cf8091632e31bb63098061d78fbc94da31c0c25eab` |
+
+Consumer-owned queue redirect installed SHA-256 `611401a56cbb0aec0a19e151aac878e112081e796fa02938cc84812d3f4f0f97`; literal future-intake links only.
+
+### Separately selected dispatch helper source
+
+`e0d1767ec2ac09ec358749521c582dfbad01d6bf` Git blob `fc0e1d2ee9a6ca92de2c2694b3e38c5f19c042ef`, 4417 bytes, SHA-256 `1f4f51b061d7bf17727452acbfbf82752cb89c825cb51a8d390de76020e12c5e`. Source remains in the explicit clean checkout selected by the map, not copied or registered as a host skill. Consumer usage/proof is task-selected; mutable checkout drift refuses and grants no substitution.
