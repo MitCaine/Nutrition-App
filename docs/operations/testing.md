@@ -170,7 +170,8 @@ The controller selects the current worker action in the existing task checkpoint
 and existing `worker` for resumption. This is existing assignment bookkeeping, not a new registry.
 Retain an external record with exactly `selection`, `action`, `before`, `snapshot`.
 `action` is null for an unlaunched plan; otherwise it contains original `tool`, `arguments` and
-`reply` (null for a lost reply). Native action messages begin with these literal lines:
+`reply` (null for a lost reply; the empty string for the successful empty native
+`followup_task` response body). Native action messages begin with these literal lines:
 
 ```text
 Assignment: GH-ISSUE/role
@@ -184,7 +185,10 @@ For resumption, use `collaboration.followup_task` targeting the existing worker,
 to an active worker is message delivery, not proof of a new active attempt. `before` and `snapshot`
 are original `collaboration.list_agents` results (use its task-prefix filter), or null. Retain actual
 call/reply/state evidence; never invent turn IDs or `accepted` flags. The adapter derives acceptance
-from the supported native successful response, not a planned handoff or environmental telemetry.
+from the supported native successful response: a spawn worker-ID object or the successful empty
+followup response with its selected idle worker. A missing reply remains null. The controller
+authenticates successful tool return separately from a lost response; do not turn a lost reply into
+an empty successful one. Planned handoffs and environmental telemetry do not prove acceptance.
 
 Run `./scripts/native-dispatch --checkpoint /absolute/issue-N.json --record /absolute/native.json`
 with the prepared Python via `NUTRITION_CONTROLLER_PYTHON`. It is read-only and cannot start workers,

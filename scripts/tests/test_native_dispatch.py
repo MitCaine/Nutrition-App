@@ -125,3 +125,24 @@ def test_selected_guard_consumes_consumer_projection_when_private_source_availab
     record["snapshot"] = dict(agents=[dict(agent_name=worker, agent_status=dict(completed="Attempt: native_unique_412\nResult"))])
     decision = guard.decide(*consumer.project(checkpoint, record, "/original/native.json"))
     assert decision["action"] == "consume" and not decision["may_wait"] and not decision["may_dispatch"]
+
+
+def test_actual_empty_followup_success_is_distinct_from_lost_reply():
+    checkpoint, record, worker = case("resume")
+    record["action"]["reply"] = ""
+    assert mapped(checkpoint, record)["state"] == "accepted"
+    record["snapshot"] = dict(agents=[dict(agent_name=worker, agent_status="running")])
+    assert mapped(checkpoint, record)["state"] == "active"
+    record["snapshot"] = record["before"]
+    assert mapped(checkpoint, record)["state"] == "unknown"
+    record["snapshot"] = dict(agents=[dict(agent_name=worker, agent_status=dict(completed="Attempt: native_unique_412\nNew result"))])
+    assert mapped(checkpoint, record)["state"] == "terminal"
+    record["action"]["reply"] = None
+    assert mapped(checkpoint, record)["state"] == "unknown"
+
+
+def test_empty_body_is_not_a_successful_spawn_reply():
+    checkpoint, record, _ = case()
+    record["action"]["reply"] = ""
+    with pytest.raises(ValueError, match="Incomplete native reply"):
+        mapped(checkpoint, record)

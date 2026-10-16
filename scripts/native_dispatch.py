@@ -102,10 +102,13 @@ def project(checkpoint, record, evidence):
         require(completed(worker_row(record["before"], worker=selection["worker"])) is not None,
                 "Resumption requires the existing terminal/idle worker record; queued followup is not a new active attempt")
     reply = action["reply"]
-    require(reply is None or isinstance(reply, dict), "Incomplete native reply")
+    require(reply is None or isinstance(reply, dict) or (operation == "resume" and reply == ""), "Incomplete native reply")
     if reply and isinstance(reply.get("error"), str) and reply["error"].strip():
         return selection, dict(observation, state="rejected")
-    worker = reply.get("task_name") if reply else None
+    # followup_task successfully returns an empty native body, unlike spawn's
+    # task_name object. Retain that empty body as ""; null means no reply was
+    # received. Tool success/origin remains authenticated by the controller.
+    worker = selection["worker"] if operation == "resume" and reply == "" else (reply.get("task_name") if reply else None)
     accepted = isinstance(worker, str) and bool(worker.strip())
     if accepted:
         require(worker.rsplit("/", 1)[-1] == selection["attempt"] if operation == "launch" else worker == selection["worker"],
