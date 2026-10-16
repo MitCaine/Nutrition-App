@@ -20,6 +20,7 @@ HELPER_FILES = (
     "scripts/run-review.sh",
     "scripts/lib/common.sh",
     "scripts/lib/review_commands.py",
+    "scripts/lib/task_output_cleanup.py",
 )
 
 

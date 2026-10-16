@@ -353,6 +353,46 @@ their failure semantics remain unchanged. This runner records command evidence; 
 verify, independently review, approve or integrate a candidate, and it does not run session-end unless
 that command is explicitly authored.
 
+### Task-owned output closeout
+
+Nutrition output owners record a version-1 creation receipt when the authored runner creates
+`runs/<attempt>` or its bundle staging directory. The receipt binds the exact task and attempt,
+owner-definition hash, created directory device/inode and parent identity. Prepared-worker
+`create-workspace` records a receipt for its newly registered detached worktree; existing
+prepare/run flows without a creation receipt remain unknown. The iOS qualifier records receipts
+for its probe worktree, `DerivedData` and harness roots before their producers run. Caller-supplied
+JSON path lists, booleans, directory names and Git cleanliness cannot establish exclusive ownership,
+quiescence, terminality or source protection.
+
+After current task-state verification, inspect exact owned paths with the public controller command:
+
+```bash
+./scripts/task output-closeout ISSUE \
+  --execution-record /absolute/path/to/attempt-state.json \
+  --durable-evidence /absolute/path/to/durable-evidence
+```
+
+The command is a read-only plan by default. It reports each receipt, actual owner definition,
+current task/attempt disposition, measured logical size, retained evidence and reason. Execution
+requires `--execute --human-owner-authorized`. It copies and reads back the raw execution evidence
+and every currently referenced review/approval/source file, then atomically publishes the
+hash-bound current reference before moving any original output. The existing issue checkpoint lock
+revalidates latest terminal state, reference, owner lock, protected inputs and hashes when it stores
+operation intent and performs each move. Each output uses a new same-filesystem recoverable
+quarantine location; pending or interrupted locations must be reconciled from disk and the saved
+operation before retry. Quarantine reports zero physical bytes reclaimed; an absent path is a no-op.
+Unknown, active, paused, shared-cache, protected-runtime, unique-source or incompletely retained
+outputs stay in place. Legacy `finalize-cleanup` C/R/T recovery remains a separate route.
+
+Public closeout defaults to the local Nutrition consumer implementation and has no private RI949
+runtime dependency. `--shared-helper` explicitly selects the separate clean RI949 binding in the
+[local map](../local_project_map.md#nutrition-permissions-and-routing). That mode reauthenticates
+the exact source and import closure in an isolated interpreter before action; a missing, stale or
+changed selection refuses without fallback. Public O1–O7 fixtures in
+`scripts/tests/test_output_lifecycle.py` exercise actual runner, CLI, prepared-workspace and native
+entrypoints with synthetic data. They do not dispose real task outputs or satisfy controller
+qualification, independent review or installed-closeout gates.
+
 | Dedicated-App profile | Covered checks |
 | --- | --- |
 | `repository` | Documentation, shell syntax, and the fixed trusted fast controller suite when tooling paths select it |
@@ -505,8 +545,13 @@ The qualifier requires the repository Node pin and Xcode 26.4 or newer, creates 
 Git worktree whose path contains spaces, runs `npm ci`, regenerates iOS through clean Expo CNG,
 validates `NutritionOcr` autolinking, installs CocoaPods, compiles the generated application for a
 generic iOS Simulator without distribution signing, and runs the three retained standalone Swift
-regression programs. Generated `ios/`, Pods, DerivedData, harness binaries, and the disposable
-worktree are removed before PASS in clean mode. The simulator build records its literal argv and
+regression programs. Before producers run, the qualifier records Nutrition-owned receipts for the
+probe worktree, `DerivedData` and harness roots. Its existing cleanup path records each move and
+quarantines those roots before PASS; the probe uses `git worktree move`, while other generated roots
+are renamed without following links. It verifies the original roots are absent, quarantine identity
+and worktree registration match, and retained raw evidence remains readable before printing PASS.
+Quarantine retains the bytes and reports no physical reclamation; npm and CocoaPods caches remain
+protected. The simulator build records its literal argv and
 uses `ENABLE_DEBUG_DYLIB=NO` with `LD_GENERATE_MAP_FILE=YES` so Xcode emits application link maps.
 Because universal simulator builds may map architecture-specific linker outputs before `lipo`
 creates the final app executable, the qualifier authenticates those thin maps against the final

@@ -37,6 +37,7 @@ from lib.capsule_contract import (ExecutionError, EvidenceError,
     GOVERNING_ISSUE_REPLAN_REQUIRED, GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE,
     GOVERNING_ISSUE_REVALIDATION_INVALID)
 from lib import path_scope, task_closeout
+from lib import task_output_cleanup
 from lib.ri_consumer import RIError
 
 
@@ -5694,6 +5695,383 @@ def command_finalize_cleanup(args: argparse.Namespace) -> int:
     return 0
 
 
+def _output_closeout_execution(state: dict[str, Any]) -> dict[str, Any]:
+    records = []
+    for name in ("execution", "execution_checkpoint"):
+        value = state.get(name)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_EXECUTION_RECORD_INVALID")
+        phase = value.get("phase")
+        paused = value.get("paused") is True or value.get("owner_pause") is True or phase in {
+            "STOP_REPLAN", "CANCELLED", "PAUSED",
+        }
+        if paused or phase in {"PENDING", "RUNNING", "IN_PROGRESS", "ACTIVE", "INTEGRATION_PENDING"}:
+            raise TaskControllerError("OUTPUT_CLOSEOUT_EXECUTION_ACTIVE_OR_PAUSED")
+        attempt = value.get("attempt")
+        if not isinstance(attempt, str) or not attempt:
+            raise TaskControllerError("OUTPUT_CLOSEOUT_EXECUTION_ATTEMPT_MISSING")
+        reviewer = value.get("reviewer_status")
+        if reviewer is None and isinstance(value.get("reviewer"), dict):
+            reviewer = value["reviewer"].get("status")
+        records.append({"name": name, "value": value, "phase": phase, "paused": paused,
+                        "attempt": attempt, "installed_checks_due": value.get("installed_checks_due"),
+                        "reviewer": reviewer})
+    if not records:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_EXECUTION_RECORD_MISSING")
+    if len(records) > 1:
+        fields = ("phase", "paused", "attempt", "installed_checks_due", "reviewer")
+        if any(records[0][field] != records[1][field] for field in fields):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_EXECUTION_RECORDS_AMBIGUOUS")
+        for field in ("candidate_sha", "candidate"):
+            values = [item["value"].get(field) for item in records]
+            present = [value for value in values if value is not None]
+            if present and any(value != present[0] for value in present[1:]):
+                raise TaskControllerError("OUTPUT_CLOSEOUT_EXECUTION_RECORDS_AMBIGUOUS")
+        proofs = [item["value"].get("installed_checks_evidence") for item in records]
+        present_proofs = [proof for proof in proofs if isinstance(proof, dict)]
+        if present_proofs and any(proof != present_proofs[0] for proof in present_proofs[1:]):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_EXECUTION_RECORDS_AMBIGUOUS")
+    return next((item["value"] for item in records if isinstance(
+        item["value"].get("installed_checks_evidence"), dict)), records[0]["value"])
+
+
+def _validate_output_installed_checks(
+    execution: dict[str, Any], *, candidate_sha: str, repository: str,
+    current_attempt: str, current_reference: dict[str, Any] | None = None,
+    owner_kind: str | None = None,
+) -> dict[str, Any]:
+    proof = execution.get("installed_checks_evidence")
+    if (not isinstance(proof, dict) or proof.get("schema_version") != 1
+            or proof.get("attempt") != current_attempt
+            or proof.get("candidate_sha") != candidate_sha
+            or proof.get("repository") != repository):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_BINDING_INVALID")
+    names = {
+        "request": "request.json", "results": "results.json", "complete": "complete.json",
+        "source_before": "source-before.json", "source_after": "source-after.json",
+        "source_after_package": "source-after-package.json",
+    }
+    bindings = proof.get("bindings")
+    if not isinstance(bindings, dict) or set(bindings) != set(names):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_INCOMPLETE")
+    proof_root: Path | None = None
+    resolved_bindings: dict[str, Path] = {}
+    for name, filename in names.items():
+        binding = bindings[name]
+        if not isinstance(binding, dict) or set(binding) not in (
+                {"path", "sha256"}, {"original_path", "path", "sha256"}):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_BINDING_INVALID")
+        path = Path(binding["path"])
+        if (not isinstance(binding.get("path"), str)
+                or not isinstance(binding.get("sha256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", binding["sha256"])
+                or Path(binding.get("original_path", binding["path"])).name != filename):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_CHANGED")
+        try:
+            current_path = (task_output_cleanup.resolve_reference_binding(
+                path, binding["sha256"], current_reference,
+            ) if current_reference is not None else path)
+            if "original_path" in binding:
+                original_path = binding["original_path"]
+                if (current_reference is None or not isinstance(original_path, str)
+                        or task_output_cleanup.resolve_reference_binding(
+                            Path(original_path), binding["sha256"], current_reference,
+                        ) != current_path):
+                    raise OSError("installed evidence relocation differs from its authenticated reference")
+            if task_output_cleanup.file_binding(current_path) != {
+                    "path": str(current_path), "sha256": binding["sha256"]}:
+                raise OSError("installed evidence hash differs")
+        except (OSError, ValueError, task_output_cleanup.OutputCleanupError) as error:
+            raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_CHANGED") from error
+        if name == "request":
+            proof_root = current_path.parent
+        elif proof_root is None or current_path.parent != proof_root:
+            raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_MIXED_ROOTS")
+        resolved_bindings[name] = current_path
+        path = current_path
+    if proof_root is None:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_INCOMPLETE")
+    if owner_kind == "prepared-worker-workspace":
+        try:
+            request_binding = bindings["request"]
+            original_request = Path(request_binding.get("original_path", request_binding["path"]))
+            if current_reference is None:
+                native_root = original_request.parent
+                reference_path = None
+                reference_sha = None
+            else:
+                original_root = Path(current_reference["original_attempt_directory"])
+                relative_root = original_request.parent.relative_to(original_root)
+                native_root = Path(current_reference["current_attempt_directory"]) / relative_root
+                reference_path = Path(current_reference["current_reference_path"])
+                reference_sha = task_output_cleanup.file_binding(reference_path)["sha256"]
+            request_path = native_root / "request.json"
+            if task_output_cleanup.file_binding(request_path) != {
+                    "path": str(request_path), "sha256": request_binding["sha256"]}:
+                raise OSError("prepared native request copy differs from installed proof")
+            import worker_execution
+            projected = worker_execution.project(
+                request_path, native_root, candidate_sha,
+                current_reference=reference_path, reference_sha256=reference_sha,
+            )
+        except (OSError, ValueError, KeyError, TypeError,
+                task_output_cleanup.OutputCleanupError, worker_execution.native.RequestError) as error:
+            raise TaskControllerError("OUTPUT_CLOSEOUT_PREPARED_NATIVE_PROOF_INVALID") from error
+        if (projected.get("ready") is not True or projected.get("native_status") != "passed"
+                or projected.get("candidate") != candidate_sha
+                or projected.get("attempt") != current_attempt):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_PREPARED_NATIVE_PROOF_INCOMPLETE")
+        return {"root": native_root, "request": worker_execution.native._parse_json(
+                    request_path.read_bytes()), "projected": projected}
+    request_binding = bindings["request"]
+    original_request = request_binding.get("original_path", request_binding["path"])
+    root = Path(original_request).parent
+    try:
+        authored_evidence = proof.get("attempt_evidence")
+        owner_record_path = root / "attempt-state.json"
+        if current_reference is not None:
+            matching_owner = [item for item in authored_evidence if isinstance(item, dict)
+                              and Path(item.get("original_path", item.get("path", ""))).name
+                              == "attempt-state.json"] if isinstance(authored_evidence, list) else []
+            if len(matching_owner) != 1:
+                raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_OWNER_MISSING")
+            owner_original = Path(matching_owner[0].get("original_path", matching_owner[0]["path"]))
+            owner_record_path = task_output_cleanup.resolve_reference_binding(
+                owner_original, matching_owner[0]["sha256"], current_reference,
+            )
+        owner_state = task_output_cleanup.read_json(owner_record_path)
+        owner = owner_state.get("output_ownership")
+        if not isinstance(owner, dict):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_OWNER_MISSING")
+        retained, request = task_output_cleanup._validate_authored_evidence(
+            root, owner, reference=current_reference, evidence=authored_evidence,
+        )
+        results = task_output_cleanup.read_json(resolved_bindings["results"])
+    except (OSError, ValueError, KeyError, TypeError, task_output_cleanup.OutputCleanupError) as error:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_PROOF_INVALID") from error
+    if (request.get("attempt") != current_attempt
+            or request.get("expected_head") != candidate_sha
+            or request.get("repository") != repository
+            or results.get("status") != "passed"):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_PROOF_SOURCE_OR_RESULT_MISMATCH")
+    authored = results.get("authored_commands")
+    steps = request.get("steps")
+    rows = authored.get("steps") if isinstance(authored, dict) else None
+    if not isinstance(steps, list) or not isinstance(rows, list) or len(steps) != len(rows):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_GATE_COVERAGE_INVALID")
+    for step, row in zip(steps, rows, strict=True):
+        if (not isinstance(step, dict) or not isinstance(row, dict)
+                or row.get("id") != step.get("id")
+                or row.get("designation") != step.get("designation")
+                or (step.get("designation") == "mandatory" and row.get("status") != "passed")):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_MANDATORY_CHECK_FAILED")
+    return {"root": root, "request": request, "owner": owner, "results": results}
+
+
+def validate_output_closeout_completion(
+    state: dict[str, Any], issue_number: int, attempt: str, record_path: Path,
+    record: dict[str, Any], root: Path, owner: dict[str, Any], request: dict[str, Any],
+    retained: list[dict[str, str]], repo_root: Path,
+) -> dict[str, Any]:
+    """Authenticate standard task acceptance before task-output eligibility."""
+    task_id = f"GH-{issue_number}"
+    if (state.get("issue_number") != issue_number or state.get("task_id") != task_id
+            or state.get("phase") != "INTEGRATED" or "capsule_evidence" in state
+            or workflow_mode_for_state(state) != "standard"):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_STANDARD_TASK_NOT_INTEGRATED")
+    if state.get("paused") is True or state.get("owner_pause") is True:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_TASK_PAUSED")
+    current_execution = _output_closeout_execution(state)
+    current_attempt = current_execution.get("attempt")
+    if not isinstance(current_attempt, str) or not current_attempt:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_ATTEMPT_MISSING")
+    if current_execution.get("phase") != "VERIFIED_TERMINAL_CLOSEOUT_COMPLETE":
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_EXECUTION_NOT_TERMINAL")
+    if current_execution.get("installed_checks_due") is not False:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_CHECKS_STILL_DUE")
+    reviewer = current_execution.get("reviewer_status")
+    if reviewer is None and isinstance(current_execution.get("reviewer"), dict):
+        reviewer = current_execution["reviewer"].get("status")
+    if not isinstance(reviewer, str) or reviewer.lower() not in {"pass consumed", "consumed"}:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_REVIEWER_DISPOSITION_UNKNOWN")
+    qualification_operation = state.get("qualification_operation")
+    if isinstance(qualification_operation, dict):
+        status = qualification_operation.get("status")
+        if status in {"DISPATCH_PENDING", "RUNNING", "UNKNOWN", "CLEANUP_PENDING", "CLEANUP_UNKNOWN"}:
+            raise TaskControllerError("OUTPUT_CLOSEOUT_QUALIFICATION_OPERATION_UNRESOLVED")
+        if qualification_operation.get("terminal_result") not in (None, "PASS"):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_QUALIFICATION_OPERATION_FAILED")
+
+    authorization_state = state.get("authorization")
+    publication = state.get("authorization_publication")
+    if not isinstance(authorization_state, dict) or not isinstance(publication, dict):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_OWNER_AUTHORIZATION_MISSING")
+    draft_value = authorization_state.get("draft_path")
+    if not isinstance(draft_value, str):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_OWNER_AUTHORIZATION_DRAFT_MISSING")
+    draft = Path(draft_value)
+    if not draft.is_file():
+        raise TaskControllerError("OUTPUT_CLOSEOUT_OWNER_AUTHORIZATION_DRAFT_MISSING")
+    body = draft.read_text(encoding="utf-8")
+    selection_sha256 = state.get("workflow", {}).get("selection_sha256")
+    expected_publication = {
+        "repository": state.get("repository"), "issue_number": issue_number,
+        "task_id": task_id, "trusted_author": state.get("trusted_author"),
+        "revision": authorization_state.get("revision"), "nonce": authorization_state.get("nonce"),
+        "base_sha": authorization_state.get("base_sha"),
+        "payload_sha256": authorization_state.get("payload_sha256"),
+        "workflow_selection_sha256": selection_sha256,
+        "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+    }
+    if (publication.get("status") != "complete" or publication.get("identity") != expected_publication
+            or publication.get("comment_id") != authorization_state.get("comment_id")):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_OWNER_AUTHORIZATION_PUBLICATION_MISMATCH")
+    transport = GhQualificationTransport()
+    authorization = resolve_current_authorization(state, transport)
+    if (authorization.comment_id != publication.get("comment_id")
+            or authorization.identity_sha256 != authorization_state.get("identity_sha256")
+            or authorization.author_login != authorization_state.get("author_login")):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_OWNER_AUTHORIZATION_CURRENT_MISMATCH")
+
+    integration = state.get("integration")
+    candidate_sha = integration.get("candidate_sha") if isinstance(integration, dict) else None
+    if (not isinstance(candidate_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", candidate_sha)
+            or integration.get("origin_main_after") != candidate_sha
+            or integration.get("human_owner_authorized") is not True):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_INTEGRATION_BINDING_INVALID")
+    expected_app_id = configured_qualification_app_id()
+    if expected_app_id != 4708441:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_DEDICATED_QUALIFICATION_APP_MISMATCH")
+    qualification = state.get("qualification")
+    verification = state.get("verification")
+    review = state.get("review")
+    if (not isinstance(qualification, dict) or qualification.get("result") != "PASS"
+            or qualification.get("candidate_sha") != candidate_sha
+            or qualification.get("check_app_id") != expected_app_id
+            or type(qualification.get("check_id")) is not int
+            or type(qualification.get("workflow_run_id")) is not int):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_QUALIFICATION_BINDING_INVALID")
+    if (not isinstance(verification, dict) or verification.get("decision") != "pass"
+            or verification.get("candidate_sha") != candidate_sha):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_VERIFICATION_BINDING_INVALID")
+    if (not isinstance(review, dict) or review.get("decision") != "approved"
+            or review.get("candidate_sha") != candidate_sha
+            or not isinstance(review.get("actor"), str) or not review["actor"].strip()
+            or review["actor"].casefold() == authorization.author_login.casefold()):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_INDEPENDENT_REVIEW_BINDING_INVALID")
+    if integration.get("state_binding_sha256") != _integration_state_binding_digest(
+            state, authorization, candidate_sha):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_PROTECTED_INTEGRATION_BINDING_INVALID")
+    observed_candidate = require_candidate_repository(repo_root, expected_repository=state["repository"])
+    if observed_candidate != candidate_sha:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CANDIDATE_SOURCE_MISMATCH")
+    installed_record = current_execution.get("installed_checks_evidence")
+    installed_repository = installed_record.get("repository") if isinstance(installed_record, dict) else None
+    current_repository = str(repo_root.resolve(strict=True))
+    if installed_repository != current_repository:
+        closeout = state.get("output_closeout")
+        operations = closeout.get("operations", []) if isinstance(closeout, dict) else []
+        matches = [item for item in operations if isinstance(item, dict)
+                   and item.get("kind") == "worktree" and item.get("original") == installed_repository
+                   and item.get("destination") == current_repository and item.get("attempt") == current_attempt
+                   and item.get("status") == "complete"]
+        registration = matches[0].get("registration") if len(matches) == 1 else None
+        if (not isinstance(installed_repository, str) or not isinstance(registration, dict)
+                or registration.get("path") != current_repository
+                or registration.get("head") != candidate_sha):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_REPOSITORY_RELOCATION_INVALID")
+    revalidate_integration_state(
+        state, candidate_repo=repo_root, expected_app_id=expected_app_id,
+        transport=transport, ref_transport=GitCandidateRefTransport(repo_root),
+    )
+
+    current_reference = task_output_cleanup._current_reference(state)
+    proof = _validate_output_installed_checks(
+        current_execution, candidate_sha=candidate_sha, repository=installed_repository,
+        current_attempt=current_attempt, current_reference=current_reference,
+        owner_kind=owner.get("owner") if isinstance(owner, dict) else None,
+    )
+    if attempt == current_attempt:
+        if Path(record_path).name == "NUTRITION_RESULT.json":
+            output_candidate = record.get("candidate")
+            output_passed = record.get("ready") is True
+        else:
+            output_candidate = request.get("expected_head")
+            output_results = task_output_cleanup.read_json(root / "results.json")
+            output_passed = output_results.get("status") == "passed"
+        if output_candidate != candidate_sha or not output_passed:
+            raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_ATTEMPT_NOT_VERIFIED")
+        return {"disposition": "completed", "candidate_sha": candidate_sha,
+                "installed_evidence_root": str(proof["root"])}
+
+    history = current_execution.get("history")
+    matches = [item for item in history if isinstance(item, dict) and item.get("attempt") == attempt] \
+        if isinstance(history, list) else []
+    if len(matches) != 1:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_SUPERSESSION_BINDING_MISSING")
+    historical = matches[0]
+    historical_evidence = historical.get("attempt_evidence")
+    expected_history_evidence = sorted(retained, key=lambda item: item["path"])
+    if isinstance(historical_evidence, list):
+        normalized_history_evidence = []
+        for item in historical_evidence:
+            if not isinstance(item, dict) or set(item) not in (
+                    {"path", "sha256"}, {"original_path", "path", "sha256"}):
+                normalized_history_evidence = []
+                break
+            normalized_history_evidence.append({
+                "path": item.get("original_path", item.get("path")),
+                "sha256": item.get("sha256"),
+            })
+        historical_evidence = sorted(normalized_history_evidence, key=lambda item: item["path"])
+    unsigned_history = {key: value for key, value in historical.items() if key != "checkpoint_sha256"}
+    history_sha = hashlib.sha256(json.dumps(unsigned_history, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if (historical.get("phase") != "VERIFIED_TERMINAL_CLOSEOUT_COMPLETE"
+            or historical.get("candidate_sha") != candidate_sha
+            or historical.get("superseded_by") != current_attempt
+            or historical_evidence != expected_history_evidence
+            or historical.get("checkpoint_sha256") != history_sha):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_SUPERSESSION_EVIDENCE_INVALID")
+    if Path(record_path).name == "NUTRITION_RESULT.json":
+        historical_candidate = record.get("candidate")
+        historical_passed = record.get("ready") is True
+    else:
+        historical_candidate = request.get("expected_head")
+        historical_results = task_output_cleanup.read_json(root / "results.json")
+        historical_passed = historical_results.get("status") == "passed"
+    if historical_candidate != candidate_sha or not historical_passed:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_SUPERSEDED_ATTEMPT_NOT_VERIFIED")
+    return {"disposition": "superseded_terminal", "candidate_sha": candidate_sha,
+            "installed_evidence_root": str(proof["root"])}
+
+
+def command_output_closeout(args: argparse.Namespace) -> int:
+    repo = resolve_repo_root(args.repo_root)
+    try:
+        return task_output_cleanup.output_closeout(
+            issue_number=args.issue_number,
+            record_path=args.execution_record,
+            durable_evidence=args.durable_evidence,
+            repo_root=repo,
+            state_dir=args.state_dir,
+            execute=args.execute,
+            human_owner_authorized=args.human_owner_authorized,
+            shared_helper=args.shared_helper,
+            load_state=load_state,
+            checkpoint_transaction=checkpoint_transaction,
+            completion_validator=lambda state, attempt, record_path, record, root, owner, request, retained: (
+                validate_output_closeout_completion(
+                    state, args.issue_number, attempt, record_path, record, root, owner, request,
+                    retained, repo,
+                )
+            ),
+        )
+    except task_output_cleanup.OutputCleanupError as exc:
+        raise TaskControllerError(str(exc)) from exc
+
+
 def command_finalize_cancel(args: argparse.Namespace) -> int:
     """Accept a separately reviewed CANCELLED capsule terminal transaction."""
     repo = resolve_repo_root(args.repo_root)
@@ -6444,6 +6822,18 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup.add_argument("--cleanup-root", type=Path, required=True)
     cleanup.add_argument("--cleanup-branch", required=True)
     cleanup.set_defaults(handler=command_finalize_cleanup)
+
+    output_closeout = subparsers.add_parser(
+        "output-closeout",
+        help="Dry-run or explicitly execute guarded cleanup of task-owned generated outputs.",
+    )
+    output_closeout.add_argument("issue_number", type=int)
+    output_closeout.add_argument("--execution-record", type=Path, required=True)
+    output_closeout.add_argument("--durable-evidence", type=Path, required=True)
+    output_closeout.add_argument("--execute", action="store_true")
+    output_closeout.add_argument("--human-owner-authorized", action="store_true")
+    output_closeout.add_argument("--shared-helper", action="store_true")
+    output_closeout.set_defaults(handler=command_output_closeout)
 
     cancel = subparsers.add_parser("finalize-cancel")
     cancel.add_argument("issue_number", type=int)

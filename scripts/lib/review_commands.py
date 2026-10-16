@@ -7,6 +7,7 @@ import base64
 import csv
 from datetime import datetime, timezone
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -19,6 +20,15 @@ import time
 from typing import Any
 import zipfile
 
+# This file is also executed directly by run-review.sh. In that mode Python
+# places scripts/lib (rather than scripts) at sys.path[0], so add the stable
+# scripts root before importing the sibling library package.
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+task_output_cleanup = importlib.import_module("lib.task_output_cleanup")
+
 
 SCHEMA_VERSION = 1
 MAX_REQUEST_BYTES = 1_000_000
@@ -29,6 +39,7 @@ MAX_FIELD_BYTES = 16_384
 MAX_TOTAL_ARG_BYTES = 512_000
 MAX_TOTAL_ENV_BYTES = 64_000
 ATTEMPT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
+TASK_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 STEP_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 ENV_KEY_RE = re.compile(r"[A-Z_][A-Z0-9_]{0,63}\Z")
 COMMIT_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
@@ -221,11 +232,11 @@ def _validate_env(value: Any, label: str) -> dict[str, str]:
 
 
 def _validate_request(request: Any, root: Path, expected_head: str, attempt: str) -> dict[str, Any]:
-    value = _expect_keys(
-        request,
-        {"schema_version", "repository", "expected_head", "attempt", "steps"},
-        "request",
-    )
+    required = {"schema_version", "repository", "expected_head", "attempt", "steps"}
+    if (not isinstance(request, dict)
+            or frozenset(request) not in {frozenset(required), frozenset(required | {"task_id"})}):
+        raise RequestError("request contains missing or unsupported fields")
+    value = request
     if type(value["schema_version"]) is not int or value["schema_version"] != SCHEMA_VERSION:
         raise RequestError(f"schema_version must be {SCHEMA_VERSION}")
     if value["repository"] != str(root):
@@ -240,6 +251,11 @@ def _validate_request(request: Any, root: Path, expected_head: str, attempt: str
         raise RequestError("request attempt must be a bounded identifier")
     if request_attempt != attempt:
         raise RequestError("request attempt does not match --attempt")
+    task_id = value.get("task_id")
+    if task_id is not None and (
+        not isinstance(task_id, str) or not TASK_ID_RE.fullmatch(task_id)
+    ):
+        raise RequestError("task_id must be a bounded identifier when supplied")
     raw_steps = value["steps"]
     if not isinstance(raw_steps, list) or not 1 <= len(raw_steps) <= MAX_STEPS:
         raise RequestError(f"steps must contain between 1 and {MAX_STEPS} entries")
@@ -316,6 +332,7 @@ def _validate_request(request: Any, root: Path, expected_head: str, attempt: str
         "repository": str(root),
         "expected_head": expected_head,
         "attempt": attempt,
+        **({"task_id": task_id} if task_id is not None else {}),
         "steps": steps,
     }
 
@@ -484,10 +501,30 @@ def _load_attempt(attempt_dir: Path) -> tuple[dict[str, Any], dict[str, Any], by
     return normalized, identity, request_raw
 
 
-def _read_state(attempt_dir: Path) -> dict[str, Any]:
-    state = _parse_json((attempt_dir / "attempt-state.json").read_bytes())
-    if not isinstance(state, dict) or state.get("attempt_directory") != str(attempt_dir.resolve()):
-        raise RequestError("attempt state identity does not match its directory")
+def _read_state(
+    attempt_dir: Path, *, current_reference: Path | None = None,
+    reference_sha256: str | None = None,
+) -> dict[str, Any]:
+    state_path = attempt_dir / "attempt-state.json"
+    state = _parse_json(state_path.read_bytes())
+    if not isinstance(state, dict):
+        raise RequestError("attempt state is not an object")
+    if current_reference is None:
+        if state.get("attempt_directory") != str(attempt_dir.resolve()):
+            raise RequestError("attempt state identity does not match its directory")
+        return state
+    if not isinstance(reference_sha256, str):
+        raise RequestError("current evidence reference hash is required")
+    try:
+        reference = task_output_cleanup.read_current_reference(current_reference, reference_sha256)
+        original_directory, binding = task_output_cleanup.resolve_retained_attempt_directory(
+            attempt_dir, reference,
+        )
+    except task_output_cleanup.OutputCleanupError as error:
+        raise RequestError(str(error)) from error
+    if (state.get("attempt_directory") != str(original_directory)
+            or binding != task_output_cleanup.file_binding(state_path)):
+        raise RequestError("retained attempt state identity does not match its authenticated reference")
     return state
 
 
@@ -552,10 +589,32 @@ def _prepare(args: argparse.Namespace) -> int:
         raise RequestError("source HEAD changed before attempt initialization")
 
     run_dir.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    receipt_task = normalized.get("task_id", "unbound-" + _sha256(str(root).encode())[:16])
+    definition = {"path": str(request_path.resolve()), "sha256": _sha256(request_raw)}
     try:
-        run_dir.mkdir(mode=0o700, exist_ok=False)
-    except FileExistsError as error:
-        raise RequestError("attempt directory already exists; evidence is immutable and attempts do not repeat") from error
+        receipt = task_output_cleanup.create_owned_output(
+            run_dir,
+            task=receipt_task,
+            attempt=args.attempt,
+            definition=definition,
+        )
+    except (FileExistsError, task_output_cleanup.OutputCleanupError) as error:
+        if isinstance(error, FileExistsError) or "pre-existing output cannot be adopted" in str(error):
+            raise RequestError("attempt directory already exists; evidence is immutable and attempts do not repeat") from error
+        raise RequestError(str(error)) from error
+    try:
+        task_output_cleanup.create_owner_lock(run_dir)
+        owner_lock = task_output_cleanup.owner_lock_binding(run_dir)
+        runtime_inputs = [
+            task_output_cleanup.file_binding(Path(sys.executable).resolve()),
+            task_output_cleanup.file_binding(Path(__file__).resolve()),
+            task_output_cleanup.file_binding(Path(__file__).resolve().with_name("task_output_cleanup.py")),
+            task_output_cleanup.file_binding(root / "scripts" / "run-review.sh"),
+            task_output_cleanup.file_binding(root / "scripts" / "lib" / "common.sh"),
+        ]
+    except (OSError, task_output_cleanup.OutputCleanupError) as error:
+        # The already-created output has no complete owner record; retain it as unknown.
+        raise RequestError(str(error)) from error
     try:
         (run_dir / "logs").mkdir(mode=0o700)
         (run_dir / "failures").mkdir(mode=0o700)
@@ -590,6 +649,20 @@ def _prepare(args: argparse.Namespace) -> int:
             "expected_head": head,
             "source_before_sha256": _source_fingerprint(source_before),
             "terminal_marker_required": True,
+            "output_ownership": {
+                "schema": task_output_cleanup.OWNER_SCHEMA,
+                "owner": "authored-review-attempt",
+                "task": receipt_task,
+                "attempt": args.attempt,
+                "source": {
+                    "request": identity,
+                    "repository": str(root),
+                    "expected_head": head,
+                    "runtime_inputs": runtime_inputs,
+                },
+                "owner_lock": owner_lock,
+                "outputs": [{"name": "attempt-root", "kind": "plain", "receipt": receipt}],
+            },
         }
         _write_exclusive(run_dir / "attempt-state.json", _json_bytes(state))
         _write_exclusive(run_dir / "in-progress.marker", b"Attempt is active. Missing complete.json means this attempt is not terminal.\n")
@@ -622,6 +695,42 @@ def _effective_environment(selected: dict[str, str]) -> dict[str, str]:
 
 def _write_step_result(step_dir: Path, record: dict[str, Any]) -> None:
     _atomic_write(step_dir / "result.json", _json_bytes(record))
+
+
+def _process_group_exists(group: int) -> bool:
+    """Use the owned process group itself as the portable liveness boundary."""
+    try:
+        os.killpg(group, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def _quiesce_owned_process_group(group: int, leader_start: str) -> dict[str, Any]:
+    """Require the fresh Popen-owned session to be empty after its leader exits.
+
+    The runner does not need to inspect or signal unrelated system processes.  A
+    still-existing group means a child escaped the step's lifetime, so the
+    result stays non-quiescent and cleanup must retain its output.
+    """
+    try:
+        exists = _process_group_exists(group)
+        return {
+            "leader_pid": group,
+            "process_group_id": group,
+            "leader_start": leader_start,
+            "process_group_present_after_wait": exists,
+            "status": "active-descendant" if exists else "quiescent",
+        }
+    except OSError as error:
+        return {
+            "leader_pid": group,
+            "process_group_id": group,
+            "leader_start": leader_start,
+            "process_group_present_after_wait": None,
+            "status": "unknown",
+            "observation_error": str(error),
+        }
 
 
 def _step_result(attempt_dir: Path, step_id: str) -> dict[str, Any] | None:
@@ -746,6 +855,7 @@ def _execute(args: argparse.Namespace) -> int:
     started = time.monotonic()
     launch_error: str | None = None
     child_return_code: int | None = None
+    process_quiescence: dict[str, Any] | None = None
     try:
         stdout_descriptor = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         stderr_descriptor = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -759,8 +869,11 @@ def _execute(args: argparse.Namespace) -> int:
                 stderr=stderr_stream,
                 shell=False,
                 close_fds=True,
+                start_new_session=True,
             )
+            leader_start = f"popen-session:{process.pid}:{time.monotonic_ns()}"
             child_return_code = process.wait()
+            process_quiescence = _quiesce_owned_process_group(process.pid, leader_start)
             stdout_stream.flush()
             os.fsync(stdout_stream.fileno())
             stderr_stream.flush()
@@ -780,12 +893,17 @@ def _execute(args: argparse.Namespace) -> int:
     normalized_exit = None if child_return_code is None else (
         child_return_code if child_return_code >= 0 else 128 + abs(child_return_code)
     )
+    if process_quiescence is not None and process_quiescence.get("status") != "quiescent":
+        if normalized_exit == 0:
+            normalized_exit = 1
+        launch_error = launch_error or "owned child process group did not become quiescent"
     status = "passed" if normalized_exit == 0 and launch_error is None else "failed"
     record = {
         **start_record,
         "status": status,
         "exit_code": normalized_exit,
         "child_return_code": child_return_code,
+        "process_quiescence": process_quiescence,
         "launch_error": launch_error,
         "duration_seconds": round(time.monotonic() - started, 3),
         "effective_child_inputs": effective_inputs,

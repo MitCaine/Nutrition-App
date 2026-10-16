@@ -421,3 +421,75 @@ with `mandatory: false`, retaining visibility without premature gating. Without 
 binding, adapters retain responsibility for independently proving required-set coverage.
 This additive mapping does not certify semantic judgment, consumer adoption or honesty
 of the accepted obligation inventory. Actual consumer adapters require their own tests.
+
+### Task-output lifecycle
+
+The optional Python interface in
+[`output_cleanup.py`](https://github.com/MitCaine/repository-intelligence/blob/949b838809bcddb01e2cbe161faed6f6f1f705fe/src/repository_intelligence/output_cleanup.py) serves the
+same consumer-owned worker/closeout seam. The governing
+[retention and disposal rule](start-an-issue.md#retain-evidence-and-dispose-of-owned-outputs)
+owns eligibility; this interface does not change the version-1 worker request or
+automatically enable cleanup in an existing consumer.
+This optional implementation supports POSIX local identities; other platforms
+require their consumer's supported native route and are refused here.
+
+The consumer's authoritative output definition invokes `create_output(path,
+task=..., attempt=..., definition=...)` instead of its exclusive directory creation,
+and stores the returned version-1 receipt in its existing execution record. The
+definition binding is its authenticated regular-file `path`/`sha256`; derive actual
+paths from that same definition, not an agent-written duplicate list. Existing
+directories are refused. The receipt binds task, attempt, definition, directory and
+parent device/inode identities. If creation succeeds but receipt persistence fails,
+preserve the directory as unknown; do not adopt it on retry. Other creation owners
+need their own equivalent native binding; the helper does not take over worktree,
+compiler or cache creation.
+
+`assess_output(receipt, observation, protected=[...], retained=[...])` is a read-only
+per-item dry-run returning `eligible`, `retained` or `absent`, reason and logical
+regular-file bytes when known. The consumer maps its **current authenticated**
+observations into matching `task`/`attempt`, `state` (`completed` or
+`superseded_terminal`), and explicit booleans `exclusive`, `quiescent`,
+`regenerable`, `source_preserved`, `references_relocated`. Missing/unknown facts
+retain the item. These mapped assertions are not independent proof of completeness,
+process inactivity, terminal status or source recovery. `protected` is a nonempty
+list of exact source/runtime/shared/recovery paths from the owning route; `retained`
+is a nonempty list of original raw-hash bindings at their readable retained paths.
+The helper verifies supplied bytes, not whether the consumer omitted evidence or
+a protected path. Overlapping protected paths, changed definition/node/parent,
+symlink ancestors/contents, hardlinks and special files refuse disposal. Permission
+errors cannot produce an apparently complete size. Paths must be normalized and
+absolute; safely canonicalize a supported host alias before binding it.
+
+`dispose_output(..., authorized=True, dispose=consumer_callback)` rechecks the same
+inputs before invoking the selected consumer's safe adapter. The authorization
+boolean records an existing grant, never manufactures one. A callback returns
+`{"kind": "deleted"}` or `{"kind": "quarantined", "path": "/exact/destination"}`.
+The latter must preserve the original directory identity and logical size. An
+ordinary callback exception, unknown response or remaining original path yields `incomplete`; reconcile
+actual partial state before retry. This is a synchronous per-item call, not a new
+executor, registry, arbitrary-directory discovery or recursive deletion command. Consumers must
+exclude concurrent mutation, implement safe native disposal, and retain the returned
+facts in existing closeout records; filesystem checks are not an atomic transaction.
+Record the pending operation in that existing record before invocation. Process death
+or interruption cannot guarantee a returned result; reconcile actual state before retry,
+never infer successful disposal from a lost reply.
+
+Results distinguish logical `bytes`, verified adapter-reported `removed_bytes`, and
+physical `reclaimed_bytes` (unknown unless measured outside this helper; quarantine
+reports zero). Incomplete removal has unknown removed bytes. A retry of an absent
+owned path reports no new removal. No batch abort is imposed for another item's
+unknown ownership. Focused disposable fixtures exercise the shared seam with tiny
+synthetic consumer callbacks; they do not prove Poker/Nutrition's ordinary wiring
+or authorize cleanup of their real directories.
+
+
+Nutrition's public implementation is [`scripts/lib/task_output_cleanup.py`](../../../scripts/lib/task_output_cleanup.py).
+`task output-closeout ISSUE --execution-record PATH --durable-evidence PATH` defaults
+to a read-only plan; guarded quarantine additionally requires explicit
+`--execute --human-owner-authorized`. `--shared-helper` explicitly selects the pinned
+RI949 source from the Nutrition map and authenticates its isolated import closure.
+Without that flag the Nutrition consumer-only route is selected and does not read the
+private helper binding. A selected missing or changed helper refuses before action.
+The helper does not discover local outputs, grant owner authority, replace current
+checkpoint validation, or subsume Nutrition's linked native-worktree route. Legacy
+C/R/T cleanup retains its separate recovery contract.

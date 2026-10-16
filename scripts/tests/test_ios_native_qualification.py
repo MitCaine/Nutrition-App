@@ -758,7 +758,10 @@ class IosNativeQualificationTests(
         self.assertIn("IOS_NATIVE_QUALIFICATION=FAILURE", result.stderr)
         self.assertIn("IOS_NATIVE_TIMING_WRITE_FAILED:npm_install", result.stderr)
         self.assertTrue((evidence / "stages.jsonl").is_dir())
-        self.assertFalse((evidence / "Nutrition App Native").exists())
+        self.assertIn("IOS_NATIVE_OUTPUT_OWNER_FINISH_FAILED", result.stderr)
+        owner = json.loads((evidence / "native-output-owner.json").read_text(encoding="utf-8"))
+        self.assertEqual(owner["output_ownership"]["state"], "created")
+        self.assertTrue((evidence / "Nutrition App Native").is_dir())
 
     def test_qualifier_fails_closed_on_manifest_write_failure(self):
         result, evidence = self._run_fixture_qualification(
@@ -824,6 +827,10 @@ printf '%s\\n' '{"modules":[{"packageName":"nutrition-ocr","pods":[{"podName":"N
 EOF
     chmod +x "$(pwd)/node_modules/.bin/expo-modules-autolinking"
     case "${IOS_NATIVE_FIXTURE_MODE-}" in
+      outside-link)
+        ln -s "${IOS_NATIVE_FIXTURE_OUTSIDE_SENTINEL:?}" \
+          "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR}/DerivedData/outside-link"
+        ;;
       parent-signal)
         mkdir -p "$(pwd)/ios" "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/DerivedData"
         : > "${IOS_NATIVE_FIXTURE_PARENT_SIGNAL_READY:?}"
@@ -832,6 +839,10 @@ EOF
       timing-write-failure)
         rm -f "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/stages.jsonl"
         mkdir "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR}/stages.jsonl"
+        ;;
+      unique-source)
+        printf '%s\n' 'unowned native worktree source' \
+          > "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/Nutrition App Native/unexpected-source.txt"
         ;;
     esac
     ;;
@@ -1049,8 +1060,20 @@ else
 fi
 """)
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
-        write("python3", 'exec "$REAL_PYTHON" "$@"\n')
-        write("git", 'if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree remove"; then exit 17; fi; exec "${REAL_GIT:-/usr/bin/git}" "$@"\n')
+        write("python3", '''
+if [ ! -d "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}" ]; then
+  exec "$REAL_PYTHON" "$@"
+fi
+fixture_evidence="$(cd "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}" && pwd -P)"
+if [ "${IOS_NATIVE_FIXTURE_MANIFEST_DIRECTORY-}" = "1" ] &&
+  [ "${1-}" = "-" ] &&
+  [ "${3-}" = "$fixture_evidence/manifest.json" ]
+then
+  mkdir "$3"
+fi
+exec "$REAL_PYTHON" "$@"
+''')
+        write("git", 'if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree move"; then exit 17; fi; exec "${REAL_GIT:-/usr/bin/git}" "$@"\n')
 
     def _run_fixture_qualification(
         self,
@@ -1063,8 +1086,9 @@ fi
         fake_bin = evidence_parent / "bin"
         fake_bin.mkdir(parents=True)
         evidence.mkdir()
-        if manifest_directory:
-            (evidence / "manifest.json").mkdir()
+        outside_sentinel = evidence_parent / "outside-sentinel.txt"
+        if mode == "outside-link":
+            outside_sentinel.write_text("outside sentinel\n", encoding="utf-8")
         self._write_fake_tools(fake_bin)
         environment = os.environ.copy()
         environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
@@ -1072,9 +1096,12 @@ fi
         environment["REAL_GIT"] = shutil.which("git") or "/usr/bin/git"
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
+        if manifest_directory:
+            environment["IOS_NATIVE_FIXTURE_MANIFEST_DIRECTORY"] = "1"
+        environment["IOS_NATIVE_FIXTURE_OUTSIDE_SENTINEL"] = str(outside_sentinel)
         environment["IOS_NATIVE_FIXTURE_LIPO"] = str(fake_bin / "lipo")
-        environment["NPM_CONFIG_CACHE"] = str(evidence_parent / "npm-cache")
-        environment["CP_CACHE_DIR"] = str(evidence_parent / "pods-cache")
+        environment["NPM_CONFIG_CACHE"] = str((evidence_parent / "npm-cache").resolve())
+        environment["CP_CACHE_DIR"] = str((evidence_parent / "pods-cache").resolve())
         fixture_root = evidence_parent / "repository"
         shutil.copytree(
             ROOT,
@@ -1135,8 +1162,8 @@ fi
         environment["IOS_NATIVE_FIXTURE_MODE"] = "parent-signal"
         environment["IOS_NATIVE_FIXTURE_PARENT_SIGNAL_READY"] = str(ready)
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
-        environment["NPM_CONFIG_CACHE"] = str(evidence_parent / "npm-cache")
-        environment["CP_CACHE_DIR"] = str(evidence_parent / "pods-cache")
+        environment["NPM_CONFIG_CACHE"] = str((evidence_parent / "npm-cache").resolve())
+        environment["CP_CACHE_DIR"] = str((evidence_parent / "pods-cache").resolve())
         fixture_root = evidence_parent / "repository"
         shutil.copytree(
             ROOT,

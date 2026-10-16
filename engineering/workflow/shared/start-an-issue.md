@@ -396,6 +396,48 @@ Steps 1–2 apply to the normal route.
    maps task-neutral where possible, pointing to the active checkpoint for status.
    Preserve unrelated work and unmerged recovery evidence.
 
+### Retain evidence and dispose of owned outputs
+
+Use the existing task/execution and closeout records for the lifecycle of local
+workspaces and generated outputs. At creation, the consumer's actual output owner
+mechanically records the task/attempt, exact path and filesystem identity from the
+same selected definition that creates and validates the output. Do not ask an agent
+to maintain a second inventory. Existing unknown directories are not owned merely
+because their names look familiar, they are ignored, or they are under a temporary
+root. Consumer adapters own build-target, cache, worktree and runtime semantics;
+the optional [worker-output interface](workflow-tools.md#task-output-lifecycle)
+can carry those observations, but does not discover owners or grant authority.
+
+Before disposal, reconcile current assignments and processes. Only an exclusively
+owned regenerable output after verified completion, or a superseded **terminal**
+attempt no longer needed for recovery, can be eligible. Preserve active and paused
+work, live/shared/reused caches, unique uncommitted source, referenced exact-source
+inputs, and selected runtimes/helpers even under temporary roots. A pushed branch
+preserves committed source, not ignored files, logs or unique work. Unknown ownership,
+use or retention blocks that item, not unrelated verified-safe items.
+
+First retain required successful/failed results, raw logs, review/approval and source
+recovery in the project's existing durable evidence area. Verify complete coverage,
+readability and original hashes there. Relocate current required references and
+verify they resolve before removing originals; retain original execution/source/
+environment identities. An incidental historical path mention does not require
+keeping every regenerable cache. Do not repair failed history or attribute a missing
+runtime to cleanup without evidence.
+
+Use the existing closeout route for a dry-run of exact paths, ownership, current
+eligibility, measured sizes and leftover reasons. Recheck path/ancestor identities,
+symlink/escape hazards, protected inputs and retention immediately before authorized
+execution; exclude concurrent writers and activity using the consumer's existing
+mechanism. Prefer recoverable disposal where practical. Permanent deletion of user
+data or uncertain artifacts requires specific authority, not this instruction.
+Record actual per-item outcomes, safe retries and partial failures truthfully.
+An absent owned path is a no-op, not newly reclaimed space; quarantine retains its
+bytes, and logical file sizes do not establish physical disk reclamation. Report
+reclaimed bytes only when measured, otherwise unknown. Retain uncertain leftovers
+with their reasons. No global cache purge, budget, watcher, extra stage or new state
+store is required. Necessary consumer wiring and its normal-path tests remain
+separate from the shared interface; adopting these words alone proves no cleanup.
+
 ### Keep completion records external
 
 Finalize tracked preparation records before freezing the candidate for

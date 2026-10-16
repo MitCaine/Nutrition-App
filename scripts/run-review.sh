@@ -207,7 +207,11 @@ else
     FINAL_ZIP="$OUTPUT_ROOT/nutrition-app-${SAFE_LABEL}-${STAMP}.zip"
 fi
 AUTHORED_HELPER="$REPO_ROOT/scripts/lib/review_commands.py"
-BUNDLE_STAGE="$(make_temp_dir)"
+if [[ $RUN_AUTHORED -eq 1 ]]; then
+    BUNDLE_STAGE=""
+else
+    BUNDLE_STAGE="$(make_temp_dir)"
+fi
 
 AUTHORED_PREPARED=0
 
@@ -219,7 +223,9 @@ cleanup() {
             --reason "runner exited before terminal completion (exit $original_status)" \
             >/dev/null 2>&1 || true
     fi
-    rm -rf "$BUNDLE_STAGE"
+    if [[ $RUN_AUTHORED -eq 0 && -n "$BUNDLE_STAGE" ]]; then
+        rm -rf "$BUNDLE_STAGE"
+    fi
     return "$original_status"
 }
 trap cleanup EXIT
@@ -228,12 +234,26 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 
 if [[ $RUN_AUTHORED -eq 1 ]]; then
-    python3 "$AUTHORED_HELPER" prepare \
-        --request "$COMMANDS_PATH" \
-        --repository "$REPO_ROOT" \
-        --attempt "$ATTEMPT_ID" \
-        --attempt-dir "$RUN_DIR"
-    AUTHORED_PREPARED=1
+    if [[ "${NUTRITION_OUTPUT_OWNER_SESSION:-}" == "1" ]]; then
+        python3 "$REPO_ROOT/scripts/lib/task_output_cleanup.py" verify-owner-session \
+            --attempt-dir "$RUN_DIR"
+        AUTHORED_PREPARED=1
+    else
+        python3 "$AUTHORED_HELPER" prepare \
+            --request "$COMMANDS_PATH" \
+            --repository "$REPO_ROOT" \
+            --attempt "$ATTEMPT_ID" \
+            --attempt-dir "$RUN_DIR"
+        AUTHORED_PREPARED=1
+        python3 "$REPO_ROOT/scripts/lib/task_output_cleanup.py" owner-session \
+            --attempt-dir "$RUN_DIR" -- \
+            "$REPO_ROOT/scripts/run-review.sh" --commands "$COMMANDS_PATH" --attempt "$ATTEMPT_ID"
+        exit "$?"
+    fi
+    BUNDLE_STAGE="$(make_owned_temp_dir \
+        "$RUN_DIR/attempt-state.json" \
+        "$COMMANDS_PATH" \
+        "$REPO_ROOT/scripts/lib/task_output_cleanup.py")"
 else
     ensure_directory "$LOG_DIR"
     ensure_directory "$FAILURE_DIR"

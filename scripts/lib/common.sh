@@ -145,6 +145,15 @@ make_temp_dir() {
     mktemp -d "${TMPDIR:-/tmp}/nutrition-review.XXXXXX"
 }
 
+make_owned_temp_dir() {
+    local owner_record="$1"
+    local request_path="$2"
+    local helper_path="$3"
+    python3 "$helper_path" create-stage \
+        --owner-record "$owner_record" \
+        --request "$request_path"
+}
+
 # ------------------------------------------------------------------------------
 # User interaction
 # ------------------------------------------------------------------------------

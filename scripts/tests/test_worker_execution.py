@@ -50,7 +50,8 @@ def case(tmp_path):
         git(repo, "config", "user.name", "Nutrition fixture")
         git(repo, "config", "user.email", "fixture@example.invalid")
         (repo / "tracked.txt").write_text("before\n")
-    for name in ("scripts/run-review.sh", "scripts/lib/common.sh", "scripts/lib/review_commands.py"):
+    for name in ("scripts/run-review.sh", "scripts/lib/common.sh", "scripts/lib/review_commands.py",
+                 "scripts/lib/task_output_cleanup.py"):
         target = workspace / name
         target.parent.mkdir(exist_ok=True, parents=True)
         shutil.copy2(ROOT / name, target)

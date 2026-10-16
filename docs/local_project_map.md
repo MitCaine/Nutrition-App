@@ -69,6 +69,26 @@ and module source paths. The compatible installed helper dependencies are tree-s
 tree-sitter-markdown 0.5.1. Do not install, upgrade, substitute the producer environment, or infer
 host skill discovery/import registration from local module invocation.
 
+Optional output-cleanup helper revision: `949b838809bcddb01e2cbe161faed6f6f1f705fe`
+
+The separate controller closeout helper is selected only by explicit
+`task output-closeout ... --shared-helper`. Its authenticated output-cleanup checkout
+`/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/949b838809bcddb01e2cbe161faed6f6f1f705fe`
+must remain at the exact clean revision above. Authenticate the complete selected
+import closure before use: `output_cleanup.py` SHA-256:
+`500f09b11db44fea5f8a0ffeafeb922c23138872290281507d9422df93d7f0b7`;
+`worker_execution.py` SHA-256:
+`254fc4ece0c4b5732378903f9941c9d087fb2d636db9208988a813e9f7000676`;
+`adapter_conformance.py` SHA-256:
+`663d62abf07888d6e6c1ce7fcea89bf2a5ecaecb794eb61cb476fc200c024da3`;
+`adoption.py` SHA-256:
+`4d642a3ab03537e398e4aa4506acafc809b921c084cd848a30968a0147a92f98`.
+The helper runs in an isolated subprocess, not through a previously cached import.
+A missing, stale or substituted selected source refuses before action. The public
+consumer-only mode is the default and does not read this optional binding; public
+runner and native creation paths never import it. Keep this binding separate from
+the active e0b82 worker-helper selection and the 20a5039 producer/runtime.
+
 From that exact RI root, use `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
 "/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m
 repository_intelligence.section_reader --help` or
@@ -362,3 +382,12 @@ compare-and-swap route remains mandatory. Apply the selected
 [phase/installed closeout rule](../engineering/workflow/shared/start-an-issue.md#complete-the-phases)
 and local [session-end contract](operations/session-contract.md#session-end) before closure/owned cleanup.
 Record partial closeout when an obligation remains unresolved; never rewrite preserved attempts.
+
+For task-owned generated-output cleanup, use the public `task output-closeout ISSUE
+--execution-record PATH --durable-evidence PATH` dry run after current checkpoint
+verification. Actual quarantine requires `--execute --human-owner-authorized` under
+the explicit owner grant and is recorded as recoverable output closeout; it is distinct
+from legacy `finalize-cleanup` C/R/T recovery. Public cleanup defaults to
+`consumer-only`; opt into the separately authenticated RI949 helper only with
+`--shared-helper`. The selected helper source is documented above and must refuse on
+missing, stale or substituted inputs without falling back.

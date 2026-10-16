@@ -1,5 +1,50 @@
 #!/usr/bin/env bash
 
+# Run this bounded native invocation in a dedicated process group so its owner
+# can distinguish completed stages from surviving producer descendants.
+if test "${IOS_NATIVE_OWNED_PROCESS_GROUP:-0}" != "1"
+then
+  exec python3 - "$0" "$@" <<'PY'
+import signal
+import os
+import subprocess
+import sys
+
+script, *arguments = sys.argv[1:]
+child = None
+pending_signals = []
+
+
+def forward_signal(signum, _frame):
+    if child is None:
+        pending_signals.append(signum)
+        return
+    try:
+        os.killpg(child.pid, signum)
+    except ProcessLookupError:
+        pass
+
+
+for signum in (signal.SIGINT, signal.SIGTERM):
+    signal.signal(signum, forward_signal)
+
+environment = os.environ.copy()
+environment["IOS_NATIVE_OWNED_PROCESS_GROUP"] = "1"
+child = subprocess.Popen(
+    ["/bin/bash", script, *arguments],
+    env=environment,
+    start_new_session=True,
+)
+for signum in pending_signals:
+    forward_signal(signum, None)
+
+result = child.wait()
+if result < 0:
+    result = 128 + -result
+raise SystemExit(result)
+PY
+fi
+
 set -uo pipefail
 
 evidence_dir=""
@@ -50,6 +95,8 @@ then
   exit 2
 fi
 
+evidence_dir_requested="$evidence_dir"
+
 if test "$(uname -s)" != "Darwin"
 then
   echo "IOS_NATIVE_REQUIRES_MACOS" >&2
@@ -72,10 +119,23 @@ fi
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd "$evidence_dir" && pwd -P)"
 
+for existing_evidence in "$evidence_dir"/* "$evidence_dir"/.[!.]* "$evidence_dir"/..?*
+do
+  if test -e "$existing_evidence" || test -L "$existing_evidence"
+  then
+    echo "IOS_NATIVE_EVIDENCE_DIR_NOT_EMPTY" >&2
+    exit 1
+  fi
+done
+
 probe_root="$evidence_dir/Nutrition App Native"
 derived_data="$evidence_dir/DerivedData"
 harness_bin="$evidence_dir/harness-bin"
 manifest="$evidence_dir/manifest.json"
+output_owner="$evidence_dir/native-output-owner.json"
+output_owner_lock_log="$evidence_dir/native-output-owner-lock.log"
+output_owner_lock_pid=""
+output_owner_terminal=0
 timings_file="$evidence_dir/stages.jsonl"
 prebuild_paths="$evidence_dir/prebuild-paths.env"
 dependency_versions="$evidence_dir/dependency-versions.env"
@@ -89,6 +149,14 @@ export IOS_NATIVE_COMPILATION_MODE="$compilation_mode"
 if test -e "$probe_root"
 then
   echo "IOS_NATIVE_PROBE_ALREADY_EXISTS" >&2
+  exit 1
+fi
+
+if test -e "$derived_data" || test -L "$derived_data" ||
+  test -e "$harness_bin" || test -L "$harness_bin" ||
+  test -e "$manifest" || test -L "$manifest"
+then
+  echo "IOS_NATIVE_OUTPUT_ALREADY_EXISTS" >&2
   exit 1
 fi
 
@@ -215,46 +283,66 @@ run_stage() {
 cleanup_stage() {
   local cleanup_exit=0
 
-  if test "$worktree_created" -eq 1 &&
-    git -C "$repo_root" worktree list --porcelain |
-      grep -Fqx "worktree $probe_root"
+  if test -n "$output_owner_lock_pid"
   then
-    if ! git -C "$repo_root" worktree remove \
-      --force \
-      "$probe_root" \
-      > /dev/null \
-      2> "$evidence_dir/worktree-cleanup.stderr"
+    if kill -TERM "$output_owner_lock_pid" 2>/dev/null
     then
+      wait "$output_owner_lock_pid" 2>/dev/null || true
+    fi
+    output_owner_lock_pid=""
+  fi
+
+  if ! test -f "$output_owner"
+  then
+    if test -e "$probe_root" || test -L "$probe_root" ||
+      test -e "$derived_data" || test -L "$derived_data" ||
+      test -e "$harness_bin" || test -L "$harness_bin"
+    then
+      echo "IOS_NATIVE_OUTPUT_OWNER_MISSING" >&2
+      cleanup_exit=1
+    fi
+  elif ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-finish \
+    --owner-record "$output_owner" \
+    --exit-code "$qualifier_exit_status" \
+    --signal-status "$signal_status"
+  then
+    echo "IOS_NATIVE_OUTPUT_OWNER_FINISH_FAILED" >&2
+    cleanup_exit=1
+  else
+    output_owner_terminal=1
+    for output_name in probe derived-data harness-bin
+    do
+      output_operation_id="${native_attempt}-${output_name}"
+      if ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-quarantine-execute \
+        --owner-record "$output_owner" \
+        --name "$output_name" \
+        --operation-id "$output_operation_id"
+      then
+        echo "IOS_NATIVE_OUTPUT_QUARANTINE_FAILED:$output_name" >&2
+        cleanup_exit=1
+      fi
+    done
+    if ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-verify-cleanup \
+      --owner-record "$output_owner"
+    then
+      echo "IOS_NATIVE_OUTPUT_CLEANUP_READBACK_FAILED" >&2
       cleanup_exit=1
     fi
   fi
 
-  if test "$worktree_created" -eq 1
-  then
-    if ! git -C "$repo_root" worktree prune \
-      > /dev/null \
-      2> "$evidence_dir/worktree-prune.stderr"
+  for generated_root in "$probe_root" "$derived_data" "$harness_bin"
+  do
+    if test -e "$generated_root" || test -L "$generated_root"
     then
+      if test ! -e "$evidence_dir/generated-cleanup-failure.txt" &&
+        test ! -L "$evidence_dir/generated-cleanup-failure.txt"
+      then
+        printf '%s\n' "generated root remains after cleanup: $generated_root" \
+          > "$evidence_dir/generated-cleanup-failure.txt"
+      fi
       cleanup_exit=1
     fi
-  fi
-
-  if ! rm -rf "$derived_data"
-  then
-    cleanup_exit=1
-  fi
-
-  if ! rm -rf "$harness_bin"
-  then
-    cleanup_exit=1
-  fi
-
-  if test -e "$probe_root"
-  then
-    printf '%s\n' "probe root remains after cleanup" \
-      > "$evidence_dir/generated-cleanup-failure.txt"
-    cleanup_exit=1
-  fi
+  done
 
   return "$cleanup_exit"
 }
@@ -287,6 +375,7 @@ write_manifest() {
   IOS_NATIVE_MODULE_EVIDENCE_FILE="$module_evidence" \
   IOS_NATIVE_CANDIDATE_BUILD_EVIDENCE_FILE="$candidate_build_evidence" \
   IOS_NATIVE_APPLICATION_LINK_PROOF_FILE="$application_link_proof" \
+  IOS_NATIVE_OUTPUT_OWNER_FILE="$output_owner" \
   python3 - "$timings_file" "$manifest" <<'PY'
 import json
 import os
@@ -408,6 +497,12 @@ application_link_document = document(
     "IOS_NATIVE_APPLICATION_LINK_PROOF_FILE",
     {},
 )
+output_owner_document = document("IOS_NATIVE_OUTPUT_OWNER_FILE", {})
+output_ownership = output_owner_document.get("output_ownership") if isinstance(output_owner_document, dict) else None
+if isinstance(output_ownership, dict):
+    output_ownership = dict(output_ownership)
+    # The final manifest is retained by the owner after this stable snapshot is written.
+    output_ownership.pop("retained", None)
 manifest = {
     "schema_version": 1,
     "profile": "ios-native",
@@ -460,6 +555,7 @@ manifest = {
     "module_evidence": module_document,
     "candidate_build_evidence": candidate_build_document,
     "application_link_proof": application_link_document,
+    "output_ownership": output_ownership,
     "stages": stages,
     "total": {
         "elapsed_seconds": int(os.environ["IOS_NATIVE_TOTAL_ELAPSED"]),
@@ -549,6 +645,29 @@ on_exit() {
     cleanup_done=1
   fi
 
+  # cleanup_stage runs through run_stage's subshell. Re-read the Nutrition
+  # owner record in this shell so final-manifest retention is gated by the
+  # persisted terminal state, not a child-shell variable assignment.
+  if test "$cleanup_exit" -eq 0 && test -f "$output_owner" &&
+    python3 -c 'import json,sys; raise SystemExit(0 if json.load(open(sys.argv[1], encoding="utf-8")).get("output_ownership", {}).get("state") == "completed" else 1)' \
+      "$output_owner"
+  then
+    output_owner_terminal=1
+  fi
+
+  if test "$output_owner_terminal" -eq 1
+  then
+    if ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-refresh-retained \
+      --owner-record "$output_owner" ||
+      ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-verify-cleanup \
+        --owner-record "$output_owner"
+    then
+      cleanup_exit=1
+      evidence_retention_failure=1
+      echo "IOS_NATIVE_OUTPUT_EVIDENCE_READBACK_FAILED" >&2
+    fi
+  fi
+
   if test "$qualifier_exit_status" -eq 0 &&
     test "$cleanup_exit" -ne 0
   then
@@ -584,6 +703,34 @@ on_exit() {
     if test "$qualifier_exit_status" -eq 0
     then
       qualifier_exit_status=1
+    fi
+  fi
+
+  if test "$output_owner_terminal" -eq 1
+  then
+    if ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-refresh-retained \
+      --owner-record "$output_owner" ||
+      ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-verify-cleanup \
+        --owner-record "$output_owner"
+    then
+      evidence_retention_failure=1
+      echo "IOS_NATIVE_FINAL_MANIFEST_READBACK_FAILED" >&2
+      if test "$qualifier_exit_status" -eq 0
+      then
+        qualifier_exit_status=1
+      fi
+      # Do not leave a PASS manifest when the final owner readback failed.
+      if ! write_manifest "$qualifier_exit_status"
+      then
+        echo "IOS_NATIVE_FAILURE_MANIFEST_WRITE_FAILED" >&2
+      fi
+      if ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-refresh-retained \
+        --owner-record "$output_owner" ||
+        ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-verify-cleanup \
+          --owner-record "$output_owner"
+      then
+        echo "IOS_NATIVE_FAILURE_MANIFEST_READBACK_FAILED" >&2
+      fi
     fi
   fi
 
@@ -2116,6 +2263,68 @@ swift_harnesses_stage() {
 
 mobile="$probe_root/apps/mobile"
 
+commit="$(git -C "$repo_root" rev-parse HEAD)"
+export IOS_NATIVE_COMMIT="$commit"
+export IOS_NATIVE_RUNNER="$runner"
+
+native_npm_cache_path="${npm_config_cache:-${NPM_CONFIG_CACHE:-}}"
+if test -z "$native_npm_cache_path"
+then
+  if ! native_npm_cache_path="$(npm config get cache)" || test -z "$native_npm_cache_path"
+  then
+    echo "IOS_NATIVE_NPM_CACHE_UNAVAILABLE" >&2
+    qualifier_exit_status=1
+    exit 1
+  fi
+fi
+native_cocoapods_cache_path="${CP_CACHE_DIR:-${HOME}/Library/Caches/CocoaPods}"
+if test -z "$native_cocoapods_cache_path"
+then
+  echo "IOS_NATIVE_COCOAPODS_CACHE_UNAVAILABLE" >&2
+  qualifier_exit_status=1
+  exit 1
+fi
+
+if python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-init \
+  --evidence "$evidence_dir" \
+  --repository "$repo_root" \
+  --commit "$commit" \
+  --npm-cache "$native_npm_cache_path" \
+  --cocoapods-cache "$native_cocoapods_cache_path" \
+  --generated-root "$mobile/node_modules" \
+  --generated-root "$mobile/ios"
+then
+  true
+else
+  echo "IOS_NATIVE_OUTPUT_OWNER_INITIALIZATION_FAILED" >&2
+  qualifier_exit_status=1
+  exit 1
+fi
+native_attempt="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["output_ownership"]["attempt"])' "$output_owner")"
+python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-hold \
+  --owner-record "$output_owner" > "$output_owner_lock_log" 2>&1 &
+output_owner_lock_pid="$!"
+output_owner_lock_ready=0
+for lock_wait in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20
+do
+  if grep -Fqx "READY" "$output_owner_lock_log"
+  then
+    output_owner_lock_ready=1
+    break
+  fi
+  if ! kill -0 "$output_owner_lock_pid" 2>/dev/null
+  then
+    break
+  fi
+  sleep 0.1
+done
+if test "$output_owner_lock_ready" -ne 1
+then
+  echo "IOS_NATIVE_OUTPUT_OWNER_LOCK_FAILED" >&2
+  qualifier_exit_status=1
+  exit 1
+fi
+
 capture_toolchain
 stage_exit="$?"
 if test "$stage_exit" -ne 0
@@ -2128,10 +2337,6 @@ then
   fi
   exit "$qualifier_exit_status"
 fi
-
-commit="$(git -C "$repo_root" rev-parse HEAD)"
-export IOS_NATIVE_COMMIT="$commit"
-export IOS_NATIVE_RUNNER="$runner"
 
 git -C "$repo_root" worktree add \
   --detach \
@@ -2151,6 +2356,14 @@ then
   exit "$qualifier_exit_status"
 fi
 worktree_created=1
+if ! python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-bind-worktree \
+  --owner-record "$output_owner" \
+  --head "$commit"
+then
+  echo "IOS_NATIVE_WORKTREE_RECEIPT_BIND_FAILED" >&2
+  qualifier_exit_status=1
+  exit 1
+fi
 
 case "$probe_root" in
   *" "*)

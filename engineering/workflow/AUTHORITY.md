@@ -38,6 +38,13 @@ fabricate that authenticated comment or a passed check.
   evidence through the existing runner. It does not authenticate authority, determine test adequacy,
   accept a candidate, verify it, approve it or integrate it. Mandatory and advisory outcomes, source
   drift and incomplete attempts retain their documented evidence semantics in the testing guide.
+- `task output-closeout ISSUE --execution-record PATH --durable-evidence PATH` reads the current
+  owner-bound creation receipt and checkpoint and defaults to a per-output dry run. Execution requires
+  explicit `--execute --human-owner-authorized`, live terminal/current-reference validation and a
+  recoverable quarantine intent under the existing issue transaction. `--shared-helper` explicitly
+  selects the separate optional RI949 source; consumer-only mode remains the public default. This route
+  does not adopt unreceipted paths, authorize native cache removal, replace `finalize-cleanup`, or alter
+  qualification, review, approval or integration authority.
 - `task rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2`
   handles an authorized corrected candidate under the canonical
   [state, concurrency and recovery rules](#state-concurrency-and-recovery).
@@ -88,6 +95,16 @@ exact-operation reconciliation path without redispatch. Integration pending and 
 also revalidate the current candidate-bound qualification, verification, review and owner
 authority before persisting a transition. Finalize/cancel/cleanup intents use the same
 read-modify-write contract and preserve newer fields, stops and history.
+
+Task-output closeout is a separate synchronous per-item recovery operation. It holds the
+creation owner's process lock, copies and authenticates the full retained evidence closure,
+then persists current-reference and pending-operation bindings through the same issue lock.
+Immediately before a move it rereads terminal disposition, current reference, operation intent,
+filesystem identity, protected inputs and retained hashes under that transaction. It quarantines
+to a new same-filesystem path and records zero physical reclamation; unknown or interrupted
+locations remain pending for exact-location reconciliation. Native linked roots and registered
+worktrees use the public Nutrition non-following route and cannot become PASS until cleanup and
+retained evidence both verify.
 
 Authorization publication uses that same issue lock and checkpoint. New preparation records
 explicitly record that publication has not started. Before posting, `task authorize` persists

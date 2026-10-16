@@ -170,19 +170,40 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "live GH-305" not in provenance
 
     current_resources = {
-        'start-an-issue.md': (37944, '6883453f1481a2374bb6b6ba11c144bff5990c315e1b7111c33ce921a1cf763d'),
-        'worker-instructions.md': (20609, '4ce69c3ced5bc75ed41788a299b5ac263ac75c84fd5cd4d6bcbdfc8397e99b71'),
         'capsule-controller-workflow.md': (16877, '48d1ac88e64bd95c2d29246cbe477c15b9371d8da44f9e2e7366ce50e1798091'),
         'new-project-setup.md': (19392, '98f0a7d9fcc69d38f2b545be8965e30d1a100ba8c81d3bd43764814a3df483d1'),
         'skill-templates/README.md': (9035, 'cb50bd75af739d20ba8f4fa23ee8a49a43cdf75078b8c7872dcd5b4667f53d71'),
         'skill-templates/capsule-queue/SKILL.md': (2029, '584ab90dbc121fd7119d363c5a013d9a42b9ce40dbeb4955137f47dd5d9d0b1f'),
-        'workflow-tools.md': (28257, '078ff071c077b547afb6f69b157b119caa263ea01e03715bca8b7fadeb573872'),
     }
     for name, (size, digest) in current_resources.items():
         data = (shared / name).read_bytes()
         assert len(data) == size
         assert hashlib.sha256(data).hexdigest() == digest
         assert name in provenance and digest in provenance
+
+    # GH-420 adds an explicitly selected lifecycle section to three otherwise
+    # RI685-selected files. Their original RI685 provenance remains above;
+    # these hashes bind the resulting local files after the bounded additions.
+    lifecycle_resources = {
+        'start-an-issue.md': (40896, '63296e0880573b2d0fe52fe2892797b166672514406ed9b332cb503fb8e2402b'),
+        'worker-instructions.md': (20894, '0e735e279dd4db6f2d2aaed68fb7f4d22ea8346eff0ed77fec2f12ef1fabe6e2'),
+        'workflow-tools.md': (33358, '07f03261d479ba73ce0eecb714deeb3de2f8875917048239bb4484db007e0ad6'),
+    }
+    for name, (size, digest) in lifecycle_resources.items():
+        data = (shared / name).read_bytes()
+        assert len(data) == size
+        assert hashlib.sha256(data).hexdigest() == digest
+        assert digest in provenance
+    assert "### Separately selected task-output lifecycle source (GH-420)" in provenance
+    assert "the current general RI instruction selection remains `685a2584a38cbc23286eda9c11a0404835059773`" in normalized_provenance
+    assert "Optional output-cleanup helper revision: `949b838809bcddb01e2cbe161faed6f6f1f705fe`" in local_map
+    for digest in (
+        "500f09b11db44fea5f8a0ffeafeb922c23138872290281507d9422df93d7f0b7",
+        "254fc4ece0c4b5732378903f9941c9d087fb2d636db9208988a813e9f7000676",
+        "663d62abf07888d6e6c1ce7fcea89bf2a5ecaecb794eb61cb476fc200c024da3",
+        "4d642a3ab03537e398e4aa4506acafc809b921c084cd848a30968a0147a92f98",
+    ):
+        assert digest in provenance and digest in local_map
 
     assert "docs/workflow-tools.md" in provenance
     assert "Both complete kickoff folders were inventoried" in normalized_provenance
