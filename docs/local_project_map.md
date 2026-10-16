@@ -57,7 +57,7 @@ direct inspection supplements required operation evidence. Documentation-only ma
 Optional helper source revision: `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`
 
 Optional section-reader and adoption helpers are separate from producer/runtime `20a5039` and are
-selected from the authenticated RI checkout `/Users/mipoo/Projects/Repository Intelligence` at
+selected from the authenticated RI checkout `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/e0b82f52cdd728b4ef80986a3541fc8f1d07486a` at
 revision `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`. Before use, confirm that exact HEAD and a clean
 worktree, then authenticate imports with the existing
 `/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python` (Python 3.14.8), `PYTHONPATH=src`,
@@ -65,26 +65,38 @@ and module source paths. The compatible installed helper dependencies are tree-s
 tree-sitter-markdown 0.5.1. Do not install, upgrade, substitute the producer environment, or infer
 host skill discovery/import registration from local module invocation.
 
-From that exact RI root, use `PYTHONPATH=src .venv/bin/python -m
+From that exact RI root, use `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
+"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m
 repository_intelligence.section_reader --help` or
-`PYTHONPATH=src .venv/bin/python -m repository_intelligence.adoption --help`; request execution is
-`PYTHONPATH=src .venv/bin/python -m repository_intelligence.section_reader --request
+`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
+"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m repository_intelligence.adoption --help`; request execution is
+`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
+"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m repository_intelligence.section_reader --request
 /absolute/path/selection.json` and
-`PYTHONPATH=src .venv/bin/python -m repository_intelligence.adoption --request
+`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
+"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m repository_intelligence.adoption --request
 /absolute/path/inventory.json --mode preview|verify|apply`. Supply authenticated exact-source requests
 and retain results in the existing task evidence location. Apply only under existing task authority,
 after complete inventory validation and preview inspection. Incomplete reads, preview differences,
 unavailable filesystem capabilities and refusals remain explicit; they do not authorize substitution
 or dependency installation.
 
-Instruction source now includes optional generated execution, but Nutrition has not selected
-automatic runner-owned inventory export, generation wiring or immutable helper provisioning.
+These revision-specific standalone checkouts are retained exact source bindings: never switch
+or repoint them; provision a new revision directory under explicit task authority when needed.
+Their tracked bytes are authenticated at use, not protected by filesystem immutability. The shared
+RI development checkout may advance without changing either source. Controller provisioning is
+separate from wrapper execution; no loader installs or updates sources. Existing helper requests
+keep their original bound source; only new preparation selects the current map.
+
+Nutrition has not selected automatic runner-owned inventory export, generation wiring or
+automatic helper/runtime provisioning.
 The existing authored-input/TOOLS inventory remains explicit; shared source adoption and
 fixtures do not prove normal-route consumer integration. Helper source selection remains
 separate from future instruction intake; preparation reads its explicit pin above.
 
 Optional worker-execution linkage is discoverable from that same selected source with
-`PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --help`.
+`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
+"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m repository_intelligence.worker_execution --help`.
 Its [binding contract](../engineering/workflow/shared/workflow-tools.md#prepared-worker-execution-linkage)
 is the authority for required consumer inputs. Nutrition's optional
 [`scripts/worker-execution`](../scripts/worker-execution) binding is selected only when named in an
@@ -99,7 +111,7 @@ retains publication, qualification, independent review, approval, integration an
 ### Selected native dispatch decision binding
 
 Native dispatch guard source revision: `00117a3b216b089e1e3a0a693c83efab9dcf12f0`
-Native dispatch guard source checkout: `/Users/mipoo/Projects/Repository Intelligence`
+Native dispatch guard source checkout: `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/00117a3b216b089e1e3a0a693c83efab9dcf12f0`
 
 For selected native Work worker launch/resumption transitions, the controller uses
 [`scripts/native-dispatch`](../scripts/native-dispatch) before recording running or entering

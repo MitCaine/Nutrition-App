@@ -276,10 +276,9 @@ def test_summary_pass_text_does_not_override_actual_required_failure(case, adapt
 
 @pytest.fixture
 def shared(adapter):
-    try:
-        adapter.selected_ri()
-    except (OSError, adapter.native.RequestError, ModuleNotFoundError) as error:
-        pytest.skip("Selected private RI helper is unavailable: " + str(error))
+    if not Path(adapter.map_selection()["repository"]).is_dir():
+        pytest.skip("Selected private RI source is not provisioned on this host")
+    adapter.selected_ri()  # A present but wrong/dirty/substituted source must fail.
 
 
 def test_public_prepare_capture_native_runner_generated_return_and_retry(case, shared):
@@ -371,3 +370,109 @@ def test_helper_selection_is_independent_of_future_instruction_pin(adapter, monk
     )
     monkeypatch.setattr(adapter, "ROOT", tmp_path)
     assert adapter.map_selection() == {"repository": "/selected/helper", "revision": "b" * 40}
+
+
+@pytest.fixture
+def selected_source_fixture(tmp_path):
+    """Isolated source identity controls, not a live helper execution route."""
+    source = tmp_path / "selected source"
+    source.mkdir()
+    git(source, "init", "-q")
+    git(source, "config", "user.name", "Source fixture")
+    git(source, "config", "user.email", "fixture@example.invalid")
+    package = source / "src/repository_intelligence"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    for name in ("adoption", "worker_execution", "adapter_conformance"):
+        (package / (name + ".py")).write_text("MARKER = 'source fixture'\n")
+    (package / "dispatch_guard.py").write_text("def decide(expected, observed):\n    return {}\n")
+    git(source, "add", ".")
+    git(source, "commit", "-qm", "selected fixture")
+    return source, git(source, "rev-parse", "HEAD")
+
+
+def _fixture_imports(adapter, monkeypatch, source, substitute=False):
+    from types import SimpleNamespace
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    def load(name):
+        path = source / "src/repository_intelligence" / (name.rsplit(".", 1)[-1] + ".py")
+        if substitute and name.endswith(".adoption"):
+            path = source / "substituted.py"
+        return SimpleNamespace(__file__=str(path))
+    monkeypatch.setattr(adapter.importlib, "import_module", load)
+
+
+def _fixture_guard(monkeypatch, tmp_path, source, revision):
+    spec = importlib.util.spec_from_file_location("fixture_native_source", ROOT / "scripts/native_dispatch.py")
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+    project = tmp_path / "map"
+    (project / "docs").mkdir(parents=True)
+    (project / "docs/local_project_map.md").write_text(
+        f"Native dispatch guard source revision: `{revision}`\n"
+        f"Native dispatch guard source checkout: `{source}`\n")
+    monkeypatch.setattr(guard, "ROOT", project)
+    return guard
+
+
+def test_incompatible_shared_location_refuses_before_dependent_dispatch(adapter, monkeypatch, tmp_path, selected_source_fixture):
+    source, helper_revision = selected_source_fixture
+    (source / "later.txt").write_text("new shared HEAD\n")
+    git(source, "add", ".")
+    git(source, "commit", "-qm", "later shared revision")
+    guard = _fixture_guard(monkeypatch, tmp_path, source, git(source, "rev-parse", "HEAD"))
+    guard.selected_guard()
+    with pytest.raises(adapter.native.RequestError, match="HEAD differs"):
+        adapter.selected_ri(dict(repository=str(source), revision=helper_revision))
+
+
+@pytest.mark.parametrize("failure", ["wrong_revision", "dirty", "import", "bytes"])
+def test_helper_source_identity_refusals_remain_enforced(adapter, monkeypatch, selected_source_fixture, failure):
+    source, revision = selected_source_fixture
+    _fixture_imports(adapter, monkeypatch, source, substitute=failure == "import")
+    expected = "HEAD differs" if failure == "wrong_revision" else "dirty" if failure == "dirty" else "Substituted helper import" if failure == "import" else "Helper bytes differ"
+    if failure == "wrong_revision":
+        revision = "0" * 40
+    elif failure == "dirty":
+        (source / "unexpected.txt").write_text("dirty\n")
+    elif failure == "bytes":
+        path = "src/repository_intelligence/adoption.py"
+        git(source, "update-index", "--assume-unchanged", path)
+        (source / path).write_text("MARKER = 'changed bytes'\n")
+        assert not git(source, "status", "--porcelain")
+    with pytest.raises(adapter.native.RequestError, match=expected):
+        adapter.selected_ri(dict(repository=str(source), revision=revision))
+
+
+@pytest.mark.parametrize("failure", ["wrong_revision", "dirty", "bytes"])
+def test_guard_source_identity_refusals_remain_enforced(monkeypatch, tmp_path, selected_source_fixture, failure):
+    source, revision = selected_source_fixture
+    if failure == "wrong_revision":
+        revision = "0" * 40
+    elif failure == "dirty":
+        (source / "unexpected.txt").write_text("dirty\n")
+    else:
+        path = "src/repository_intelligence/dispatch_guard.py"
+        git(source, "update-index", "--assume-unchanged", path)
+        (source / path).write_text("raise AssertionError('must not execute changed module')\n")
+        assert not git(source, "status", "--porcelain")
+    guard = _fixture_guard(monkeypatch, tmp_path, source, revision)
+    with pytest.raises(ValueError, match="HEAD differs|dirty|module differs"):
+        guard.selected_guard()
+
+
+def test_real_map_helper_and_guard_are_jointly_loadable(adapter):
+    """Actual selected sources; absent private provisioning is explicit on CI."""
+    import native_dispatch as guard
+    text = (ROOT / "docs/local_project_map.md").read_text()
+    helper = adapter.map_selection()
+    location = re.search(r"Native dispatch guard source checkout: `([^`]+)`", text).group(1)
+    if not Path(helper["repository"]).is_dir() or not Path(location).is_dir():
+        pytest.skip("Private helper/guard sources are not provisioned on this host")
+    assert Path(helper["repository"]) != Path(location)
+    heads = [git(Path(p), "rev-parse", "HEAD") for p in (helper["repository"], location)]
+    module, paths = adapter.selected_ri()
+    selected = guard.selected_guard()
+    assert str(module.__file__) == str(paths[1])
+    assert Path(selected.__file__).is_relative_to(location)
+    assert heads == [git(Path(p), "rev-parse", "HEAD") for p in (helper["repository"], location)]

@@ -208,8 +208,8 @@ telemetry system, and native tools do not enforce use of the helper. Requested W
 launch acceptance, observed activity, terminal result and effective telemetry remain separate.
 Consumer record/transition tests and actual selected native usage have distinct proof limits;
 synthetic predicates alone prove neither native delivery nor idle wake-up. No watcher/poll loop,
-extra acknowledgement/release stage or product-command gate is added. Automatic execution inventory
-and immutable helper provisioning remain separate unimplemented mechanisms.
+extra acknowledgement/release stage or product-command gate is added. Automatic execution inventory and automatic provisioning remain unselected. The map separately
+selects controller-provisioned revision-specific source checkouts; loaders still refuse drift.
 
 ### Prepared worker execution binding
 
@@ -255,7 +255,12 @@ The adopted helper's process timeout and recovery limits still apply. Controller
 `ri_source` against its selected map, then binds the original request, handoff inputs, wrapper,
 interpreter, native runner files and selected RI module bytes. Worker `run` uses that prepared source
 selection without loading or hashing controller-only map/instruction documents.
-The existing clean RI source must match the map selection; no installation or runtime upgrade occurs.
+The existing clean RI source must match the map selection. Optional helper and native guard use
+their separate revision-specific source checkouts in the map, so one shared mutable HEAD is not a
+joint prerequisite. Controller-authorized provisioning happens before dependent preparation or
+guarded launch; the wrappers never install, switch, repair or update sources. Do not rewrite an
+existing request to the new map: retain its source selection and reconcile it explicitly. The
+prepared interpreter remains separate from these source directories; no runtime upgrade occurs.
 Bindings changing these selected inputs require explicit reconciliation and a fresh attempt, not
 repreparation over retained evidence. Tasks editing the native runner or binding tools use another
 supported route or an explicitly selected stable tool source; they cannot silently rebind active inputs.

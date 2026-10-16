@@ -130,3 +130,10 @@ authentication, dry-run behavior, state-file handling, and rerun guarantees.
 
 Historical attached evidence/launcher readers live under `scripts/lib/legacy_ri/` only
 for paused records and C/R/T recovery. New work does not use their packet or report gates.
+
+Selected helper source preparation is documented in the [local map](../docs/local_project_map.md#runtime)
+and [binding contract](../docs/operations/testing.md#prepared-worker-execution-binding). The optional
+worker helper and native guard load separate revision-specific source checkouts; neither command
+provisions or follows the mutable RI development checkout. New requests copy the selected map
+binding, while retained requests keep their original source and evidence. Source/authentication
+failure blocks dependent use before launch; it is not permission to weaken checks or retry.

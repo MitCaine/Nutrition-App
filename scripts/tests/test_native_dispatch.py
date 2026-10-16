@@ -110,10 +110,12 @@ def test_rejection_and_ambiguous_inventory_do_not_become_wait():
 
 
 def test_selected_guard_consumes_consumer_projection_when_private_source_available():
-    try:
-        guard = consumer.selected_guard()
-    except (OSError, ValueError):
-        pytest.skip("Explicit private guard checkout is unavailable at selected revision")
+    import re
+    selection = (ROOT / "docs/local_project_map.md").read_text()
+    location = re.search(r"Native dispatch guard source checkout: `([^`]+)`", selection).group(1)
+    if not Path(location).is_dir():
+        pytest.skip("Selected private guard source is not provisioned on this host")
+    guard = consumer.selected_guard()  # Present source drift is a failure, not a skip.
     checkpoint, record, worker = case()
     selection, observation = consumer.project(checkpoint, record, "/original/native.json")
     assert guard.decide(selection, observation)["may_wait"] is True
