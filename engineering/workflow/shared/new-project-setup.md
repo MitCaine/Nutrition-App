@@ -1,7 +1,7 @@
 # Set up RI in a project
 
 Use the [controller workflow](capsule-controller-workflow.md) for RI-assisted
-capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/00117a3b216b089e1e3a0a693c83efab9dcf12f0/docs/consumer-guide.md) for ordinary navigation.
+capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/685a2584a38cbc23286eda9c11a0404835059773/docs/consumer-guide.md) for ordinary navigation.
 RI does not require an execution framework or every optional skill to be installed.
 
 ## Minimal setup
@@ -38,6 +38,60 @@ Use the existing record; no extra mandatory artifact is needed.
 
 Once setup is adopted, direct new issue controllers to [Start an issue](start-an-issue.md)
 and `docs/local_project_map.md`. Do not repeat adoption or installation for each task.
+
+## Instruction ownership and handoffs
+
+RI owns the shared controller/worker duties, six-heading capsule, source discovery,
+correction, evidence and independent-review rules. A consumer map binds the selected
+revisions and usable runtime/tools, settings, permissions, storage and applicable
+local requirements. Keep genuine domain contracts and project qualification local;
+link to the selected shared rules rather than copying them into a second procedure.
+
+At adoption, classify existing guidance: **keep local** for project/domain contracts;
+**reference RI** for shared behavior; **move shared** only when genuinely reusable;
+**retire obsolete** only after its replacement and incoming references are verified.
+Preserve frozen history and active selections. Measure complete mandatory reading
+per role, including required locators and linked sections, not the map's line count.
+Conditional detail is read when applicable; a navigation link is not an instruction
+to load every linked document. This setup reference is not additional worker intake.
+
+| Actor | Required inputs at its selected revision | Conditional local detail |
+| --- | --- | --- |
+| Controller | Project map, complete controller procedure, live issue and required decisions/instructions | Domain, command and recovery sections needed for the selected task/route |
+| Capsule builder | Shared worker rules, builder section, [capsule format](start-an-issue.md#capsule-format), original requirements/decisions and supplied source | Applicable domain contracts, callers/tests and proof prerequisites |
+| Implementor | Shared worker rules, implementor section, complete accepted capsule or maintenance handoff, supplied source pointers/standards | Relevant source/callers/tests/contracts and affected recovery sections; not issue-history reconstruction |
+| Independent reviewer | Shared worker rules, reviewer section, original requirements, exact task/candidate/full diff and real evidence | Applicable domain standards, due-stage obligations and affected callers |
+| Dispatcher | Its kickoff locator when used, shared worker rules, dispatcher section and complete authorized handoff | Map selection and setup fields needed to authenticate its own source, route and authority; not controller intake |
+
+The controller's handoff identifies the role/assignment, selected instructions and
+applicable local sections, accepted route and consequential settled decisions.
+Reference authoritative selected tool outputs for mechanically known inputs,
+source identities and evidence locations rather than manually retelling inventories.
+Authenticate those results against the selected source/route; tools cannot decide
+product intent, applicability or acceptance. If the selected tool cannot supply a
+required fact, expose that gap through existing scope/readiness rules rather than
+invent a value or imply an unselected integration works. No new packet is required.
+Receiver duties live in [Shared worker rules](worker-instructions.md#shared-worker-rules):
+identity alone is not comprehension. Use existing assignment notes, sketch or terminal
+handoff, not an extra acknowledgment/approval round.
+
+Examples using the same existing records and authenticated references:
+
+- **Normal:** “Implementor; read selected Shared worker rules and Implementor,
+  accepted TASK and linked local standards. Use its bound source-query output and
+  authoritative runner request. Retain the settled compatibility choice and
+  original outcome IDs; report missing decisions before dependent edits.”
+- **Correction:** “Same implementation actor and selected instructions; address
+  retained finding F with the full accepted outcome set. Use the bound recovery
+  source and changed execution inputs; preserve eligible earlier evidence under
+  its original identities. Return the affected results through the existing route.”
+- **Replacement:** “Recover assignment A at its retained instruction/source identity;
+  authenticate the original job's state before takeover. Read the complete accepted
+  task and retained findings, preserve completed work and prior limits, then perform
+  only the authorized next action. Do not inherit another issue's approval.”
+
+Supply actual accessible references/identities in place of these examples; a role
+label or a tool link alone does not establish delivered inputs or understanding.
 
 ## Kickoff inputs and selected configuration
 
@@ -245,13 +299,7 @@ Use `docs/local_project_map.md` in every consumer project. Keep it short:
   grant, candidate capture/publication and integration/issue actions.
 - Supported completion route and existing active-task/checkpoint location.
 
-RI owns reusable workflow behavior; consumers own concrete configuration,
-commands, permissions, domain contracts and genuinely different acceptance
-requirements. Give each instruction one authoritative home. Consumer summaries
-link to selected RI sections rather than repeat their procedural prose; reference
-project-owned requirements at their local owners. This map holds local bindings,
-not a second shared workflow. During migration, reconcile
-an existing map into this file, repair incoming links, and leave old map locations
-as pointers where needed; do not keep two authoritative maps. Preserve active
-frozen task identities and historical records. Do not repin an active attempt
-silently or infer authority from the map's mere presence.
+Follow [instruction ownership and handoffs](#instruction-ownership-and-handoffs)
+when reconciling an existing map. Repair incoming links and leave old map locations
+as pointers where needed; do not keep two authoritative maps. Preserve frozen task
+identities and historical records; map presence supplies no task authority.

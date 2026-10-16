@@ -2,7 +2,7 @@
 
 Use the [shared six-heading format](../workflow/shared/start-an-issue.md#capsule-format)
 with the [local map](../../docs/local_project_map.md) for the normal route. A controller-confirmed
-eligible mechanical change may use the same `engineering/tasks/TASK-ID.md` record for a brief
+eligible bounded change may use the same `engineering/tasks/TASK-ID.md` record for a brief
 maintenance handoff with `## Objective`, `## Exact base`, `## Allowed changes`, `## Required checks`,
 `## Return destination`, and `## Controller eligibility` sections. Record one full 40- or
 64-character hexadecimal commit ID, a concrete stable return locator, and the exact line
@@ -74,20 +74,13 @@ the existing verification evidence field and does not replace qualification or r
 
 ## Handoff and closeout
 
-Provide the controller with the complete selected daily procedure. Provide each worker with
-Shared worker rules and its assigned unique level-two section of
-[`worker-instructions.md`](../workflow/shared/worker-instructions.md#role-index), read
-through the next level-two heading or end of file, plus the needed map sections, task, applicable
-standards, exact source/diff and real evidence. Give an initial builder the original objective/base
-and requirements without a future capsule; implementors and reviewers receive the accepted capsule.
-Return changed paths, tested source/commands/environment,
-results/skips, unresolved findings and next permitted action. The Work controller directly
-dispatches the capsule builder and distinct independent reviewer. The owner-designated Codex
-dispatcher authenticates the accepted implementation handoff and launches one implementor;
-workers do not recruit. Use supported blocking completion while an assignment is active unless
-its exact idle-wake route is verified. A terminal result already delivered can be consumed
-immediately without idle-wake proof. Queue is conditional on a supported observer and verified
-delivery.
+Use the selected [role index](../workflow/shared/worker-instructions.md#role-index) and
+[ownership/handoff contract](../workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs).
+The controller supplies the selected role/assignment/route, applicable local sections and
+consequential settled decisions. Bind known source/input/evidence facts by accessible references
+to actual selected query, runner and checkpoint outputs; record unavailable facts as gaps.
+Use existing assignment notes/sketch/terminal handoff for receiver role/outcome understanding
+and conflicting/missing inputs, including correction/replacement; no new acknowledgment stage.
 
 Follow the selected [completion-record rule](../workflow/shared/start-an-issue.md#keep-completion-records-external)
 for tracked preparation timing and later operational evidence.

@@ -153,7 +153,7 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
     normalized_provenance = " ".join(provenance.split())
-    current_revision = "00117a3b216b089e1e3a0a693c83efab9dcf12f0"
+    current_revision = "685a2584a38cbc23286eda9c11a0404835059773"
 
     assert f"future task intake is pinned at {current_revision}" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
@@ -170,13 +170,13 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "live GH-305" not in provenance
 
     current_resources = {
-        'start-an-issue.md': (38826, 'b245040a902f005f42f74ce1c87478eb8601b0725460e7953b5a9caef341c59e'),
-        'worker-instructions.md': (20114, '3e2034f277c0ca63dccb95498928d37b7cd5e82e6192a922ab0bbcbf3722dddf'),
-        'capsule-controller-workflow.md': (16743, '7219600a824a31e0807577f115e776ba246b8b42e9642da06585bfbfd069e717'),
-        'new-project-setup.md': (15446, 'b637de0f44b8f60c3a3b4f1c3b1f27311d1a77bc65025d827e4833d89409bb07'),
-        'skill-templates/README.md': (9019, 'a764511247c0bf6694c07b0841a81c85cd14e68333d05e3dec14026668740cf3'),
-        'skill-templates/capsule-queue/SKILL.md': (2029, '0be84dec1f281acd224e532520ff0d413df573f4aa43f06ce17ac710a96e3c6c'),
-        'workflow-tools.md': (28257, 'a8704665a127682bbd3e80a9e451f5f9a43858f6e6bdb2fd6daf68d353396c94'),
+        'start-an-issue.md': (37944, '6883453f1481a2374bb6b6ba11c144bff5990c315e1b7111c33ce921a1cf763d'),
+        'worker-instructions.md': (20609, '4ce69c3ced5bc75ed41788a299b5ac263ac75c84fd5cd4d6bcbdfc8397e99b71'),
+        'capsule-controller-workflow.md': (16877, '48d1ac88e64bd95c2d29246cbe477c15b9371d8da44f9e2e7366ce50e1798091'),
+        'new-project-setup.md': (19392, '98f0a7d9fcc69d38f2b545be8965e30d1a100ba8c81d3bd43764814a3df483d1'),
+        'skill-templates/README.md': (9035, 'cb50bd75af739d20ba8f4fa23ee8a49a43cdf75078b8c7872dcd5b4667f53d71'),
+        'skill-templates/capsule-queue/SKILL.md': (2029, '584ab90dbc121fd7119d363c5a013d9a42b9ce40dbeb4955137f47dd5d9d0b1f'),
+        'workflow-tools.md': (28257, '078ff071c077b547afb6f69b157b119caa263ea01e03715bca8b7fadeb573872'),
     }
     for name, (size, digest) in current_resources.items():
         data = (shared / name).read_bytes()
@@ -1325,7 +1325,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "00117a3b216b089e1e3a0a693c83efab9dcf12f0/docs/skill-templates/capsule-queue/")
+              "685a2584a38cbc23286eda9c11a0404835059773/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1339,7 +1339,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "00117a3b216b089e1e3a0a693c83efab9dcf12f0"
+    revision = "685a2584a38cbc23286eda9c11a0404835059773"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     import html
@@ -1365,7 +1365,7 @@ def test_selected_optional_upstream_relocations_are_pinned_and_declared():
         assert f"https://github.com/MitCaine/repository-intelligence/blob/{revision}/{path}" in templates
     # Exact current rows must match upstream identities; historical rows cannot satisfy them.
     expected = (
-        ('docs/consumer-guide.md', 'e6050f60d584267f268c2c399263cbca0421deee', 11163, '8a81dfee7f816fd176efac517d11a172049f816e8cff0787106174117d129edd'),
+        ('docs/consumer-guide.md', '00bbf8e6a660e781cc802464c14ac0db32e787a5', 11178, '545fa13e53d28332673e218e615f0407b7814b615ad87350578c388529e21acf'),
         ('docs/skill-templates/capsule-preflight/SKILL.md', '4615ba5327763abc2fd028adb77f163c34d0be8f', 2532,
          '19e72cd8c672a34301fe770699f51cb877b6a7f464e5386e2d56a9646c50d9cb'),
         ('docs/skill-templates/capsule-preflight/references/evidence-contract.md', '35c018fa1c699b677e2f22794a69059b3ec81be7', 16040,
@@ -1426,7 +1426,19 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
         "engineering/workflow/STATES.md#terminal-recording",
         "engineering/capsules/HISTORY.md",
     ):
-        assert authority in normalized
+        if authority in normalized:
+            continue
+        # Shared rules remain reachable through the selected whole controller guide/role index.
+        # The consumer map need not duplicate every generic anchor. Validate the real owner.
+        path, anchor = authority.split("#", 1)
+        assert path in ("engineering/workflow/shared/start-an-issue.md",
+                        "engineering/workflow/shared/worker-instructions.md")
+        assert path in normalized
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("selected_workflow_links", ROOT / "scripts/validate-docs.py")
+        validator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(validator)
+        assert anchor in validator._scan_document(ROOT / path)[1]
     for nutrition_control in (
         "The controller alone owns Git",
         "macOS arm64 with Python 3.14",
@@ -1453,22 +1465,17 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
         "stopped under their original authority",
         "The completed fresh #246 attempt is distinct",
         "Current status belongs to the live",
-        "verified merged local/remote branches",
     ):
         assert nutrition_control.lower() in normalized.lower()
     for rule in ("exact-candidate-SHA", "issues/246", "issues/256",
                  "not blanket Git, issue or settings permission"):
         assert rule in normalized
-    closeout = normalized.lower()
-    closeout_steps = (
-        "after those checks pass, close the issue",
-        "verify its actual closed state",
-        "then safely clean up the verified merged local/remote branches",
-        "verify the cleanup",
+    _assert_canonical_guidance(
+        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/start-an-issue.md",
+        "complete-the-phases", ("Close only when all outcomes pass", "Verify actual issue closure", "safely delete",
+                                "Verify actual issue closure", "cleanup", "partial closeout"),
     )
-    closeout_positions = [closeout.index(step) for step in closeout_steps]
-    assert closeout_positions == sorted(closeout_positions)
-    assert "if a required outcome, issue closure or cleanup is unresolved, preserve state and report partial closeout" in closeout
+    assert "record partial closeout when an obligation remains unresolved" in normalized.lower()
     assert "gpt-6.1-sol` / `low" in normalized
     assert "gpt-6-luna` / `max" in normalized
     assert "NUTRITION_RI_RUNTIME" not in normalized

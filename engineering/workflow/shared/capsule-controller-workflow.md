@@ -26,7 +26,8 @@ Link it from the project README/AGENTS entrypoint. Record the selected RI
 runtime/source and supported contract, shared instruction identity, repository
 standards, normal test commands, permitted Git/issue actions, and completion
 route. Pin the instruction bytes or their source commit; retain the map across
-compaction. Do not duplicate the shared procedure in local manuals.
+compaction. Use the selected [ownership and handoff contract](new-project-setup.md#instruction-ownership-and-handoffs)
+to keep domain/operational requirements local and shared behavior at its RI owner.
 
 Choose a compatible RI runtime. A newer producer is a proposal until the
 project's reader accepts its contract. Observe compatibility once at setup and

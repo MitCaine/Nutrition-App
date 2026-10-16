@@ -31,6 +31,13 @@ edit authorization; reading relevant source does not expand edit authority. Reco
 phase, instruction resources and authority. Missing or conflicting required
 inputs go to the controller, never guessed replacements.
 
+Before acting, verify the assigned role, selected instructions and applicability of
+the supplied inputs/actions. Record a concise task-to-role and outcome mapping,
+plus missing/conflicting inputs, in existing assignment notes, the implementation
+sketch or terminal handoff as appropriate. Source/hash equality alone does not
+establish understanding. Apply this to correction/replacement inputs too; do not
+add a routine acknowledgment or copy the instructions into another record.
+
 Stay within the assignment. Reading an instruction grants no additional authority.
 Only the controller owns recruitment and workflow-stage decisions; any delegated
 dispatch authority must be explicit in the assignment. Git, issue,
@@ -141,8 +148,8 @@ private reasoning, a mandatory new file, capsule edit, handoff or approval gate.
 Trivial maintenance may need one sentence; complex logic a compact flow. Format
 is optional; no complete upfront understanding or whole-file reading is required.
 
-Derive test scenarios from accepted behavior: initial state, actions, expected
-outcome and plausible incorrect behavior each case must distinguish. Ground
+Turn the accepted proof plan into concrete test scenarios: initial state, actions,
+expected outcome and plausible incorrect behavior each case must distinguish. Ground
 expectations independently of the proposed implementation. Exercise the relevant caller through the outcome
 claimed; ask what plausible broken implementation could still pass the assertions.
 Preserve legitimate historical-version expectations and test corrected current

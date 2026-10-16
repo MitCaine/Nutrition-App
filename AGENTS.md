@@ -161,37 +161,18 @@ For dependency-only pull requests:
 
 ## Task workflow
 
-Start at [the local execution map](docs/local_project_map.md). The controller reads its complete
-byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md). Role inputs and bounded reading are governed by the selected
-[worker Role index](engineering/workflow/shared/worker-instructions.md#role-index)
-and the [role assignment rule](engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs).
-The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional
-on setup or replacement. Select the [capsule format](engineering/workflow/shared/start-an-issue.md#capsule-format) or
-[maintenance route](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route)
-under the selected procedure.
-Before dispatch, run
-`./scripts/task validate-record --task-record PATH --route normal` or explicitly select
-`--route maintenance`; direct Work controller maintenance also supplies `--repo-root` and requires
-the exact local-map permission described in [the route map](docs/local_project_map.md#nutrition-permissions-and-routing).
-The direct record carries `Requested route: maintenance` and
-`Implementation execution: direct Work controller`. The read-only validator checks those fields
-and the selected map permission only; it does not authenticate owner authority, semantic eligibility,
-actual author identity, reviewer independence, live assignments, qualification, or acceptance.
-Apply the [local map's per-worker launch settings and confirmation policy](docs/local_project_map.md#nutrition-permissions-and-routing)
-separately to each assigned role; do not infer configuration from tool names, backing metadata or another
-worker's confirmation. Role duties, recruitment boundaries, independent review and execution order follow the
-[selected role assignment rule](engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs)
-and [phase sequence](engineering/workflow/shared/start-an-issue.md#complete-the-phases).
-Use the [selected waiting rules](engineering/workflow/shared/start-an-issue.md#wait-for-completion).
-RI pins record instruction/runtime provenance
-and do not create permission. The trusted task controller owns authenticated external
-authorization, required qualification and protected integration.
-No RI SDK transport, mandatory declaration report, frozen launcher or timed model gateway applies.
-
-For controller replacement, carry the actual selected checkpoint location and
-authoritative assignment recovery reference under the [local handoff rule](docs/local_project_map.md#replacement-controller-handoff).
-Authenticate supplied task/source identity before continuation; a missing default
-checkpoint is not inactivity and does not authorize duplicate work.
+Controllers start at [the local execution map](docs/local_project_map.md) and read its complete
+byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md).
+Workers use the selected [worker Role index](engineering/workflow/shared/worker-instructions.md#role-index)
+and only their assigned map sections, task/source and applicable local standards.
+The shared [ownership and handoff contract](engineering/workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs)
+owns generic role inputs, including initial builders without a future capsule;
+its linked Shared worker rules own receiver comprehension and correction/replacement duties.
+Setup/adoption is conditional. Select the [maintenance rule](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route)
+and [local map's per-worker launch settings and confirmation policy](docs/local_project_map.md#nutrition-permissions-and-routing).
+The map owns Nutrition's direct-maintenance permission, public record command, source/runtime bindings, checkpoint recovery
+and exact-App/protected integration boundaries. No RI SDK transport, mandatory declaration report,
+frozen launcher or timed model gateway applies.
 
 Preserve existing active capsule contracts, state/history, branches, evidence, pending decisions,
 C/R/T recovery and consumed allowances. The original #246 and #256 capsule attempts remain stopped

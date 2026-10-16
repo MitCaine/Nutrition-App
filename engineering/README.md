@@ -43,26 +43,16 @@ to initialize a default checkpoint or dispatch again.
 
 ## Repository-owned task workflow
 
-Use [local project map](../docs/local_project_map.md), the sole current local map, and its complete
-pinned [daily issue procedure](workflow/shared/start-an-issue.md) for controller intake. Workers read
-Shared worker rules and their assigned unique level-two section of the pinned
-[worker instructions](workflow/shared/worker-instructions.md#role-index) through the next level-two
-heading or end of file. Initial builders receive original objective/base and requirements without
-a future capsule; implementors and reviewers receive the accepted task input.
-The [adoption guide](workflow/shared/capsule-controller-workflow.md) is conditional. New work
-uses bounded Markdown tasks under `engineering/tasks/`. Normal tasks use the six-heading capsule;
-a controller-confirmed eligible mechanical change may use the optional maintenance route in the
-same task record. Before dispatch, the controller runs the public read-only
-`./scripts/task validate-record --task-record engineering/tasks/TASK-ID.md` for normal tasks, or
-`./scripts/task validate-record --task-record engineering/tasks/TASK-ID.md --route maintenance`
-for a brief handoff. This checks the record shape and recorded fields only; the controller still
-confirms eligibility and authenticates owner authority separately. Normal tasks retain the capsule
-builder and planning publication; maintenance omits those steps. The Work controller dispatches
-the builder on the normal route and a distinct independent reviewer on either route. The
-owner-designated Codex dispatcher authenticates the accepted implementation handoff, launches one
-implementor and relays its terminal result to Work. RI-only SDK/report/structural gates are retired.
-Protected main, authenticated owner authority, required profile checks, domain/security contracts,
-exact-candidate review and independent review remain.
+Controllers use the sole [local project map](../docs/local_project_map.md) and its complete
+pinned [daily issue procedure](workflow/shared/start-an-issue.md). Worker input selection follows
+the [role index](workflow/shared/worker-instructions.md#role-index) and shared
+[ownership/handoff contract](workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs).
+Use the [task template](tasks/TEMPLATE.md) for new Markdown tasks. The shared
+[capsule format](workflow/shared/start-an-issue.md#capsule-format),
+[maintenance rule](workflow/shared/start-an-issue.md#optional-maintenance-route) and
+[phase sequence](workflow/shared/start-an-issue.md#complete-the-phases) own those procedures;
+the map supplies Nutrition's literal record command, route permission and acceptance controls.
+The [adoption guide](workflow/shared/capsule-controller-workflow.md) applies only to setup/replacement.
 
 [AUTHORITY](workflow/AUTHORITY.md) owns project acceptance; [RI tooling](tooling/RI.md)
 retains the compatible source-navigation runtime. The original #246/#256 capsule attempts remain

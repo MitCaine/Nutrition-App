@@ -91,7 +91,11 @@ removed after installation; installed code and the manifest remain external cont
 
 The controller-owned manifest binds all environment file bytes, including bytecode, executable
 symlink targets, dependency versions and the public lock. Verify runs before and after each
-query. Runtime drift fails closed. Protect the manifest and installation as trusted controller
+query. The selected handoff/checkpoint supplies the actual manifest path and launcher
+interpreter together with its bootstrap provenance; recover that binding before use. A missing
+historical temporary location is a recovery gap, not a producer defect or permission to use an
+older installation. Authorized same-pin reprovisioning uses the existing bootstrap above into a
+new durable external directory, preserving prior records and installations. Runtime drift fails closed. Protect the manifest and installation as trusted controller
 state; self-consistent user-authored JSON is not independent installation provenance. Absolute
 venv paths and build metadata can differ between installations; reproducibility means the same
 pinned source/dependency/contracts, not byte-identical path-containing metadata. Base interpreter

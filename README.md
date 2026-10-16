@@ -328,7 +328,11 @@ Implementation execution: direct Work controller
 Controller selection: Work; gpt-6.1-sol / low, owner-confirmed
 ```
 
-GitHub access supplies no publication or integration grant; the owner explicitly supplies or selects applicable [task authority](engineering/workflow/shared/new-project-setup.md#access-and-task-authority). The controller confirms eligibility, authenticates the active assignment, and records the literal route and execution fields plus the actual author in the existing brief task record or operational record. Direct Work implementation is available only while the local map explicitly permits it. The controller performs the implementor duties under its existing selected Work settings, then obtains fresh independent review from a nonauthor; a Codex dispatcher and separate implementor are not assigned for this selection. Delegated maintenance continues through the owner-designated Codex dispatcher and one implementor. All routes retain owner authorization, exact-candidate review, required qualification, verification, approval, and integration. Epics and issues are engineering-planning units; product release versions describe complete application states and are not derived from Epic or issue numbers.
+Use the [selected ownership and role-input contract](engineering/workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs)
+and [maintenance rule](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route)
+with Nutrition's [permissions, settings and protected acceptance](docs/local_project_map.md#nutrition-permissions-and-routing).
+GitHub access is separate from owner task authority. Epics/issues describe engineering work;
+release versions describe application states.
 
 ## Documentation
 

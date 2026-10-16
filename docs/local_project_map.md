@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `00117a3b216b089e1e3a0a693c83efab9dcf12f0`: controllers use the complete
+future task intake is pinned at `685a2584a38cbc23286eda9c11a0404835059773`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -21,6 +21,8 @@ The [adoption/replacement guide](../engineering/workflow/shared/capsule-controll
 applies only to owner-authorized setup or replacement, not ordinary issue intake.
 
 ## Runtime
+
+### Selected navigation producer
 
 RI supplies source navigation and comparison support; it grants no edit, qualification,
 review or approval authority. Normal capsule preparation follows the selected
@@ -53,6 +55,8 @@ optional when useful; use the guide's exact-source selection and evidence rules 
 output. Required-operation inability needs the selected owner disposition before dependent dispatch;
 direct inspection supplements required operation evidence. Documentation-only maintenance needs no parse.
 
+
+### Optional source tools
 
 Optional helper source revision: `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`
 
@@ -194,26 +198,39 @@ and delivery state retained in the existing operational record. Work-to-Codex im
 return through the assigned dispatcher to the Work controller. Do not publish private conversation
 identifiers.
 
-The selected [serial assignment](../engineering/workflow/shared/start-an-issue.md#execute-serially),
-[Work-to-Codex handoff](../engineering/workflow/shared/start-an-issue.md#work-to-codex-implementation-handoff),
-[role inputs](../engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs),
-[optional maintenance route](../engineering/workflow/shared/start-an-issue.md#optional-maintenance-route),
-[execution settings](../engineering/workflow/shared/start-an-issue.md#execution-routing-models-and-efforts),
-[branch publication](../engineering/workflow/shared/start-an-issue.md#publish-the-task-branch-and-handoffs),
-[additional assignment limits](../engineering/workflow/shared/start-an-issue.md#additional-assignments-and-orientation),
-[waiting and recovery](../engineering/workflow/shared/start-an-issue.md#wait-recover-and-resume),
-[model-capacity recovery](../engineering/workflow/shared/start-an-issue.md#handle-model-capacity),
-[blocker recovery](../engineering/workflow/shared/start-an-issue.md#diagnose-blockers-and-recover),
-[evidence eligibility](../engineering/workflow/shared/start-an-issue.md#evidence-eligibility-and-corrections),
-and [worker role rules](../engineering/workflow/shared/worker-instructions.md#role-index) are canonical.
-The [Shared worker rules](../engineering/workflow/shared/worker-instructions.md#shared-worker-rules),
-[builder](../engineering/workflow/shared/worker-instructions.md#capsule-builder),
-[implementor](../engineering/workflow/shared/worker-instructions.md#implementor),
-[independent reviewer](../engineering/workflow/shared/worker-instructions.md#independent-reviewer),
-and [Codex dispatcher](../engineering/workflow/shared/worker-instructions.md#codex-dispatcher)
-sections define their assigned duties.
-Nutrition-specific actor/model requests, owner authority, permission, profile floors, qualification,
-secret controls, and approval/integration boundaries remain here and in the linked project contracts.
+The selected [serial assignments](../engineering/workflow/shared/start-an-issue.md#execute-serially),
+[waiting/recovery](../engineering/workflow/shared/start-an-issue.md#wait-recover-and-resume) and
+[evidence rules](../engineering/workflow/shared/start-an-issue.md#evidence-eligibility-and-corrections)
+own shared execution. The [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index),
+including the [assigned dispatcher](../engineering/workflow/shared/worker-instructions.md#codex-dispatcher),
+owns role duties. Nutrition keeps owner authority, actor/model requests, permissions, profile
+floors, secret controls and protected approval/integration boundaries here and at local owners.
+
+### Role-specific local inputs
+
+The selected [ownership and handoff contract](../engineering/workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs)
+owns the complete generic role-input set and receiver duties. This table selects local inputs;
+it does not require workers to read controller setup or every navigation link. All roles retain
+host-supplied AGENTS; apply its domain sections when relevant. Read selected sections in full,
+following directed required links; a heading anchor does not itself bound a tool read.
+
+| Role | Local map sections supplied with its task | Additional local owners when applicable |
+| --- | --- | --- |
+| Controller | Complete map; complete selected daily procedure and live issue/required decisions | Standards and commands needed for the task; setup only for a changed binding/adoption; actual checkpoint/assignment for recovery |
+| Capsule builder | Selected instructions, [Selected navigation producer](#selected-navigation-producer) for applicable navigation, Nutrition permissions and routing, Standards and checks, Storage and recovery | AGENTS/domain contracts, source/callers/tests and task-selected proof prerequisites; shared capsule format/source-preparation rules |
+| Implementor | Selected instructions, Nutrition permissions and routing; task-selected runtime/tool and command sections | Accepted complete task/source/standards; local session Actor and timing; product implementation onboarding below when applicable |
+| Independent reviewer | Selected instructions, Nutrition permissions and routing, Standards and checks; task-selected runtime/tool sections | Original requirements/task/full diff/evidence; local session Actor and timing; relevant domain and acceptance owners |
+| Dispatcher | Selected instructions, Nutrition permissions and routing; Storage and recovery's actual supplied assignment binding | Its kickoff locator/Shared and Dispatcher, complete authorized handoff; command/runtime sections only when used to authenticate its own route, no product/controller intake |
+
+Local product orientation remains in [onboarding](project/onboarding.md#before-any-implementation)
+for product implementation; schema/migrations and nutrient semantics remain in AGENTS,
+[project invariants](project/invariants.md), [development](project/development-guide.md) and the
+[RI domain map](../engineering/tooling/RI.md#nutrition-authority-map). Local database replacement
+safety remains in [backup operations](features/ocr-search-and-offline.md#local-backup-and-restore); native/iOS and protected
+qualification stay in the testing guide below. These are task-dependent owners, not default
+instructions to load every document for tooling-only work. Normal/correction/replacement handoffs
+use actual accessible selected outputs plus settled decisions; no automatic inventory exporter is
+selected and no generic manual inventory or new handoff schema is required.
 
 ## Standards and checks
 
@@ -276,63 +293,31 @@ evidence workspace.
 
 ## Storage and recovery
 
-New task records live at `engineering/tasks/TASK-ID.md`. The normal route uses the
-[shared six-heading format](../engineering/workflow/shared/start-an-issue.md#capsule-format) and
-[task template](../engineering/tasks/TEMPLATE.md#check-attempts). Under explicit controller-selected
-maintenance, the same task record carries objective, exact base, allowed changes, required checks,
-concrete return destination and a recorded `Decision: eligible`; direct selection also records its
-literal route and execution fields plus the actual author in that handoff or existing operational
-record. There is no separate maintenance file or history store. The public validator checks the
-selected record fields and, for direct selection only, the exact local-map permission; it does not
-determine eligibility, author identity, reviewer independence, live assignment state or owner
-authority. Existing full TOML capsules under
-`engineering/capsules/active/` remain historical recovery records through
-`REVIEWED` or their last nonterminal state; preserve their bytes and legal transitions. The
-[capsule record contract](../engineering/workflow/TASK_CAPSULE.md#historical-capsule-contracts),
-[state machine](../engineering/workflow/STATES.md#terminal-recording), and immutable
-[capsule history](../engineering/capsules/HISTORY.md) own that lifecycle.
+New task records live at `engineering/tasks/TASK-ID.md`; use the
+[shared format](../engineering/workflow/shared/start-an-issue.md#capsule-format) and
+[local template](../engineering/tasks/TEMPLATE.md#check-attempts), or the selected maintenance handoff.
+The public validator's record/map checks do not authenticate owner authority or acceptance.
+Historical TOML contracts and C/R/T lineage remain at [TASK_CAPSULE](../engineering/workflow/TASK_CAPSULE.md#historical-capsule-contracts),
+[STATES](../engineering/workflow/STATES.md#terminal-recording) and [HISTORY](../engineering/capsules/HISTORY.md).
 
-Use the selected external evidence workspace named in the authenticated task handoff. The
-default controller checkpoint is `~/.nutrition-app/task-controller/issue-N.json`; an
-`NUTRITION_TASK_STATE_DIR` or `--state-dir` override must be explicitly selected and authorized.
-Follow the adopted [checkpoint and resume rules](../engineering/workflow/shared/start-an-issue.md#checkpoint-and-resume):
-recover the actual authenticated active checkpoint and live assignment, not an earlier history
-entry. Do not guess private paths, invent another state store, or reset a transaction.
-Retain each attempt's exact source or complete dirty diff (including untracked files), literal
-command and environment, exit/status, immutable log identity and digest, skips, failures, stops
-and consumed allowances. Keep private diagnostics outside published source and reuse evidence
-only when its original identity remains eligible.
+Use the authenticated handoff's external evidence workspace. Default checkpoint:
+`~/.nutrition-app/task-controller/issue-N.json`. Any `--state-dir` or
+`NUTRITION_TASK_STATE_DIR` override must be explicitly selected and authorized;
+use the actual supplied path, not an assumed default. Current state writers follow
+[Nutrition's transaction/recovery contract](../engineering/workflow/AUTHORITY.md#state-concurrency-and-recovery).
+Keep literal command/environment, exact source/dirty diff, all failures/stops and raw evidence
+in that selected external record; private diagnostics do not belong in published source.
 
 ### Replacement-controller handoff
 
-The outgoing controller supplies the **actual selected checkpoint file location**,
-including its explicit authorized state-dir override when present, and the
-**authoritative assignment/recovery reference** used by that attempt. Identify the
-repository/task/attempt, selected instruction identity, current phase, exact base
-and candidate or complete dirty source, assigned actor/job and return destination,
-and retained terminal-result/evidence location. A reference may name the existing
-checkpoint's assignment entry and supported job/thread or terminal handoff; use
-what that attempt actually has. Do not invent a registry, field schema or new
-mandatory artifact. Keep private locations/identifiers in the authenticated
-operational handoff, not public source.
-
-The incoming controller authenticates the supplied actual path and task/source
-bindings, then reconciles the referenced existing assignment and retained terminal
-result before selecting the next action. The documented default is only a default;
-a missing default does not establish inactivity when another path was selected.
-Recover the current active object, not an old revision/history entry. Recovery
-retains the existing assignment and does not authorize another checkpoint,
-duplicate dispatch, role transfer or clearing a stop. Replacement/fresh-context
-selection remains under owner/project authority. Workers keep their bounded read
-scopes and [acceptance responsibilities](operations/session-contract.md#actor-and-timing).
-
-If the supplied checkpoint or assignment evidence is missing/inaccessible, report
-that exact failure and which task/source binding remains unverified. Hold only
-dependent execution; request the actual reference from the outgoing controller or
-owner. Do not guess alternate private paths, infer idle state, copy historical
-authority into a new active record, or initialize a replacement checkpoint. The
-historical `render-task-handoff.py` lane is not this recovery route. #275's abandoned
-operation semantics are unchanged.
+Use the selected [checkpoint/resume rule](../engineering/workflow/shared/start-an-issue.md#checkpoint-and-resume)
+and [Nutrition recovery authority](../engineering/workflow/AUTHORITY.md#state-concurrency-and-recovery).
+The outgoing handoff must identify the actual selected checkpoint file, its explicit state-dir
+override and authoritative assignment/job/terminal-result recovery reference. Include exact
+task/source, instruction identity and next authorized action. The documented default alone is
+not recovery evidence. Missing supplied evidence is a precise gap: preserve state and recover
+that reference; do not initialize another checkpoint, duplicate dispatch or clear a stop.
+Keep private paths/job/chat identifiers in the external operational record, not public source.
 
 #### Bounded recovery cases
 
@@ -370,12 +355,10 @@ Never resume an old attempt implicitly.
 The selected [completion-record rule](../engineering/workflow/shared/start-an-issue.md#keep-completion-records-external)
 owns candidate-freeze timing, historical preparation and later operational evidence.
 
-Only the controller performs authorized integration and closeout, after exact-candidate
-qualification, explicit verification, independent review and current owner permission. The
-protected expected-main update must satisfy the current rules and compare-and-swap checks; no
-bypass is authorized. After integration, verify the installed source, all original outcomes and
-post-installation obligations. After those checks pass, close the issue and verify its actual
-closed state. Then safely clean up the verified merged local/remote branches and verify the
-cleanup. If a required outcome, issue closure or cleanup is unresolved, preserve state and report
-partial closeout. The [daily phase and closeout procedure](../engineering/workflow/shared/start-an-issue.md#complete-the-phases)
-and [task authority](../engineering/workflow/AUTHORITY.md) remain the governing anchors.
+Nutrition requires exact-candidate App qualification, explicit verification, independent review,
+separate controller approval and current owner integration permission under
+[AUTHORITY](../engineering/workflow/AUTHORITY.md#current-interfaces). The protected expected-main
+compare-and-swap route remains mandatory. Apply the selected
+[phase/installed closeout rule](../engineering/workflow/shared/start-an-issue.md#complete-the-phases)
+and local [session-end contract](operations/session-contract.md#session-end) before closure/owned cleanup.
+Record partial closeout when an obligation remains unresolved; never rewrite preserved attempts.
