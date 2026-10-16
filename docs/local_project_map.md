@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `e0d1767ec2ac09ec358749521c582dfbad01d6bf`: controllers use the complete
+future task intake is pinned at `00117a3b216b089e1e3a0a693c83efab9dcf12f0`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -22,8 +22,9 @@ applies only to owner-authorized setup or replacement, not ordinary issue intake
 
 ## Runtime
 
-RI is optional source navigation and comparison support; it grants no edit, qualification,
-review or approval authority. The compatible producer is separately pinned in
+RI supplies source navigation and comparison support; it grants no edit, qualification,
+review or approval authority. Normal capsule preparation follows the selected
+[task-directed source-preparation rule](../engineering/workflow/shared/start-an-issue.md#task-directed-source-preparation). The compatible producer is separately pinned in
 [the RI runtime guide](../engineering/tooling/RI.md#pinned-installation-and-private-access)
 and [runtime lock](../engineering/tooling/ri-lock.json): revision
 `20a5039e7731eaa1303443b782caa81a383a0af1`, contracts navigation 7, inventory 16, adapter 13,
@@ -46,8 +47,11 @@ evidence only under the project's accepted equivalence policy when the source, t
 and environment remain eligible. RI locations are navigation hints; inspect the actual candidate
 diff and source for acceptance.
 
-`./scripts/ri query` is optional when useful; use the guide's exact-source selection and evidence
-rules for its arguments and output.
+Use the existing `./scripts/ri query` route for applicable normal capsule preparation under that
+rule, retaining its source-bound packet and raw-output references in the task. Elsewhere it remains
+optional when useful; use the guide's exact-source selection and evidence rules for arguments and
+output. Required-operation inability needs the selected owner disposition before dependent dispatch;
+direct inspection supplements required operation evidence. Documentation-only maintenance needs no parse.
 
 
 Optional helper source revision: `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`
@@ -94,7 +98,7 @@ retains publication, qualification, independent review, approval, integration an
 
 ### Selected native dispatch decision binding
 
-Native dispatch guard source revision: `e0d1767ec2ac09ec358749521c582dfbad01d6bf`
+Native dispatch guard source revision: `00117a3b216b089e1e3a0a693c83efab9dcf12f0`
 Native dispatch guard source checkout: `/Users/mipoo/Projects/Repository Intelligence`
 
 For selected native Work worker launch/resumption transitions, the controller uses

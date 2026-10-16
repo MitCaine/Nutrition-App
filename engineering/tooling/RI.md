@@ -4,9 +4,11 @@
 
 RI supplies locations and source facts. Nutrition owns domain meaning, edit scope, tests,
 review and approval. Start from the [workflow entrypoint](../../docs/local_project_map.md), then
-use this guide to navigate exact committed source. The current owner-authorized lightweight
-route uses ordinary source/diff review. RI cannot authorize edits, approve review or replace
-required runtime checks. Missing coverage requires direct source inspection, not a transport stop.
+use this guide to navigate exact committed source. Normal capsule preparation uses the existing compatible route below under the shared
+[task-directed source-preparation contract](../workflow/shared/start-an-issue.md#task-directed-source-preparation).
+Direct source/diff/log review supplements that preparation and remains valid at other gates.
+RI cannot authorize edits, approve review or replace required runtime checks. Record coverage limits;
+an unresolved required-operation inability needs an explicit owner disposition before dispatch.
 
 ## Pinned installation and private access
 
@@ -131,6 +133,14 @@ excerpts are navigation hints; raw byte hashes/ranges are the identity. The ephe
 copy is deleted after the query. Raw JSON, source-selection manifest and bounded packet remain
 in the chosen external evidence directory; there is no saved navigation index. An existing
 output directory is not overwritten, and output cannot be inside the installed runtime.
+
+For normal preparation, carry selected matches or a bounded mechanical projection and existing
+`packet.json`, `raw.json`, `selection.json` and `source-manifest.json` references in the capsule
+Source and scope. Retain the literal invocation/working directory and source/runtime identities
+with those outputs in the existing task evidence. The packet already carries source hashes,
+parser metadata, ranges, mapping/selection coverage and the raw-output digest; no new exporter
+or schema is needed. The controller checks actual use and engineering/proof relevance under the
+shared contract; Markdown shape validation alone cannot accept that evidence.
 
 Use the navigation result's revision and digests when citing source context. Requery after
 source changes. A location at P is not automatically a current location at C. Do not use the

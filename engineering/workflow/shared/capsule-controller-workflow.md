@@ -31,17 +31,22 @@ compaction. Do not duplicate the shared procedure in local manuals.
 Choose a compatible RI runtime. A newer producer is a proposal until the
 project's reader accepts its contract. Observe compatibility once at setup and
 again when relevant runtime/reader inputs change, not on every conversation.
-Use ordinary source files, Git diffs and test logs as evidence. RI declarations
-help navigation; reviewing every declaration as a separate report entry is not
-required by RI. Missing RI coverage requires direct source/diff inspection,
-not an automatic cancellation of otherwise authorized work.
+Use ordinary source files, Git diffs and test logs to validate a handoff and prove
+outcomes. For applicable supported source during normal capsule preparation,
+follow the daily [task-directed source-preparation contract](start-an-issue.md#task-directed-source-preparation)
+and carry its relevant generated pointers, source identity and coverage into the
+capsule. Direct inspection supplements that bounded map and remains valid at
+implementation and review; reviewing every declaration as a separate report
+entry is not required. Record missing coverage and resolve any required-operation
+inability before dispatch; a coverage gap is not an automatic cancellation of
+otherwise authorized work.
 
 ## Sequence
 
 ```text
 Controller: authenticate objective, checkout, authority and usable tools
     |
-Planner: supplied/explicitly authorized branch + bounded Markdown task
+Capsule builder: supplied/explicitly authorized branch + bounded Markdown task
     | return branch/base, task path, scope, criteria, checks and gaps
 Controller: inspect task and relevant source; resolve actual gaps
     |
@@ -150,7 +155,7 @@ on prior approval, or defer prerequisites already due. Installed failure leaves
 the issue open for bounded recovery.
 
 Before dispatch, confirm the role's required access/runtime and command environment.
-Planner intake needs the objective/base, not its future capsule/candidate. Rehearse
+Capsule builder intake needs the objective/base, not its future capsule/candidate. Rehearse
 known sandbox-sensitive commands narrowly; no mandatory adoption specimen chain.
 Setup proof does not replace actual candidate checks or honest results/skips.
 

@@ -153,7 +153,7 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(local_map.replace(chr(96), "").split())
     normalized_provenance = " ".join(provenance.split())
-    current_revision = "e0d1767ec2ac09ec358749521c582dfbad01d6bf"
+    current_revision = "00117a3b216b089e1e3a0a693c83efab9dcf12f0"
 
     assert f"future task intake is pinned at {current_revision}" in normalized_map
     assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
@@ -170,13 +170,13 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "live GH-305" not in provenance
 
     current_resources = {
-        'start-an-issue.md': (35072, 'faff4d6c2912eb9ff54999d1d6cbc34dbc0df84a14bd688e956698b3dac46827'),
-        'worker-instructions.md': (17648, 'aaede8344f8ad0c691fa9efa1c630866eb090badfe8a12831514f849b4d0459a'),
-        'capsule-controller-workflow.md': (16328, '925323b4edc6595faa04b99b55ca98dabc3dc49d1cea5e6d4a83ac8d486fdd0a'),
-        'new-project-setup.md': (15446, 'd956d187d0cf83cfbd6f0f1d536456c83af6b745c8e74dad9f94107dc66bb62f'),
-        'skill-templates/README.md': (9019, '1c516c5fbde51c0525cc0795f42f410ef8ede1654fc2c87c9c646fb272483898'),
-        'skill-templates/capsule-queue/SKILL.md': (2029, '611401a56cbb0aec0a19e151aac878e112081e796fa02938cc84812d3f4f0f97'),
-        'workflow-tools.md': (28257, 'e8d1916a0b4fb9229216d2cf8091632e31bb63098061d78fbc94da31c0c25eab'),
+        'start-an-issue.md': (38826, 'b245040a902f005f42f74ce1c87478eb8601b0725460e7953b5a9caef341c59e'),
+        'worker-instructions.md': (20114, '3e2034f277c0ca63dccb95498928d37b7cd5e82e6192a922ab0bbcbf3722dddf'),
+        'capsule-controller-workflow.md': (16743, '7219600a824a31e0807577f115e776ba246b8b42e9642da06585bfbfd069e717'),
+        'new-project-setup.md': (15446, 'b637de0f44b8f60c3a3b4f1c3b1f27311d1a77bc65025d827e4833d89409bb07'),
+        'skill-templates/README.md': (9019, 'a764511247c0bf6694c07b0841a81c85cd14e68333d05e3dec14026668740cf3'),
+        'skill-templates/capsule-queue/SKILL.md': (2029, '0be84dec1f281acd224e532520ff0d413df573f4aa43f06ce17ac710a96e3c6c'),
+        'workflow-tools.md': (28257, 'a8704665a127682bbd3e80a9e451f5f9a43858f6e6bdb2fd6daf68d353396c94'),
     }
     for name, (size, digest) in current_resources.items():
         data = (shared / name).read_bytes()
@@ -1325,7 +1325,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/capsule-queue/")
+              "00117a3b216b089e1e3a0a693c83efab9dcf12f0/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1339,7 +1339,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "e0d1767ec2ac09ec358749521c582dfbad01d6bf"
+    revision = "00117a3b216b089e1e3a0a693c83efab9dcf12f0"
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
     templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
     import html
@@ -1365,8 +1365,7 @@ def test_selected_optional_upstream_relocations_are_pinned_and_declared():
         assert f"https://github.com/MitCaine/repository-intelligence/blob/{revision}/{path}" in templates
     # Exact current rows must match upstream identities; historical rows cannot satisfy them.
     expected = (
-        ('docs/consumer-guide.md', '19cf168338614208b2592c5e0111d223384da3a6', 10705,
-         '069cd5607e52b2ef300f4c99d286faf30f4a6200b24a8b5ea0fa015a0e5980b3'),
+        ('docs/consumer-guide.md', 'e6050f60d584267f268c2c399263cbca0421deee', 11163, '8a81dfee7f816fd176efac517d11a172049f816e8cff0787106174117d129edd'),
         ('docs/skill-templates/capsule-preflight/SKILL.md', '4615ba5327763abc2fd028adb77f163c34d0be8f', 2532,
          '19e72cd8c672a34301fe770699f51cb877b6a7f464e5386e2d56a9646c50d9cb'),
         ('docs/skill-templates/capsule-preflight/references/evidence-contract.md', '35c018fa1c699b677e2f22794a69059b3ec81be7', 16040,
@@ -1668,3 +1667,38 @@ def test_native_dispatch_decisions_are_separate_from_execution_and_host_authenti
     assert "collaboration.spawn_agent" in contract and "collaboration.followup_task" in contract
     assert "reconcile" in contract and "controller authenticates freshness" in contract
     assert "does not authorize duplicate spawn" in contract
+
+
+def test_preparation_guidance_uses_selected_owner_and_existing_record_carries_output_refs(tmp_path):
+    """Record compatibility, not automatic semantic readiness or a live query."""
+    owner = "engineering/workflow/shared/start-an-issue.md"
+    for guide in ("docs/local_project_map.md", "engineering/tooling/RI.md", "engineering/tasks/TEMPLATE.md"):
+        _assert_canonical_guidance(ROOT, guide, owner, "task-directed-source-preparation",
+                                  ("consumer-selected compatible Tree-sitter route",
+                                   "Missing execution or a source mismatch",
+                                   "explicit controller-visible owner disposition"))
+    packet = tmp_path / "packet.json"
+    packet.write_text(json.dumps({"revision": "a" * 40, "mapping_status": "navigation_only",
+                                  "raw_evidence": {"path": "raw.json", "sha256": "b" * 64},
+                                  "matches": [{"path": "owner.py", "name": "restore",
+                                               "source_sha256": "c" * 64, "byte_range": {"start": 0, "end": 40}}]}))
+    record = tmp_path / "task.md"
+    record.write_text(_normal_task_record({
+        "Source and scope": (
+            "Exact base " + "a" * 40 + "; retained packet reference `" + str(packet) + "`.\n"
+            "### AC-1 implementation\nInspect restore and its caller/test; retain source/parser/coverage."
+        ),
+        "Acceptance": "- [ ] AC-1: Reject invalid restoration and preserve prior nonempty state. [Proof](#ac-1-proof).",
+        "Checks": (
+            "### AC-1 proof\nSetup valid framing and prior state; corrupt only the relational value.\n"
+            "Observe rejection and unchanged prior state; a bypass mutant must fail.\n"
+            "Due candidate stage: `pytest tests/test_restore.py`; retain raw output externally."
+        ),
+    }))
+    before = (record.read_bytes(), packet.read_bytes())
+    result = _run_public_record_validator(record, "normal")
+    assert result.returncode == 0, result.stdout
+    assert (record.read_bytes(), packet.read_bytes()) == before
+    # The public validator carries these references unchanged; it neither runs
+    # navigation nor authenticates source/output or the controller's plan check.
+    assert json.loads(result.stdout)["route"] == "normal"

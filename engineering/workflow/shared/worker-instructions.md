@@ -67,10 +67,24 @@ Write one decision-complete task using the [shared capsule format](start-an-issu
 Inspect relevant callers, tests and documentation to identify bounded edit paths,
 requirements and viable proof routes under the controller's
 [route-feasibility plan check](start-an-issue.md#complete-the-phases).
+For applicable supported source on the normal capsule route, perform the selected
+task-directed navigation described in
+[source preparation](start-an-issue.md#task-directed-source-preparation). Inspect
+the returned locations directly and carry relevant generated pointers or a bounded
+mechanical projection, with their source and coverage context, into the capsule.
+Do not treat a link/import/help check or lexical call candidates as source analysis.
+Documentation-only work needs no parse; keep maintenance proportionate.
 Make the accepted capsule self-contained for
 implementation, carrying required decisions and behavior rather than requiring
 the implementor to retrieve issue or decision history. Map each acceptance outcome to a concrete
 check or inspectable evidence; include literal commands and their required environment.
+Retain original outcome IDs as the acceptance authority, put concise implementation
+steps keyed by those IDs in Source and scope, and put linked, independently
+discriminating proof entries with the same IDs in Checks. Resolve consequential
+specification, architecture or proof-plan gaps with the controller before return;
+do not make them implicit implementation choices. Permit coherent bounded units
+only when they preserve complete criteria and necessary interfaces; do not split
+by file or token count alone.
 Require affected stale docs/examples/links to be corrected, or explain why unaffected.
 Identify unresolved product decisions and prerequisites without inventing parameters.
 For genuine post-installation obligations, specify when and how they are satisfied.
@@ -91,8 +105,11 @@ project access restrictions. This does not expand authorized edits. Read the
 The maintenance handoff replaces the capsule only under the controller-selected
 [maintenance route](start-an-issue.md#optional-maintenance-route). Do not
 independently retrieve the original issue or linked decision history. If a
-requirement is missing, contradictory or insufficient, report the gap to the
-controller before dependent work; do not reconstruct requirements yourself.
+requirement or consequential implementation/proof decision is missing,
+contradictory or insufficient, report the gap to the controller and creator before
+dependent work; do not reconstruct a product decision, drop hard proof, or loosen
+an accepted criterion. Ordinary code choices and focused technical uncertainty
+remain yours to resolve within scope.
 Use supplied commands, environment, evidence locations and authority limits.
 The controller has already selected the workflow and project route; do not repeat
 its issue-start orientation or dispatch other roles. A failed assigned check permits
@@ -113,7 +130,9 @@ allocation limits and ordinary application callers.
 
 Before substantive edits, record a brief source-grounded implementation sketch
 connecting accepted outcomes to intended code and tests: existing interfaces,
-consequential transitions or invariants, and assumptions. Resolve technical
+consequential transitions or invariants, and assumptions. Show your concise
+comprehension of the accepted flow and its local source/test mapping; this sketch
+does not replace or expand the accepted design and proof plan. Resolve technical
 uncertainties through targeted inspection or permitted focused probes before
 building on them; return missing product decisions to the controller. Reuse
 accepted detail, scale the sketch to the change, and revise it when evidence
@@ -130,6 +149,19 @@ Preserve legitimate historical-version expectations and test corrected current
 behavior separately when applicable. A focused unit test is sufficient when it
 proves the claimed outcome; this is not a blanket integration-test requirement.
 Passing counts alone do not prove a required behavior.
+
+Use proof details that distinguish the accepted behavior. Exercise the actual
+owner and relevant caller with all stated preconditions, controls, and journey
+steps. For layered validation, keep inputs valid through earlier layers and
+isolate the intended fault so it reaches the target validator. When failure
+preservation is required, verify that preexisting nonempty state remains available
+afterward. For privacy, trace sensitive or reversible values through relevant
+transformations, wrappers, and aggregate outputs; keyword absence alone is weak
+evidence. For compatibility, retain the identity of historical fixtures and test
+current behavior against its current contract separately, without assuming equal
+serialized representations. Use concrete case details from the accepted task
+records only where they refine existing requirements; these principles create no
+new product criteria or causal claims.
 
 Follow the [command readiness and check-order rules](start-an-issue.md#command-readiness).
 Retain actual commands, source/environment identities and results/logs, including
@@ -170,6 +202,8 @@ defects, missing proof and uncertainty. Check evidence’s source, command/workf
 identity and reuse eligibility; a passing name or aggregate count is insufficient.
 Assess the [implementor's scenario-based proof](#implementor): do the scenarios
 distinguish plausible failures and do their assertions prove the claimed behavior?
+Completed checklist entries and valid links are not semantic proof; judge the
+observed implementation and test discrimination against the original criteria.
 
 Remain read-only: no source/Git/issue/checkpoint mutation or recruitment. Execute
 checks only if the assigned review route permits them; otherwise request required

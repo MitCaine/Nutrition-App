@@ -23,15 +23,30 @@ preserve historical formats and stopped attempts unchanged.
 - Controller, capsule builder, implementor and distinct independent reviewer:
 - Allowed/forbidden paths and affected current documentation:
 - Relevant standards/domain/security boundaries; unrelated work preserved:
+- Applicable [source preparation](../workflow/shared/start-an-issue.md#task-directed-source-preparation):
+  invocation/source/runtime/parser/coverage and retained raw/packet references; validated generated
+  pointers or bounded mechanical projection, limits and required dispositions:
+- AC-1 implementation steps: owning seams, related callers/interfaces/tests, settled decisions
+  and consequential order/dependencies; link to [AC-1 proof](#ac-1-proof):
 
 ## Acceptance
 
-- [ ] AC-1: Observable required result and its concrete test or inspectable evidence.
+- [ ] AC-1: Original observable required result; [linked proof](#ac-1-proof). Preserve the original ID.
 
 ## Checks
 
 Record literal required commands, intended environment and selected qualification
 profiles; preserve actual failures/skips and exact source/results for each attempt.
+
+### AC-1 proof
+
+Use the [shared proof-entry rule](../workflow/shared/start-an-issue.md#capsule-format) and link
+this entry to AC-1's implementation steps; this adds no acceptance criterion.
+
+- Setup/preconditions:
+- Action or isolated fault reaching the actual owner/caller:
+- Independently expected observation and distinguishing plausible defect/control:
+- Due stage, literal command/environment and retained result references:
 
 ### Check attempts
 

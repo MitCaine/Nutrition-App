@@ -105,10 +105,20 @@ Markdown task file with these headings:
 
 - **Objective:** live issue and original required specifications/decisions.
 - **Source and scope:** base revision, task branch, authorized edit paths and
-  affected current documentation; preserve unrelated work.
-- **Acceptance:** individual checkboxes stating observable outcomes and each
-  outcome's concrete test or inspectable evidence, including documentation.
-- **Checks:** literal required commands, intended environment and results to retain.
+  affected current documentation; preserve unrelated work. Add concise,
+  outcome-keyed implementation steps here (or link to them in this capsule),
+  including the relevant source owners/seams, related callers/interfaces/tests,
+  required decisions, and consequential order or dependencies. Carry the
+  applicable generated source pointers and coverage context into these steps.
+- **Acceptance:** individual checkboxes stating the observable outcomes, with
+  each linked to its concrete test or inspectable evidence in Checks, including
+  documentation. Keep each original outcome ID and criterion here as the single
+  acceptance authority; proof entries add no new criteria.
+- **Checks:** a proof entry for each outcome, keyed by the same ID and linked to
+  its implementation steps. State setup/preconditions, action or fault, the
+  independently expected observation, a plausible defect/control that the case
+  distinguishes, the due stage, literal commands and intended environment, and
+  results to retain.
 - **Prerequisites:** known dependencies, unresolved decisions, and any genuinely
   post-installation obligation with its satisfaction method.
 - **Handoff and closeout:** authorized actor/actions, exact returned source/results,
@@ -121,6 +131,12 @@ add necessary fields but must not replace the shared structure or duplicate its
 instructions in a competing local template. No extra schema or historical runner
 template is implied. Preserve frozen historical task formats without applying
 them to new tasks.
+
+Scale both lists to the task and reuse already sufficient accepted detail. A
+command list or completed checkbox does not by itself show that a case proves
+the outcome: the expected result must fail for a plausible broken behavior.
+Keep concise execution context, and include history or rejected alternatives
+only when they constrain implementation or proof.
 
 ## Execute serially
 
@@ -291,6 +307,37 @@ costly qualification. On failure, report before further expensive checks unless
 the assignment requires collecting independent results. This grants no frozen
 candidate edits or omission of required checks.
 
+### Task-directed source preparation
+
+For the normal capsule route, the capsule builder or assigned task author uses
+the consumer-selected compatible Tree-sitter route on applicable supported
+source before returning the plan. Start with bounded task terms and relevant
+paths using the [consumer navigation guide](https://github.com/MitCaine/repository-intelligence/blob/00117a3b216b089e1e3a0a693c83efab9dcf12f0/docs/consumer-guide.md#navigate-before-expanding-scope).
+Inspect the exact returned source locations and the relevant owning symbols,
+callers, interfaces, tests, and contracts directly. Locator call candidates are
+lexical hints, not resolved call edges. A help/import/link check alone does not
+count as using the selected operation.
+
+Retain the actual invocation and working directory, authenticated checkout or
+base and exact source identity, parser/runtime metadata, full output, mapping
+status and coverage, validated locations, and any gaps in the existing capsule
+or controller task record. Include the relevant generated pointers or a bounded
+mechanical projection in the same capsule/handoff so the implementor receives
+them with the settled requirements and proof plan. The builder chooses relevant
+source; before dispatch the controller checks actual use, exact source, coverage,
+and engineering/proof relevance. Missing execution or a source mismatch leaves
+the route unready for dispatch.
+
+Reuse an existing output only when its source identity, selected route and task
+relevance remain authenticated and unchanged. Record unsupported syntax, no
+applicable syntax, zero matches, incomplete coverage, or unavailable tooling
+with the actual output and limits. If an applicable required operation cannot
+be completed, obtain an explicit controller-visible owner disposition before
+dispatch; do not silently substitute a parser, runtime, or manual-only source
+map. Documentation-only work needs no meaningless parse, and maintenance uses
+source navigation only where it is applicable and proportionate. Direct source,
+diff, and log evidence remains useful for checking the map and proving outcomes.
+
 ### Complete the phases
 
 For maintenance, the controller verifies the brief handoff against intake and
@@ -304,18 +351,22 @@ Steps 1–2 apply to the normal route.
    satisfaction method. Return the capsule for publication, or publish it under
    the map's explicit capsule-only grant.
 2. **Controller:** check the returned plan against the original orientation, issue
-   and relevant source, including scope, criteria, documentation and proof routes.
-   Establish that the selected implementation route, prerequisites, sequence and
-   evidence obligations are jointly executable from the starting source, or through
-   explicitly authorized setup that does not depend circularly on the capability
-   being built. Distinguish the route used to implement from routes the finished
-   capability must demonstrate; carry exceptions consistently into stage-specific
-   evidence obligations. Resolve scope/specification gaps before dispatch. An independent scope
-   challenge is permitted only for a concrete unresolved scope finding or an
-   explicit project requirement. The controller may resolve findings through its
-   plan check, but may satisfy a required review only when that requirement permits
-   controller review. A required separate independent reviewer cannot be replaced
-   by the controller. Follow the additional
+   and relevant source, including fidelity, completeness, scope, criteria, affected
+   documentation, substantive engineering and proof sufficiency. Check that source
+   steps and independently discriminating proof entries preserve the original
+   outcomes and their dependencies, then establish that the selected implementation
+   route, prerequisites, sequence and evidence obligations are jointly executable
+   from the starting source or through explicitly authorized setup that does not
+   depend circularly on the capability being built. Confirm applicable source
+   preparation under [Task-directed source preparation](#task-directed-source-preparation).
+   Distinguish the route used to implement from routes the finished capability
+   must demonstrate; carry exceptions consistently into stage-specific evidence
+   obligations. Resolve consequential plan gaps with the creator before dispatch,
+   without adding a reviewer or stage. An independent scope challenge is permitted
+   only for a concrete unresolved scope finding or an explicit project requirement.
+   The controller may resolve findings through its plan check, but may satisfy a
+   required review only when that requirement permits controller review. A required
+   separate independent reviewer cannot be replaced by the controller. Follow the additional
    assignment rule above; a scope challenge is not a routine fourth role.
 3. **Implementor:** make only authorized changes, including affected docs, and run
    relevant checks. Return source/branch identity, changes, results/skips and gaps.
@@ -370,10 +421,13 @@ review and authorized-publication rules; operational bookkeeping does not.
 
 ### Planning-only and no-change outcomes
 
-RI is navigation/comparison support. Direct source, full diffs and ordinary logs
-suffice; RI gaps do not prove absence. No special runner, exporter, per-declaration
-verdict or new mandatory record is required. Already-satisfied work can receive
-independent no-change review and authorized closeout without an artificial commit.
+RI is navigation/comparison support. For an already-satisfied no-change review,
+direct source, full diffs and ordinary logs remain valid criterion evidence; they
+do not replace task-directed navigation when the normal capsule preparation route
+applies. RI coverage gaps are explicit and do not prove absence. No special runner,
+exporter, per-declaration verdict or new mandatory record is required.
+Already-satisfied work can receive independent no-change review and authorized
+closeout without an artificial commit.
 Where consumer controls permit, review an authenticated existing remote source
 against the original criteria and criterion evidence in the existing task record,
 without creating a capsule, task branch or commit solely for that disposition.

@@ -36,7 +36,7 @@ equivalence. Apply the selected [evidence rules](start-an-issue.md#evidence-elig
 
 ## Accepted dispatch decisions
 
-The optional [`dispatch_guard.py`](https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/src/repository%5Fintelligence/dispatch%5Fguard.py)
+The optional [`dispatch_guard.py`](https://github.com/MitCaine/repository-intelligence/blob/00117a3b216b089e1e3a0a693c83efab9dcf12f0/src/repository%5Fintelligence/dispatch%5Fguard.py)
 helper evaluates a consumer's authenticated projection of existing native launch,
 resumption and job-state records. It neither launches agents nor creates a job
 registry. The dispatcher/host adapter still owns authentic observation, freshness,
@@ -211,12 +211,12 @@ evidence location; the helper does not create a state store.
 
 ## Existing optional evidence helpers
 
-The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
+The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/00117a3b216b089e1e3a0a693c83efab9dcf12f0/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
 contains pure input-equivalence predicates; unknown relevant inputs are not
 cacheable. Its extended packet validation remains optional and is not required
-by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/scripts/check%5Fdocs%5Fand%5Fskills.py),
-the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/consumer-guide.md) and
-[review bundles](https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/review-evidence.md) retain their existing separate scopes.
+by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/00117a3b216b089e1e3a0a693c83efab9dcf12f0/scripts/check%5Fdocs%5Fand%5Fskills.py),
+the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/00117a3b216b089e1e3a0a693c83efab9dcf12f0/docs/consumer-guide.md) and
+[review bundles](https://github.com/MitCaine/repository-intelligence/blob/00117a3b216b089e1e3a0a693c83efab9dcf12f0/docs/review-evidence.md) retain their existing separate scopes.
 None authenticates task authority or proves runtime availability.
 
 ## Prepared worker execution linkage

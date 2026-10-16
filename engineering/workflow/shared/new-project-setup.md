@@ -1,7 +1,7 @@
 # Set up RI in a project
 
 Use the [controller workflow](capsule-controller-workflow.md) for RI-assisted
-capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/e0d1767ec2ac09ec358749521c582dfbad01d6bf/docs/consumer-guide.md) for ordinary navigation.
+capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/00117a3b216b089e1e3a0a693c83efab9dcf12f0/docs/consumer-guide.md) for ordinary navigation.
 RI does not require an execution framework or every optional skill to be installed.
 
 ## Minimal setup
