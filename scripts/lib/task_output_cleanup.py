@@ -16,12 +16,14 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import stat
 import struct
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any, Iterator
 import uuid
 import zipfile
@@ -31,6 +33,11 @@ RECEIPT_VERSION = 1
 OWNER_SCHEMA = "nutrition-task-output-owner-v1"
 OWNER_LOCK_BYTES = b"nutrition-owned-output-lock-v1\n"
 MAX_OWNER_BYTES = 1_000_000
+EXPO_IMAGE_CACHE_SOURCE = "apps/mobile/node_modules/@expo/image-utils/build/Cache.js"
+EXPO_IMAGE_CACHE_SHA256 = "c85a1f47d7f3adb9572f425b35fdb0f198aa243e2c6a429b9eeb1a857d1fcef1"
+EXPO_IMAGE_CACHE_OUTPUT = "apps/mobile/.expo/web/cache/production/images"
+NATIVE_PROCESS_SAMPLE_SECONDS = 0.25
+NATIVE_OWNER_STOP_WAIT_SECONDS = 5.0
 
 
 class OutputCleanupError(RuntimeError):
@@ -287,7 +294,9 @@ def owner_lock_binding(output_path: str | Path) -> dict[str, Any]:
 
 
 @contextmanager
-def acquire_owner_lock_handle(output_path: str | Path) -> Iterator[tuple[bool, int]]:
+def acquire_owner_lock_handle(
+    output_path: str | Path, *, clear_stale_session: bool = True,
+) -> Iterator[tuple[bool, int]]:
     """Try the owner lock and expose its descriptor for authenticated children."""
     lock_path = owner_lock_path(output_path)
     descriptor = -1
@@ -305,7 +314,7 @@ def acquire_owner_lock_handle(output_path: str | Path) -> Iterator[tuple[bool, i
             acquired = True
         except BlockingIOError:
             acquired = False
-        if acquired:
+        if acquired and clear_stale_session:
             _clear_stale_owner_session(Path(os.path.abspath(str(output_path))))
         yield acquired, descriptor
     finally:
@@ -320,6 +329,20 @@ def acquire_owner_lock(output_path: str | Path) -> Iterator[bool]:
     """Try the existing owner lock without blocking; missing locks are unknown."""
     with acquire_owner_lock_handle(output_path) as (acquired, _descriptor):
         yield acquired
+
+
+@contextmanager
+def _wait_for_native_owner_lock_release(output_path: str | Path) -> Iterator[None]:
+    """Wait briefly for the signaled native observer to persist and release its lock."""
+    deadline = time.monotonic() + NATIVE_OWNER_STOP_WAIT_SECONDS
+    while True:
+        with acquire_owner_lock_handle(output_path, clear_stale_session=False) as (acquired, _descriptor):
+            if acquired:
+                yield
+                return
+        if time.monotonic() >= deadline:
+            raise OutputCleanupError("native producer did not release the output owner lock")
+        time.sleep(0.05)
 
 
 def _clear_stale_owner_session(output_path: Path) -> None:
@@ -659,7 +682,14 @@ def _native_owner(path: Path) -> dict[str, Any]:
         ("harness-bin", "native", str(evidence / "harness-bin")),
     ]
     expected_generated_roots = [str(evidence / "Nutrition App Native" / "apps/mobile/node_modules"),
-                                str(evidence / "Nutrition App Native" / "apps/mobile/ios")]
+                                str(evidence / "Nutrition App Native" / "apps/mobile/ios"),
+                                str(evidence / "Nutrition App Native" / EXPO_IMAGE_CACHE_OUTPUT)]
+    expected_producer_outputs = [{
+        "name": "expo-image-cache",
+        "producer_path": EXPO_IMAGE_CACHE_SOURCE,
+        "producer_sha256": EXPO_IMAGE_CACHE_SHA256,
+        "output_path": str(evidence / "Nutrition App Native" / EXPO_IMAGE_CACHE_OUTPUT),
+    }]
     if (request.get("task") != ownership.get("task")
             or request.get("attempt") != ownership.get("attempt")
             or request.get("evidence_directory") != str(evidence)
@@ -669,6 +699,7 @@ def _native_owner(path: Path) -> dict[str, Any]:
             or request.get("outputs") != [dict(name=name, kind=kind, path=path)
                                            for name, kind, path in expected_outputs]
             or request.get("worktree_generated_roots") != expected_generated_roots
+            or request.get("worktree_producer_outputs") != expected_producer_outputs
             or request.get("quarantine_parent") != str(evidence / ".nutrition-quarantine-native")
             or request.get("runtime_inputs") != source.get("runtime_inputs")
             or request.get("caches") != source.get("caches")):
@@ -716,6 +747,53 @@ def _native_generated_roots(ownership: dict[str, Any], target: Path | None = Non
     return mapped
 
 
+def _native_producer_bindings(ownership: dict[str, Any], target: Path) -> list[dict[str, str]]:
+    source = ownership.get("source")
+    request_binding = source.get("request") if isinstance(source, dict) else None
+    if not isinstance(request_binding, dict) or file_binding(Path(request_binding.get("path", ""))) != request_binding:
+        raise OutputCleanupError("native producer definitions changed")
+    request = read_json(Path(request_binding["path"]))
+    outputs = request.get("worktree_producer_outputs")
+    if not isinstance(outputs, list) or len(outputs) != 1:
+        raise OutputCleanupError("native producer output binding is incomplete")
+    probes = [item for item in ownership.get("outputs", [])
+              if isinstance(item, dict) and item.get("name") == "probe"]
+    if len(probes) != 1 or not isinstance(probes[0].get("receipt"), dict):
+        raise OutputCleanupError("native producer worktree receipt is ambiguous")
+    original = Path(probes[0]["receipt"].get("path", ""))
+    allowed_targets = {original}
+    operations = ownership.get("operations", {})
+    if not isinstance(operations, dict):
+        raise OutputCleanupError("native producer operation history is invalid")
+    for operation in operations.values():
+        if isinstance(operation, dict) and operation.get("name") == "probe" \
+                and operation.get("original") == str(original) \
+                and isinstance(operation.get("destination"), str):
+            allowed_targets.add(Path(operation["destination"]))
+    if target not in allowed_targets:
+        raise OutputCleanupError("native producer target is outside its original or quarantined worktree")
+    bindings = []
+    for item in outputs:
+        if (not isinstance(item, dict)
+                or set(item) != {"name", "producer_path", "producer_sha256", "output_path"}
+                or item.get("name") != "expo-image-cache"
+                or item.get("producer_path") != EXPO_IMAGE_CACHE_SOURCE
+                or item.get("producer_sha256") != EXPO_IMAGE_CACHE_SHA256
+                or item.get("output_path") != str(original / EXPO_IMAGE_CACHE_OUTPUT)):
+            raise OutputCleanupError("native producer output definition is invalid")
+        producer_relative = Path(item["producer_path"])
+        if (producer_relative.is_absolute()
+                or any(part in {"", ".", ".."} for part in producer_relative.parts)):
+            raise OutputCleanupError("native producer path is not checkout-relative")
+        producer_path = target / producer_relative
+        observed = file_binding(producer_path)
+        expected = {"path": str(producer_path), "sha256": item["producer_sha256"]}
+        if observed != expected:
+            raise OutputCleanupError("native producer bytes differ from the selected Expo cache source")
+        bindings.append(expected)
+    return bindings
+
+
 def native_owner_init(evidence: Path, repository: Path, commit: str,
                      npm_cache: str, cocoapods_cache: str,
                      worktree_generated_roots: list[str]) -> dict[str, Any]:
@@ -744,7 +822,11 @@ def native_owner_init(evidence: Path, repository: Path, commit: str,
         {"name": "harness-bin", "kind": "native", "path": str(evidence / "harness-bin")},
     ]
     expected_generated_roots = [str(Path(outputs[0]["path"]) / "apps/mobile/node_modules"),
-                                str(Path(outputs[0]["path"]) / "apps/mobile/ios")]
+                                str(Path(outputs[0]["path"]) / "apps/mobile/ios"),
+                                str(Path(outputs[0]["path"]) / EXPO_IMAGE_CACHE_OUTPUT)]
+    producer_outputs = [{"name": "expo-image-cache", "producer_path": EXPO_IMAGE_CACHE_SOURCE,
+                         "producer_sha256": EXPO_IMAGE_CACHE_SHA256,
+                         "output_path": str(Path(outputs[0]["path"]) / EXPO_IMAGE_CACHE_OUTPUT)}]
     supplied_generated_roots = []
     for value in worktree_generated_roots:
         supplied = Path(value)
@@ -768,6 +850,7 @@ def native_owner_init(evidence: Path, repository: Path, commit: str,
                "repository": str(repository), "commit": commit, "script": runtime[0],
                "runtime_inputs": runtime, "caches": caches, "outputs": outputs,
                "worktree_generated_roots": supplied_generated_roots,
+               "worktree_producer_outputs": producer_outputs,
                "quarantine_parent": str(quarantine)}
     write_json_exclusive(definitions_path, request)
     request_binding = file_binding(definitions_path)
@@ -807,6 +890,7 @@ def _native_evidence_bindings(evidence: Path, ownership: dict[str, Any], owner_p
     evidence = absolute_path(str(evidence), must_exist=True)
     excluded = {Path(item["receipt"]["path"]) for item in ownership.get("outputs", [])}
     quarantine = Path(ownership.get("quarantine_parent", ""))
+    session = owner_lock_session_path(ownership.get("lock_root", ""))
     if not quarantine.is_absolute():
         raise OutputCleanupError("native quarantine parent is not bound")
     files: list[Path] = []
@@ -826,7 +910,7 @@ def _native_evidence_bindings(evidence: Path, ownership: dict[str, Any], owner_p
                 raise OutputCleanupError("native retained evidence contains a linked or special directory")
         for name in names:
             path = base / name
-            if path == owner_path:
+            if path == owner_path or path == session:
                 continue
             info = path.lstat()
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
@@ -907,6 +991,44 @@ def _process_start_identity(pid: int) -> str:
     return str(process["start"])
 
 
+def _descendant_rows(
+    processes: dict[int, dict[str, Any]], root_pid: int, root_start: str,
+) -> list[dict[str, Any]]:
+    root = processes.get(root_pid)
+    if root is None:
+        group_members = sorted(pid for pid, row in processes.items() if row.get("group") == root_pid)
+        raise OutputCleanupError(
+            f"native invocation process disappeared during observation: pid={root_pid}, "
+            f"remaining-group-pids={group_members}"
+        )
+    if str(root.get("start")) != root_start:
+        raise OutputCleanupError("native invocation process start identity changed during observation")
+    children: dict[int, list[int]] = {}
+    for pid, row in processes.items():
+        parent = row.get("parent")
+        if type(parent) is int:
+            children.setdefault(parent, []).append(pid)
+    descendants = []
+    pending = list(children.get(root_pid, []))
+    visited = {root_pid}
+    while pending:
+        pid = pending.pop()
+        if pid in visited:
+            raise OutputCleanupError("native process tree contains a cycle")
+        visited.add(pid)
+        row = processes.get(pid)
+        if row is None:
+            raise OutputCleanupError("native process inventory changed during observation")
+        descendants.append(row)
+        pending.extend(children.get(pid, []))
+    return descendants
+
+
+def _process_is_live(row: dict[str, Any]) -> bool:
+    return not (row.get("state") == 5 if sys.platform == "darwin"
+                else row.get("state") in {"Z", "X", "x"})
+
+
 def _native_invocation_identity() -> dict[str, Any]:
     pid = os.getppid()
     try:
@@ -919,7 +1041,9 @@ def _native_invocation_identity() -> dict[str, Any]:
     return {"pid": pid, "group": group, "start": _process_start_identity(pid)}
 
 
-def _verify_native_invocation_quiescent(ownership: dict[str, Any]) -> dict[str, Any]:
+def _verify_native_invocation_quiescent(
+    ownership: dict[str, Any], monitor_record: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     invocation = ownership.get("invocation_process")
     if (not isinstance(invocation, dict) or set(invocation) != {"pid", "group", "start"}
             or type(invocation.get("pid")) is not int or invocation["pid"] <= 0
@@ -945,14 +1069,58 @@ def _verify_native_invocation_quiescent(ownership: dict[str, Any]) -> dict[str, 
         cursor = parent
     if invocation["pid"] not in ancestors:
         raise OutputCleanupError("native invocation is not the current cleanup ancestor")
-    active = [row["pid"] for row in processes.values()
+    active = [{"pid": row["pid"], "start": str(row["start"]), "group": row["group"]}
+              for row in processes.values()
               if row["group"] == invocation["group"] and row["pid"] not in ancestors
-              and not (row["state"] == 5 if sys.platform == "darwin"
-                       else row["state"] in {"Z", "X", "x"})]
+              and _process_is_live(row)]
     if active:
         raise OutputCleanupError("native producer descendants remain active")
+    process_evidence = ownership.get("process_evidence")
+    monitor = monitor_record
+    if monitor is None:
+        monitor = process_evidence if isinstance(process_evidence, dict) else None
+    if monitor is None:
+        session_path = owner_lock_session_path(ownership.get("lock_root", ""))
+        if not os.path.lexists(session_path):
+            raise OutputCleanupError("native escaped-descendant observation is missing")
+        monitor = read_json(session_path)
+    expected_lock = file_binding(owner_lock_path(ownership.get("lock_root", "")))
+    if (monitor.get("schema") != "nutrition-task-output-owner-session-v1"
+            or monitor.get("output_path") != ownership.get("lock_root")
+            or monitor.get("lock") != expected_lock
+            or monitor.get("invocation") != invocation
+            or type(monitor.get("owner_pid")) is not int or monitor["owner_pid"] <= 0
+            or not isinstance(monitor.get("monitor_start"), str) or not monitor["monitor_start"]
+            or monitor.get("status") not in {"stopped", "quiescent"}
+            or monitor.get("coverage_complete") is not True
+            or type(monitor.get("sample_count")) is not int or monitor["sample_count"] < 1
+            or not isinstance(monitor.get("observed_escaped_descendants"), list)):
+        raise OutputCleanupError("native escaped-descendant observation is incomplete")
+    observed_monitor = processes.get(monitor["owner_pid"])
+    if (observed_monitor is not None
+            and str(observed_monitor.get("start")) == monitor["monitor_start"]
+            and _process_is_live(observed_monitor)):
+        raise OutputCleanupError("native process observer is still active")
+    escaped_active = []
+    for child in monitor["observed_escaped_descendants"]:
+        if (not isinstance(child, dict) or set(child) != {"pid", "start", "group"}
+                or type(child.get("pid")) is not int or child["pid"] <= 0
+                or not isinstance(child.get("start"), str) or not child["start"]
+                or type(child.get("group")) is not int or child["group"] == invocation["group"]):
+            raise OutputCleanupError("native escaped-descendant identity is invalid")
+        current = processes.get(child["pid"])
+        if (current is not None and str(current.get("start")) == child["start"]
+                and _process_is_live(current)):
+            escaped_active.append(child)
+    if escaped_active:
+        raise OutputCleanupError("native escaped-session descendants remain active")
     return {"invocation": invocation, "observed_ancestors": sorted(ancestors),
-            "active_descendants": [], "status": "quiescent"}
+            "schema": "nutrition-task-output-owner-session-v1",
+            "output_path": ownership.get("lock_root"), "lock": expected_lock,
+            "owner_pid": monitor["owner_pid"], "monitor_start": monitor["monitor_start"],
+            "observed_escaped_descendants": monitor["observed_escaped_descendants"],
+            "active_descendants": [], "coverage_complete": True,
+            "sample_count": monitor["sample_count"], "status": "quiescent"}
 
 
 def native_owner_finish(owner_record: Path, *, exit_code: int, signal_status: int) -> dict[str, Any]:
@@ -967,10 +1135,13 @@ def native_owner_finish(owner_record: Path, *, exit_code: int, signal_status: in
     lock_root = absolute_path(ownership.get("lock_root", ""), must_exist=False)
     if owner_lock_binding(lock_root) != ownership.get("owner_lock"):
         raise OutputCleanupError("native owner lock identity changed")
-    with acquire_owner_lock(lock_root) as acquired:
-        if not acquired:
-            raise OutputCleanupError("native producer still holds the output owner lock")
-        process_evidence = _verify_native_invocation_quiescent(ownership)
+    session_path = owner_lock_session_path(lock_root)
+    with _wait_for_native_owner_lock_release(lock_root):
+        if not os.path.lexists(session_path):
+            raise OutputCleanupError("native process observation marker is missing")
+        session_before = read_json(session_path)
+        session_binding = file_binding(session_path)
+        process_evidence = _verify_native_invocation_quiescent(ownership, session_before)
         source = ownership.get("source", {})
         repository = absolute_path(source.get("repository", ""), must_exist=True)
         head = subprocess.run(["git", "-C", str(repository), "rev-parse", "HEAD"],
@@ -990,7 +1161,9 @@ def native_owner_finish(owner_record: Path, *, exit_code: int, signal_status: in
                 registration = item["registration"]
                 if _worktree_registration(
                         registration["repository"], registration["path"], registration["head"],
-                        generated_roots=_native_generated_roots(ownership, Path(registration["path"]))) != registration:
+                        generated_roots=_native_generated_roots(ownership, Path(registration["path"])),
+                        producer_bindings=_native_producer_bindings(
+                            ownership, Path(registration["path"]))) != registration:
                     raise OutputCleanupError("native worktree registration changed before cleanup")
         ownership.update(state="completed", native_exit_code=exit_code,
                          signal_status=signal_status,
@@ -1001,6 +1174,10 @@ def native_owner_finish(owner_record: Path, *, exit_code: int, signal_status: in
                          stage_sha256_before_cleanup=file_binding(timing)["sha256"],
                          retained=retained)
         write_json(owner_record, document)
+        if file_binding(session_path) != session_binding:
+            raise OutputCleanupError("native process observation changed during completion")
+        session_path.unlink()
+        _fsync_directory(session_path.parent)
     return {"status": "completed", "retained_count": len(retained),
             "result": ownership["native_result"]}
 
@@ -1031,7 +1208,9 @@ def native_owner_verify_cleanup(owner_record: Path) -> dict[str, Any]:
             registration = operation.get("registration")
             if not isinstance(registration, dict) or _worktree_registration(
                     registration["repository"], registration["path"], registration["head"],
-                    generated_roots=_native_generated_roots(ownership, Path(registration["path"]))) != registration:
+                    generated_roots=_native_generated_roots(ownership, Path(registration["path"])),
+                    producer_bindings=_native_producer_bindings(
+                        ownership, Path(registration["path"]))) != registration:
                 raise OutputCleanupError("native quarantine worktree registration is not coherent")
         for binding in ownership.get("retained", []):
             if file_binding(Path(binding["path"])) != binding:
@@ -1090,13 +1269,76 @@ def native_owner_hold(owner_record: Path) -> int:
     lock_root = absolute_path(ownership.get("lock_root", ""), must_exist=False)
     if owner_lock_binding(lock_root) != ownership.get("owner_lock"):
         raise OutputCleanupError("native owner lock identity changed")
-    with acquire_owner_lock(lock_root) as acquired:
-        if not acquired:
-            raise OutputCleanupError("another native owner already holds this output")
-        print("READY", flush=True)
-        while True:
-            import time
-            time.sleep(60)
+    invocation = ownership.get("invocation_process")
+    if not isinstance(invocation, dict):
+        raise OutputCleanupError("native invocation process binding is missing")
+    stop_requested = False
+
+    def request_stop(_signum: int, _frame: Any) -> None:
+        nonlocal stop_requested
+        stop_requested = True
+
+    previous_term = signal.signal(signal.SIGTERM, request_stop)
+    previous_int = signal.signal(signal.SIGINT, request_stop)
+    session_path = owner_lock_session_path(lock_root)
+    lock_binding = file_binding(owner_lock_path(lock_root))
+    monitor_start = _process_start_identity(os.getpid())
+    seen: dict[tuple[int, str], dict[str, Any]] = {}
+    sample_count = 0
+    coverage_complete = True
+    observation_error = None
+
+    def sample() -> None:
+        nonlocal sample_count, coverage_complete, observation_error
+        try:
+            processes = _process_snapshot()
+            descendants = _descendant_rows(processes, invocation["pid"], invocation["start"])
+            for row in descendants:
+                if row.get("group") != invocation.get("group"):
+                    pid = row.get("pid")
+                    start = str(row.get("start", ""))
+                    if type(pid) is not int or not start:
+                        raise OutputCleanupError("native escaped-descendant identity is incomplete")
+                    seen[(pid, start)] = {"pid": pid, "start": start, "group": row["group"]}
+            if len(seen) > 8192:
+                raise OutputCleanupError("native escaped-descendant inventory exceeds its bound")
+        except (OSError, OutputCleanupError, KeyError, TypeError) as error:
+            coverage_complete = False
+            observation_error = str(error)
+        sample_count += 1
+
+    def monitor_record(status: str) -> dict[str, Any]:
+        return {
+            "schema": "nutrition-task-output-owner-session-v1",
+            "output_path": str(lock_root), "owner_pid": os.getpid(),
+            "monitor_start": monitor_start,
+            "lock": lock_binding, "invocation": invocation,
+            "status": status, "coverage_complete": coverage_complete,
+            "sample_count": sample_count,
+            "observed_escaped_descendants": sorted(
+                seen.values(), key=lambda item: (item["pid"], item["start"])),
+            "observation_error": observation_error,
+        }
+
+    try:
+        with acquire_owner_lock_handle(lock_root, clear_stale_session=False) as (acquired, _descriptor):
+            if not acquired:
+                raise OutputCleanupError("another native owner already holds this output")
+            if os.path.lexists(session_path):
+                raise OutputCleanupError("native process observation marker already exists")
+            sample()
+            write_json_exclusive(session_path, monitor_record("monitoring"))
+            print("READY", flush=True)
+            while not stop_requested:
+                time.sleep(NATIVE_PROCESS_SAMPLE_SECONDS)
+                sample()
+                write_json(session_path, monitor_record("monitoring"))
+            sample()
+            write_json(session_path, monitor_record("stopped" if coverage_complete else "unknown"))
+            return 0 if coverage_complete else 1
+    finally:
+        signal.signal(signal.SIGTERM, previous_term)
+        signal.signal(signal.SIGINT, previous_int)
 
 
 def native_bind_worktree(owner_record: Path, *, head: str) -> dict[str, Any]:
@@ -1213,7 +1455,9 @@ def _native_quarantine_plan(owner_record: Path, *, owner_lock_held: bool = False
             elif _worktree_registration(registration.get("repository", ""),
                                         registration.get("path", ""),
                                         registration.get("head", ""),
-                                        generated_roots=generated_roots) != registration:
+                                        generated_roots=generated_roots,
+                                        producer_bindings=_native_producer_bindings(
+                                            ownership, Path(registration.get("path", "")))) != registration:
                 plan.update(status="retained", reason="registered worktree state changed")
         if active and plan.get("status") == "eligible":
             plan.update(status="retained", reason=lock_error)
@@ -1242,6 +1486,7 @@ def native_quarantine_execute(owner_record: Path, *, name: str, operation_id: st
         ownership = record["output_ownership"]
         if ownership.get("state") != "completed":
             raise OutputCleanupError("native producer state is not terminal")
+        _verify_native_invocation_quiescent(ownership)
         plan = _native_quarantine_plan(owner_record, owner_lock_held=True)
         matches = [item for item in ownership["outputs"] if item.get("name") == name]
         rows = [row for row in plan["outputs"] if row["name"] == name]
@@ -1255,6 +1500,9 @@ def native_quarantine_execute(owner_record: Path, *, name: str, operation_id: st
         quarantine = absolute_path(ownership["quarantine_parent"], must_exist=False)
         if quarantine != Path(ownership["source"]["evidence_directory"]) / ".nutrition-quarantine-native":
             raise OutputCleanupError("native quarantine parent differs from its selected definition")
+        operation = operation_history.get(operation_id)
+        if operation is None and row["status"] != "eligible":
+            raise OutputCleanupError("native output is not eligible for quarantine")
         if os.path.lexists(quarantine):
             if ownership.get("quarantine_node") is None or _node(quarantine) != ownership["quarantine_node"]:
                 raise OutputCleanupError("native quarantine parent identity is unknown")
@@ -1265,10 +1513,7 @@ def native_quarantine_execute(owner_record: Path, *, name: str, operation_id: st
                 raise OutputCleanupError("native quarantine parent is on another filesystem")
             ownership["quarantine_node"] = node
         destination = quarantine / Path(receipt["path"]).name
-        operation = operation_history.get(operation_id)
         if operation is None:
-            if row["status"] != "eligible":
-                raise OutputCleanupError("native output is not eligible for quarantine")
             operation = {"status": "pending", "name": name, "kind": item["kind"],
                          "original": receipt["path"], "destination": str(destination),
                          "original_node": receipt["node"],
@@ -1283,6 +1528,7 @@ def native_quarantine_execute(owner_record: Path, *, name: str, operation_id: st
               or operation.get("kind") != item.get("kind")):
             raise OutputCleanupError("native operation intent changed")
         if operation.get("status") == "quarantined":
+            _verify_native_invocation_quiescent(ownership)
             if (os.path.lexists(receipt["path"]) or not os.path.lexists(destination)
                     or _node(destination) != receipt["node"]):
                 raise OutputCleanupError("completed native operation locations are ambiguous")
@@ -1297,6 +1543,7 @@ def native_quarantine_execute(owner_record: Path, *, name: str, operation_id: st
         if original_exists and destination_exists:
             raise OutputCleanupError("both native disposal locations exist")
         if destination_exists:
+            _verify_native_invocation_quiescent(ownership)
             if _node(quarantine) != operation["quarantine_node"] or _node(destination) != receipt["node"]:
                 raise OutputCleanupError("native interruption destination identity is ambiguous")
             size, topology = _tree_measure(destination, allow_links=True)
@@ -1309,7 +1556,9 @@ def native_quarantine_execute(owner_record: Path, *, name: str, operation_id: st
                                 "head": old["head"], "detached": True}
                 if _worktree_registration(
                         registration["repository"], registration["path"], registration["head"],
-                        generated_roots=_native_generated_roots(ownership, Path(registration["path"]))) != registration:
+                        generated_roots=_native_generated_roots(ownership, Path(registration["path"])),
+                        producer_bindings=_native_producer_bindings(
+                            ownership, Path(registration["path"]))) != registration:
                     raise OutputCleanupError("moved native worktree registration cannot be reconciled")
             elif size != operation.get("logical_bytes"):
                 raise OutputCleanupError("native interruption destination size changed")
@@ -1329,8 +1578,11 @@ def native_quarantine_execute(owner_record: Path, *, name: str, operation_id: st
                 old = operation.get("registration")
                 if not isinstance(old, dict) or _worktree_registration(
                         old.get("repository", ""), old.get("path", ""), old.get("head", ""),
-                        generated_roots=_native_generated_roots(ownership, Path(old.get("path", "")))) != old:
+                        generated_roots=_native_generated_roots(ownership, Path(old.get("path", ""))),
+                        producer_bindings=_native_producer_bindings(
+                            ownership, Path(old.get("path", "")))) != old:
                     raise OutputCleanupError("native worktree registration changed before move")
+                _verify_native_invocation_quiescent(ownership)
                 move = subprocess.run(["git", "-C", old["repository"], "worktree", "move",
                                        str(path), str(destination)], capture_output=True,
                                       text=True, check=False)
@@ -1344,11 +1596,14 @@ def native_quarantine_execute(owner_record: Path, *, name: str, operation_id: st
                                 "head": old["head"], "detached": True}
                 if _worktree_registration(
                         registration["repository"], registration["path"], registration["head"],
-                        generated_roots=_native_generated_roots(ownership, Path(registration["path"]))) != registration:
+                        generated_roots=_native_generated_roots(ownership, Path(registration["path"])),
+                        producer_bindings=_native_producer_bindings(
+                            ownership, Path(registration["path"]))) != registration:
                     raise OutputCleanupError("native moved worktree registration verification failed")
             else:
                 if _node(quarantine)[0] != receipt["node"][0] or os.path.lexists(destination):
                     raise OutputCleanupError("native quarantine destination is unsafe")
+                _verify_native_invocation_quiescent(ownership)
                 os.rename(path, destination)
             if os.path.lexists(path) or _node(destination) != receipt["node"]:
                 raise OutputCleanupError("native quarantine root identity mismatch")
@@ -1358,6 +1613,7 @@ def native_quarantine_execute(owner_record: Path, *, name: str, operation_id: st
             if item["kind"] != "worktree" and after_size != size:
                 raise OutputCleanupError("native quarantine content size changed")
             size, topology = after_size, after_topology
+        _verify_native_invocation_quiescent(ownership)
         operation.update(status="quarantined", destination=str(destination),
                          destination_node=_node(destination), bytes=size,
                          reclaimed_bytes=0, link_topology=topology,
@@ -1796,8 +2052,30 @@ def _validate_authored_evidence(
             if (not isinstance(quiescence, dict) or quiescence.get("status") != "quiescent"
                     or quiescence.get("leader_pid") != quiescence.get("process_group_id")
                     or not isinstance(quiescence.get("leader_start"), str)
-                    or not quiescence["leader_start"]):
+                    or not quiescence["leader_start"]
+                    or quiescence.get("coverage_complete") is not True
+                    or quiescence.get("process_group_present_after_wait") is not False
+                    or type(quiescence.get("sample_count")) is not int
+                    or quiescence["sample_count"] < 1
+                    or quiescence.get("active_descendants") != []
+                    or not isinstance(quiescence.get("observed_descendants"), list)):
                 raise OutputCleanupError("authored child process quiescence is unknown: " + str(step.get("id")))
+            observed_processes: set[tuple[int, str]] = set()
+            for child in quiescence["observed_descendants"]:
+                if (not isinstance(child, dict) or set(child) != {"pid", "start", "group"}
+                        or type(child.get("pid")) is not int or child["pid"] <= 0
+                        or not isinstance(child.get("start"), str) or not child["start"]
+                        or type(child.get("group")) is not int):
+                    raise OutputCleanupError("authored descendant identity is invalid: " + str(step.get("id")))
+                identity = (child["pid"], child["start"])
+                if identity in observed_processes:
+                    raise OutputCleanupError("authored descendant identity is duplicated: " + str(step.get("id")))
+                observed_processes.add(identity)
+            current_processes = _process_snapshot()
+            if any((current := current_processes.get(pid)) is not None
+                   and str(current.get("start")) == start and _process_is_live(current)
+                   for pid, start in observed_processes):
+                raise OutputCleanupError("authored escaped-session descendant remains active: " + str(step.get("id")))
         for file_key, hash_key in (("stdout_log", "stdout_sha256"), ("stderr_log", "stderr_sha256"),
                                    ("runner_log", "runner_log_sha256")):
             value = row.get(file_key)
@@ -1827,6 +2105,7 @@ def _validate_authored_evidence(
 
 def _worktree_source_observation(
     repository: Path, target: Path, head: str, generated_roots: list[str] | None = None,
+    producer_bindings: list[dict[str, str]] | None = None,
 ) -> None:
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     environment["GIT_NO_REPLACE_OBJECTS"] = "1"
@@ -1863,8 +2142,50 @@ def _worktree_source_observation(
 
     def producer_output(relative: str) -> bool:
         candidate = target / relative.rstrip("/")
-        return any(candidate == allowed or candidate.is_relative_to(allowed)
-                   for allowed in allowed_generated)
+        if any(candidate == allowed or candidate.is_relative_to(allowed)
+               for allowed in allowed_generated):
+            return True
+        if not any(allowed.is_relative_to(candidate) for allowed in allowed_generated):
+            return False
+
+        # Git collapses ignored descendants to their first ignored directory.
+        # Admit that ancestor only after proving every entry below it belongs
+        # to an exact selected generated root or is a real directory leading
+        # to one. This keeps unrelated .expo contents visible as source.
+        if not os.path.lexists(candidate):
+            return False
+        root_info = candidate.lstat()
+        if not stat.S_ISDIR(root_info.st_mode):
+            raise OutputCleanupError("collapsed generated output ancestor is linked or special")
+        pending = [candidate]
+        while pending:
+            current = pending.pop()
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    path = Path(entry.path)
+                    info = path.lstat()
+                    within = any(path == allowed or path.is_relative_to(allowed)
+                                 for allowed in allowed_generated)
+                    ancestor = any(allowed.is_relative_to(path) for allowed in allowed_generated)
+                    if not within and not ancestor:
+                        raise OutputCleanupError("collapsed ignored directory contains unexpected source")
+                    if ancestor:
+                        if not stat.S_ISDIR(info.st_mode):
+                            raise OutputCleanupError("generated output ancestor is linked or special")
+                        pending.append(path)
+                    elif stat.S_ISDIR(info.st_mode):
+                        pending.append(path)
+                    elif not stat.S_ISREG(info.st_mode):
+                        raise OutputCleanupError("generated output contains a linked or special entry")
+        return True
+
+    if producer_bindings is not None:
+        if not isinstance(producer_bindings, list) or not producer_bindings:
+            raise OutputCleanupError("native producer file bindings are incomplete")
+        for binding in producer_bindings:
+            if (not isinstance(binding, dict) or set(binding) != {"path", "sha256"}
+                    or file_binding(Path(binding.get("path", ""))) != binding):
+                raise OutputCleanupError("native producer file changed")
 
     for item in status.stdout.split(b"\0"):
         if not item:
@@ -1874,7 +2195,10 @@ def _worktree_source_observation(
             relative = item[2:].decode("utf-8", "surrogateescape")
             if relative in runtime_names:
                 continue
-            if producer_output(relative):
+            if producer_output(relative) and (marker != b"?" or any(
+                    (target / relative.rstrip("/")) == allowed
+                    or (target / relative.rstrip("/")).is_relative_to(allowed)
+                    for allowed in allowed_generated)):
                 continue
         raise OutputCleanupError("worktree contains tracked, ignored, or unique source changes")
     for item in flags.stdout.split(b"\0"):
@@ -1887,6 +2211,7 @@ def _worktree_source_observation(
 
 def _worktree_registration(
     repository: str, path: str, head: str, *, generated_roots: list[str] | None = None,
+    producer_bindings: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     repo = absolute_path(repository, must_exist=True)
     target = absolute_path(path, must_exist=True)
@@ -1913,7 +2238,7 @@ def _worktree_registration(
                                 capture_output=True, text=True, check=False, env=environment)
     if submodules.returncode or submodules.stdout.strip():
         raise OutputCleanupError("worktree contains unsupported submodule registration")
-    _worktree_source_observation(repo, target, head, generated_roots)
+    _worktree_source_observation(repo, target, head, generated_roots, producer_bindings)
     return {"repository": str(repo), "path": str(target), "head": head, "detached": True}
 
 
@@ -2473,6 +2798,10 @@ def _closeout_plan(
     disposition = completion.get("disposition")
     if disposition not in {"completed", "superseded_terminal"}:
         raise OutputCleanupError("current controller state is not terminal")
+    published_main_sha = completion.get("published_main_sha")
+    if published_main_sha is not None and (not isinstance(published_main_sha, str)
+                                            or not re.fullmatch(r"[0-9a-f]{40}", published_main_sha)):
+        raise OutputCleanupError("published main observation is invalid")
     if _terminal_disposition(checkpoint, attempt) != disposition:
         raise OutputCleanupError("current execution checkpoint is ambiguous or does not match task completion")
     retained = retained_source if retained_override is None else retained_override
@@ -2558,6 +2887,8 @@ def _closeout_plan(
         plan.update(name=item.get("name"), kind=item.get("kind"), task=task,
                     attempt=attempt, owner_definition=receipt.get("definition"),
                     task_state=disposition, retention_pending=retention_pending)
+        if published_main_sha is not None:
+            plan["published_main_sha"] = published_main_sha
         if active and plan.get("status") == "eligible":
             plan.update(status="retained", reason=lock_error)
         if plan.get("status") == "eligible" and helper_selection is not None:
@@ -2584,7 +2915,7 @@ def _closeout_plan(
                "checkpoint_bindings": checkpoint_bindings,
                "protected": protected, "destination": destination,
                "owner_lock_root": lock_root, "prepared": prepared,
-               "disposition": disposition}
+               "disposition": disposition, "published_main_sha": published_main_sha}
     return context, plans, {"task": task, "attempt": attempt, "issue": issue_number}
 
 
@@ -2722,7 +3053,8 @@ def output_closeout(
                 )
                 rows = [entry for entry in observed_plans if entry.get("name") == name]
                 receipts = [entry["receipt"] for entry in observed_context["ownership"].get("outputs", [])
-                            if entry.get("name") == name]
+                            if isinstance(entry, dict) and entry.get("name") == name
+                            and isinstance(entry.get("receipt"), dict)]
                 if len(rows) != 1 or len(receipts) != 1:
                     raise OutputCleanupError("current output receipt name is not uniquely owned")
                 return observed_context, rows[0], receipts[0]
@@ -2813,8 +3145,16 @@ def output_closeout(
             )
             results: list[dict[str, Any]] = []
             for item in plans:
-                receipt = next(output["receipt"] for output in context["ownership"]["outputs"]
-                               if output["name"] == item["name"])
+                name = item.get("name")
+                matching_outputs = [output for output in context["ownership"]["outputs"]
+                                    if isinstance(output, dict) and output.get("name") == name]
+                if (not isinstance(name, str) or len(matching_outputs) != 1
+                        or not isinstance(matching_outputs[0].get("receipt"), dict)):
+                    results.append({**item, "status": "retained",
+                                    "reason": "output receipt is missing or ambiguous",
+                                    "removed_bytes": 0, "reclaimed_bytes": None})
+                    continue
+                receipt = matching_outputs[0]["receipt"]
                 source = Path(receipt["path"])
                 operation_history = load_state(state_dir, issue_number).get("output_closeout", {}).get("operations", [])
                 if not isinstance(operation_history, list):
@@ -2854,6 +3194,8 @@ def output_closeout(
                         matches = [entry for entry in operations if entry.get("operation_id") == operation_id]
                         if len(matches) != 1:
                             raise OutputCleanupError("prior operation intent is missing")
+                        if isinstance(latest_item.get("published_main_sha"), str):
+                            matches[0]["published_main_sha"] = latest_item["published_main_sha"]
                         matches[0].update(result)
                         matches[0]["status"] = "complete"
                         closeout["operations"] = operations
@@ -2902,6 +3244,8 @@ def output_closeout(
                                 or latest_item.get("bytes") != operation["logical_bytes"]
                                 or latest_receipt != receipt):
                             raise OutputCleanupError("latest output eligibility changed before cleanup intent")
+                        if isinstance(latest_item.get("published_main_sha"), str):
+                            operation["published_main_sha"] = latest_item["published_main_sha"]
                         current_copy = dict(current)
                         closeout = dict(current_copy.get("output_closeout", {}))
                         operations = closeout.get("operations", [])
@@ -3025,6 +3369,8 @@ def output_closeout(
                         matches = [entry for entry in operations if entry.get("operation_id") == operation_id]
                         if len(matches) != 1:
                             raise OutputCleanupError("persisted output cleanup intent is missing")
+                        if isinstance(latest_item.get("published_main_sha"), str):
+                            matches[0]["published_main_sha"] = latest_item["published_main_sha"]
                         matches[0].update(move_result)
                         matches[0]["status"] = "complete"
                         matches[0]["reconciled"] = reconciled

@@ -378,7 +378,10 @@ requires `--execute --human-owner-authorized`. It copies and reads back the raw 
 and every currently referenced review/approval/source file, then atomically publishes the
 hash-bound current reference before moving any original output. The existing issue checkpoint lock
 revalidates latest terminal state, reference, owner lock, protected inputs and hashes when it stores
-operation intent and performs each move. Each output uses a new same-filesystem recoverable
+operation intent and performs each move. Before eligibility, each move and interrupted-operation
+reconciliation, closeout fetches the configured `origin/main` and requires the integrated candidate
+to remain an ancestor; an advanced main containing that candidate is valid, while an unpublished or
+divergent candidate stays in place. Each output uses a new same-filesystem recoverable
 quarantine location; pending or interrupted locations must be reconciled from disk and the saved
 operation before retry. Quarantine reports zero physical bytes reclaimed; an absent path is a no-op.
 Unknown, active, paused, shared-cache, protected-runtime, unique-source or incompletely retained
@@ -550,6 +553,12 @@ probe worktree, `DerivedData` and harness roots. Its existing cleanup path recor
 quarantines those roots before PASS; the probe uses `git worktree move`, while other generated roots
 are renamed without following links. It verifies the original roots are absent, quarantine identity
 and worktree registration match, and retained raw evidence remains readable before printing PASS.
+The probe owner follows the locked `@expo/image-utils` cache producer into
+`apps/mobile/.expo/web/cache/production/images`; other `.expo` contents remain source and prevent
+cleanup. Authored and native owners observe attributable descendants while producers run, preserve
+escaped-session identities, and retain outputs if the process inventory is incomplete or a known
+descendant remains active. Native moves and interrupted-move reconciliation also recheck that the
+original isolated invocation is still the active ancestor.
 Quarantine retains the bytes and reports no physical reclamation; npm and CocoaPods caches remain
 protected. The simulator build records its literal argv and
 uses `ENABLE_DEBUG_DYLIB=NO` with `LD_GENERATE_MAP_FILE=YES` so Xcode emits application link maps.

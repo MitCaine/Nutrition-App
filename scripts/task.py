@@ -5870,10 +5870,36 @@ def _validate_output_installed_checks(
     return {"root": root, "request": request, "owner": owner, "results": results}
 
 
+def _observe_published_main_containing_candidate(
+    candidate_repo: Path, candidate_sha: str,
+    ref_transport: CandidateRefTransport,
+) -> str:
+    """Fetch configured origin/main and prove it contains the exact candidate commit."""
+    observed_main = ref_transport.fetch_main()
+    if not isinstance(observed_main, str) or not re.fullmatch(r"[0-9a-f]{40}", observed_main):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_PUBLISHED_MAIN_OBSERVATION_INVALID")
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    observed_object = subprocess.run(
+        ["git", "-C", str(candidate_repo), "rev-parse", "--verify", f"{observed_main}^{{commit}}"],
+        capture_output=True, text=True, check=False, env=environment,
+    )
+    if observed_object.returncode or observed_object.stdout.strip() != observed_main:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_PUBLISHED_MAIN_OBJECT_UNAVAILABLE")
+    ancestry = subprocess.run(
+        ["git", "-C", str(candidate_repo), "merge-base", "--is-ancestor", candidate_sha, observed_main],
+        capture_output=True, text=True, check=False, env=environment,
+    )
+    if ancestry.returncode:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CANDIDATE_NOT_REACHABLE_FROM_PUBLISHED_MAIN")
+    return observed_main
+
+
 def validate_output_closeout_completion(
     state: dict[str, Any], issue_number: int, attempt: str, record_path: Path,
     record: dict[str, Any], root: Path, owner: dict[str, Any], request: dict[str, Any],
     retained: list[dict[str, str]], repo_root: Path,
+    ref_transport: CandidateRefTransport | None = None,
 ) -> dict[str, Any]:
     """Authenticate standard task acceptance before task-output eligibility."""
     task_id = f"GH-{issue_number}"
@@ -5967,6 +5993,9 @@ def validate_output_closeout_completion(
     observed_candidate = require_candidate_repository(repo_root, expected_repository=state["repository"])
     if observed_candidate != candidate_sha:
         raise TaskControllerError("OUTPUT_CLOSEOUT_CANDIDATE_SOURCE_MISMATCH")
+    published_main_sha = _observe_published_main_containing_candidate(
+        repo_root, candidate_sha, ref_transport or GitCandidateRefTransport(repo_root),
+    )
     installed_record = current_execution.get("installed_checks_evidence")
     installed_repository = installed_record.get("repository") if isinstance(installed_record, dict) else None
     current_repository = str(repo_root.resolve(strict=True))
@@ -6004,6 +6033,7 @@ def validate_output_closeout_completion(
         if output_candidate != candidate_sha or not output_passed:
             raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_ATTEMPT_NOT_VERIFIED")
         return {"disposition": "completed", "candidate_sha": candidate_sha,
+                "published_main_sha": published_main_sha,
                 "installed_evidence_root": str(proof["root"])}
 
     history = current_execution.get("history")
@@ -6044,6 +6074,7 @@ def validate_output_closeout_completion(
     if historical_candidate != candidate_sha or not historical_passed:
         raise TaskControllerError("OUTPUT_CLOSEOUT_SUPERSEDED_ATTEMPT_NOT_VERIFIED")
     return {"disposition": "superseded_terminal", "candidate_sha": candidate_sha,
+            "published_main_sha": published_main_sha,
             "installed_evidence_root": str(proof["root"])}
 
 

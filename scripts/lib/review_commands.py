@@ -706,31 +706,137 @@ def _process_group_exists(group: int) -> bool:
         return False
 
 
-def _quiesce_owned_process_group(group: int, leader_start: str) -> dict[str, Any]:
-    """Require the fresh Popen-owned session to be empty after its leader exits.
+_OWNED_EXEC_GATE = r'''import os,sys
+ready_fd,start_fd,error_fd=map(int,sys.argv[1:4])
+command=sys.argv[4:]
+os.write(ready_fd,b"R")
+os.close(ready_fd)
+if os.read(start_fd,1)!=b"G": os._exit(125)
+os.close(start_fd)
+os.set_inheritable(error_fd,False)
+try: os.execvpe(command[0],command,os.environ)
+except OSError as error:
+ os.set_inheritable(error_fd,True)
+ os.write(error_fd,(type(error).__name__+": "+str(error)).encode("utf-8","replace"))
+ os.close(error_fd)
+ os._exit(127)
+'''
 
-    The runner does not need to inspect or signal unrelated system processes.  A
-    still-existing group means a child escaped the step's lifetime, so the
-    result stays non-quiescent and cleanup must retain its output.
-    """
+
+def _start_owned_process(
+    argv: list[str], *, cwd: Path, env: dict[str, str], stdout: Any, stderr: Any,
+) -> tuple[subprocess.Popen[bytes], str, dict[tuple[int, str], dict[str, int | str]], int, int]:
+    """Hold an isolated exec at a pipe gate until its process identity is sampled."""
+    ready_read, ready_write = os.pipe()
+    start_read, start_write = os.pipe()
+    error_read, error_write = os.pipe()
+    process: subprocess.Popen[bytes] | None = None
     try:
-        exists = _process_group_exists(group)
-        return {
-            "leader_pid": group,
-            "process_group_id": group,
-            "leader_start": leader_start,
-            "process_group_present_after_wait": exists,
-            "status": "active-descendant" if exists else "quiescent",
-        }
-    except OSError as error:
-        return {
-            "leader_pid": group,
-            "process_group_id": group,
-            "leader_start": leader_start,
-            "process_group_present_after_wait": None,
-            "status": "unknown",
-            "observation_error": str(error),
-        }
+        process = subprocess.Popen(
+            [sys.executable, "-c", _OWNED_EXEC_GATE, str(ready_write), str(start_read),
+             str(error_write), *argv],
+            cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+            shell=False, close_fds=True, pass_fds=(ready_write, start_read, error_write),
+            start_new_session=True,
+        )
+        os.close(ready_write)
+        ready_write = -1
+        os.close(start_read)
+        start_read = -1
+        if os.read(ready_read, 1) != b"R":
+            raise OSError("owned process launcher did not reach its start gate")
+        leader_start = task_output_cleanup._process_start_identity(process.pid)
+        processes = task_output_cleanup._process_snapshot()
+        descendants = task_output_cleanup._descendant_rows(processes, process.pid, leader_start)
+        observed: dict[tuple[int, str], dict[str, int | str]] = {}
+        for row in descendants:
+            pid, start, group = row.get("pid"), str(row.get("start", "")), row.get("group")
+            if type(pid) is not int or not start or type(group) is not int:
+                raise task_output_cleanup.OutputCleanupError(
+                    "authored descendant process identity is incomplete")
+            observed[(pid, start)] = {"pid": pid, "start": start, "group": group}
+        if os.write(start_write, b"G") != 1:
+            raise OSError("owned process start gate could not be released")
+        os.close(start_write)
+        start_write = -1
+        return process, leader_start, observed, 1, error_read
+    except BaseException:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+        os.close(error_read)
+        raise
+    finally:
+        for descriptor in (ready_read, ready_write, start_read, start_write, error_write):
+            if descriptor >= 0:
+                os.close(descriptor)
+
+
+def _wait_for_owned_process(
+    process: subprocess.Popen[bytes], leader_start: str,
+    observed: dict[tuple[int, str], dict[str, int | str]], sample_count: int,
+    error_read: int,
+) -> tuple[int | None, dict[str, Any], str | None]:
+    """Observe descendants while the session leader is alive, then verify none remain."""
+    group = process.pid
+    coverage_complete = True
+    observation_error: str | None = None
+    launch_error: str | None = None
+
+    while process.poll() is None:
+        try:
+            processes = task_output_cleanup._process_snapshot()
+            descendants = task_output_cleanup._descendant_rows(processes, group, leader_start)
+            for row in descendants:
+                pid, start, child_group = row.get("pid"), str(row.get("start", "")), row.get("group")
+                if type(pid) is not int or not start or type(child_group) is not int:
+                    raise task_output_cleanup.OutputCleanupError(
+                        "authored descendant process identity is incomplete")
+                observed[(pid, start)] = {"pid": pid, "start": start, "group": child_group}
+            sample_count += 1
+        except (OSError, task_output_cleanup.OutputCleanupError, KeyError, TypeError) as error:
+            if process.poll() is None:
+                coverage_complete = False
+                observation_error = str(error)
+        time.sleep(0.025)
+
+    child_return_code = process.wait()
+    try:
+        raw_launch_error = os.read(error_read, 4096)
+        if raw_launch_error:
+            launch_error = raw_launch_error.decode("utf-8", "replace")
+            child_return_code = None
+    finally:
+        os.close(error_read)
+    active_descendants: list[dict[str, int | str]] = []
+    try:
+        processes = task_output_cleanup._process_snapshot()
+        for child in observed.values():
+            current = processes.get(int(child["pid"]))
+            if (current is not None and str(current.get("start")) == child["start"]
+                    and task_output_cleanup._process_is_live(current)):
+                active_descendants.append(child)
+        group_exists = _process_group_exists(group)
+    except (OSError, task_output_cleanup.OutputCleanupError, KeyError, TypeError) as error:
+        group_exists = None
+        coverage_complete = False
+        observation_error = str(error)
+    status = "unknown" if not coverage_complete or group_exists is None or sample_count < 1 else (
+        "active-descendant" if group_exists or active_descendants else "quiescent")
+    record = {
+        "leader_pid": group,
+        "process_group_id": group,
+        "leader_start": leader_start,
+        "process_group_present_after_wait": group_exists,
+        "coverage_complete": coverage_complete,
+        "sample_count": sample_count,
+        "observed_descendants": sorted(observed.values(), key=lambda item: (item["pid"], item["start"])),
+        "active_descendants": sorted(active_descendants, key=lambda item: (item["pid"], item["start"])),
+        "status": status,
+    }
+    if observation_error is not None:
+        record["observation_error"] = observation_error
+    return child_return_code, record, launch_error
 
 
 def _step_result(attempt_dir: Path, step_id: str) -> dict[str, Any] | None:
@@ -860,20 +966,11 @@ def _execute(args: argparse.Namespace) -> int:
         stdout_descriptor = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         stderr_descriptor = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(stdout_descriptor, "ab") as stdout_stream, os.fdopen(stderr_descriptor, "ab") as stderr_stream:
-            process = subprocess.Popen(
-                step["argv"],
-                cwd=step["resolved_cwd"],
-                env=effective_env,
-                stdin=subprocess.DEVNULL,
-                stdout=stdout_stream,
-                stderr=stderr_stream,
-                shell=False,
-                close_fds=True,
-                start_new_session=True,
-            )
-            leader_start = f"popen-session:{process.pid}:{time.monotonic_ns()}"
-            child_return_code = process.wait()
-            process_quiescence = _quiesce_owned_process_group(process.pid, leader_start)
+            process, leader_start, observed, sample_count, error_read = _start_owned_process(
+                step["argv"], cwd=step["resolved_cwd"], env=effective_env,
+                stdout=stdout_stream, stderr=stderr_stream)
+            child_return_code, process_quiescence, launch_error = _wait_for_owned_process(
+                process, leader_start, observed, sample_count, error_read)
             stdout_stream.flush()
             os.fsync(stdout_stream.fileno())
             stderr_stream.flush()
@@ -883,6 +980,7 @@ def _execute(args: argparse.Namespace) -> int:
         for path in (stdout_path, stderr_path):
             if not path.exists():
                 _write_exclusive(path, b"")
+    if launch_error is not None:
         with stderr_path.open("ab") as stream:
             stream.write((launch_error + "\n").encode("utf-8", "replace"))
             stream.flush()

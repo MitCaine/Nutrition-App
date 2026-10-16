@@ -2292,7 +2292,8 @@ if python3 "$repo_root/scripts/lib/task_output_cleanup.py" native-owner-init \
   --npm-cache "$native_npm_cache_path" \
   --cocoapods-cache "$native_cocoapods_cache_path" \
   --generated-root "$mobile/node_modules" \
-  --generated-root "$mobile/ios"
+  --generated-root "$mobile/ios" \
+  --generated-root "$mobile/.expo/web/cache/production/images"
 then
   true
 else

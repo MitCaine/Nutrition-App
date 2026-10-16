@@ -366,6 +366,43 @@ def test_mandatory_document_failure_blocks_gate_while_advisory_failure_is_retain
     assert summary["status"] == "failed"
 
 
+def test_public_cli_retains_failed_attempt_when_nested_session_child_outlives_parent(
+    authored_repo: Path, tmp_path: Path,
+):
+    output_root = tmp_path / "evidence"
+    child_pid_file = tmp_path / "escaped-child.pid"
+    code = (
+        "import pathlib,subprocess,sys,time; "
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'], "
+        "start_new_session=True); "
+        "pathlib.Path(sys.argv[1]).write_text(str(child.pid)); time.sleep(0.5)"
+    )
+    request_path = _write_request(
+        authored_repo, tmp_path / "request.json", "escaped-session",
+        [_step("parent", [sys.executable, "-c", code, str(child_pid_file)])],
+    )
+
+    try:
+        result = _run(authored_repo, request_path, "escaped-session", output_root)
+        attempt_dir = _attempt_dir(output_root, "escaped-session")
+        step = json.loads((attempt_dir / "commands/parent/result.json").read_text())
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert step["status"] == "failed"
+        assert step["process_quiescence"]["status"] == "active-descendant"
+        assert step["process_quiescence"]["coverage_complete"] is True
+        assert step["process_quiescence"]["active_descendants"]
+        assert json.loads((attempt_dir / "attempt-state.json").read_text())["status"] == "failed"
+        assert not (attempt_dir / "in-progress.marker").exists()
+        assert attempt_dir.is_dir()
+    finally:
+        if child_pid_file.exists():
+            child_pid = int(child_pid_file.read_text())
+            try:
+                os.kill(child_pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+
 def test_public_cli_fails_authored_attempt_when_tee_cannot_retain_runner_log(
     authored_repo: Path, tmp_path: Path
 ):

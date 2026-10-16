@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
@@ -15,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
+EXPO_CACHE_FIXTURE_SOURCE = b"synthetic Expo ImageUtils Cache.js source fixture\n"
 
 sys.path.insert(
     0,
@@ -818,14 +820,26 @@ case "${1-}" in
   --version) echo 11.0.0 ;;
   config) echo /tmp/fixture-npm-cache ;;
   ci)
-    mkdir -p "$(pwd)/node_modules/expo" "$(pwd)/node_modules/react-native" "$(pwd)/node_modules/.bin"
+    mkdir -p "$(pwd)/node_modules/expo" "$(pwd)/node_modules/react-native" "$(pwd)/node_modules/.bin" \
+      "$(pwd)/node_modules/@expo/image-utils/build"
     echo '{"version":"57.0.27"}' > "$(pwd)/node_modules/expo/package.json"
     echo '{"version":"0.86.3"}' > "$(pwd)/node_modules/react-native/package.json"
+    printf '%s\n' 'synthetic Expo ImageUtils Cache.js source fixture' \
+      > "$(pwd)/node_modules/@expo/image-utils/build/Cache.js"
     cat > "$(pwd)/node_modules/.bin/expo-modules-autolinking" <<'EOF'
 #!/bin/sh
 printf '%s\\n' '{"modules":[{"packageName":"nutrition-ocr","pods":[{"podName":"NutritionOcr"}],"swiftModuleNames":["NutritionOcr"],"modules":[{"class":"NutritionOcrModule"}]}]}'
 EOF
     chmod +x "$(pwd)/node_modules/.bin/expo-modules-autolinking"
+    case "${IOS_NATIVE_FIXTURE_MODE-}" in
+      expo-cache|expo-cache-extra)
+        mkdir -p "$(pwd)/.expo/web/cache/production/images/app-icon/fixture-icon-cache-key"
+        printf '%s\n' 'cached app icon bytes' > "$(pwd)/.expo/web/cache/production/images/app-icon/fixture-icon-cache-key/icon.png"
+        if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "expo-cache-extra" ]; then
+          printf '%s\n' 'unowned .expo source' > "$(pwd)/.expo/unexpected-source.txt"
+        fi
+        ;;
+    esac
     case "${IOS_NATIVE_FIXTURE_MODE-}" in
       outside-link)
         ln -s "${IOS_NATIVE_FIXTURE_OUTSIDE_SENTINEL:?}" \
@@ -1073,7 +1087,36 @@ then
 fi
 exec "$REAL_PYTHON" "$@"
 ''')
-        write("git", 'if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree move"; then exit 17; fi; exec "${REAL_GIT:-/usr/bin/git}" "$@"\n')
+        write("git", '''
+real_git="${REAL_GIT:-/usr/bin/git}"
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree move"; then
+  exit 17
+fi
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "registration-readback" ] && printf "%s\\n" "$*" | grep -Fq "worktree move"; then
+  if "$real_git" "$@"; then
+    : > "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/native-move-recorded"
+    exit 0
+  else
+    exit $?
+  fi
+fi
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "registration-readback" ] &&
+  [ -f "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/native-move-recorded" ] &&
+  printf "%s\\n" "$*" | grep -Fq "worktree list"
+then
+  "$real_git" "$@" | sed '/^detached$/d'
+  exit 0
+fi
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "retention-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree move"; then
+  if "$real_git" "$@"; then
+    printf '%s\\n' 'synthetic post-retention mutation' >> "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/stages.jsonl"
+    exit 0
+  else
+    exit $?
+  fi
+fi
+exec "$real_git" "$@"
+''')
 
     def _run_fixture_qualification(
         self,
@@ -1108,6 +1151,13 @@ exec "$REAL_PYTHON" "$@"
             fixture_root,
             ignore=shutil.ignore_patterns(".git", "node_modules", "ios", "Pods", "DerivedData"),
         )
+        cleanup_module = fixture_root / "scripts/lib/task_output_cleanup.py"
+        module_text = cleanup_module.read_text(encoding="utf-8")
+        original_hash = "c85a1f47d7f3adb9572f425b35fdb0f198aa243e2c6a429b9eeb1a857d1fcef1"
+        fixture_hash = hashlib.sha256(EXPO_CACHE_FIXTURE_SOURCE).hexdigest()
+        if module_text.count(original_hash) != 1:
+            raise AssertionError("fixture producer hash binding was not unique")
+        cleanup_module.write_text(module_text.replace(original_hash, fixture_hash), encoding="utf-8")
         subprocess.run(["git", "init", "-q"], cwd=fixture_root, check=True)
         subprocess.run(["git", "add", "."], cwd=fixture_root, check=True)
         subprocess.run(
@@ -1170,6 +1220,13 @@ exec "$REAL_PYTHON" "$@"
             fixture_root,
             ignore=shutil.ignore_patterns(".git", "node_modules", "ios", "Pods", "DerivedData"),
         )
+        cleanup_module = fixture_root / "scripts/lib/task_output_cleanup.py"
+        module_text = cleanup_module.read_text(encoding="utf-8")
+        original_hash = "c85a1f47d7f3adb9572f425b35fdb0f198aa243e2c6a429b9eeb1a857d1fcef1"
+        fixture_hash = hashlib.sha256(EXPO_CACHE_FIXTURE_SOURCE).hexdigest()
+        if module_text.count(original_hash) != 1:
+            raise AssertionError("fixture producer hash binding was not unique")
+        cleanup_module.write_text(module_text.replace(original_hash, fixture_hash), encoding="utf-8")
         subprocess.run(["git", "init", "-q"], cwd=fixture_root, check=True)
         subprocess.run(["git", "add", "."], cwd=fixture_root, check=True)
         subprocess.run(

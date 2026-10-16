@@ -15,6 +15,7 @@ import subprocess
 import sys
 import stat
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -64,7 +65,10 @@ def _step(
     }
 
 
-def _new_authored(tmp_path: Path, *, attempt: str = "a1", steps: list[dict[str, object]] | None = None):
+def _new_authored(
+    tmp_path: Path, *, attempt: str = "a1", steps: list[dict[str, object]] | None = None,
+    with_prior_main: bool = False,
+):
     tmp_path.mkdir(parents=True, exist_ok=True)
     repo = tmp_path / "authored-repository"
     repo.mkdir()
@@ -78,7 +82,10 @@ def _new_authored(tmp_path: Path, *, attempt: str = "a1", steps: list[dict[str, 
     _git(repo, "config", "user.email", "gh420@example.invalid")
     _git(repo, "remote", "add", "origin", "https://github.com/synthetic/nutrition.git")
     _git(repo, "add", ".")
-    _git(repo, "commit", "-qm", "synthetic base")
+    _git(repo, "commit", "-qm", "synthetic prior main" if with_prior_main else "synthetic base")
+    prior_main_sha = _git(repo, "rev-parse", "HEAD") if with_prior_main else None
+    if with_prior_main:
+        _git(repo, "commit", "--allow-empty", "-qm", "synthetic candidate")
     request_path = tmp_path / f"{attempt}-request.json"
     request = {
         "schema_version": 1,
@@ -90,8 +97,11 @@ def _new_authored(tmp_path: Path, *, attempt: str = "a1", steps: list[dict[str, 
     }
     _write(request_path, request)
     output_root = tmp_path / f"{attempt}-review-output"
-    return {"repo": repo, "request": request, "request_path": request_path,
-            "output_root": output_root, "attempt": attempt}
+    result = {"repo": repo, "request": request, "request_path": request_path,
+              "output_root": output_root, "attempt": attempt}
+    if prior_main_sha is not None:
+        result["prior_main_sha"] = prior_main_sha
+    return result
 
 
 def _run_review(case: dict[str, object], *, timeout: float = 30) -> subprocess.CompletedProcess[str]:
@@ -262,6 +272,19 @@ def _closeout(
     timeout: float = 30,
 ) -> subprocess.CompletedProcess[str]:
     selected_repo = repo_root or Path(case.get("candidate_repo", case["repo"]))
+    if not isinstance(case.get("_synthetic_published_main_sha"), str):
+        configured_main = case.get("published_main_sha")
+        request = case.get("request")
+        candidate_sha = request.get("expected_head") if isinstance(request, dict) else None
+        if not isinstance(candidate_sha, str):
+            checkpoint = json.loads((state_dir / "issue-420.json").read_text(encoding="utf-8"))
+            integration = checkpoint.get("integration")
+            candidate_sha = integration.get("candidate_sha") if isinstance(integration, dict) else None
+        assert isinstance(candidate_sha, str)
+        case["_synthetic_published_main_sha"] = (
+            configured_main if isinstance(configured_main, str)
+            else candidate_sha
+        )
     command = ["--repo-root", str(selected_repo), "--state-dir", str(state_dir),
                "output-closeout", "420", "--execution-record", str(_record_path(case)),
                "--durable-evidence", str(durable)]
@@ -294,9 +317,25 @@ def _closeout(
                     "app": {"id": 4708441}}
 
     transport = SyntheticTransport()
+    published_main_calls: list[str] = []
+
+    class SyntheticPublishedRefTransport:
+        def fetch_main(self) -> str:
+            published_main_calls.append("fetch_main")
+            sequence = case.get("published_main_sequence")
+            if isinstance(sequence, list) and sequence:
+                index = min(len(published_main_calls) - 1, len(sequence) - 1)
+                return str(sequence[index])
+            configured = case.get("published_main_sha")
+            if isinstance(configured, str):
+                return configured
+            return str(case["_synthetic_published_main_sha"])
+
     original_transport = controller.GhQualificationTransport
+    original_ref_transport = controller.GitCandidateRefTransport
     original_app_id = os.environ.get("NUTRITION_QUALIFICATION_APP_INTEGRATION_ID")
     controller.GhQualificationTransport = lambda: transport
+    controller.GitCandidateRefTransport = lambda _repo: SyntheticPublishedRefTransport()
     os.environ["NUTRITION_QUALIFICATION_APP_INTEGRATION_ID"] = "4708441"
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -305,12 +344,14 @@ def _closeout(
             result_code = controller.main(command)
     finally:
         controller.GhQualificationTransport = original_transport
+        controller.GitCandidateRefTransport = original_ref_transport
         if original_app_id is None:
             os.environ.pop("NUTRITION_QUALIFICATION_APP_INTEGRATION_ID", None)
         else:
             os.environ["NUTRITION_QUALIFICATION_APP_INTEGRATION_ID"] = original_app_id
     result = subprocess.CompletedProcess(command, result_code, stdout.getvalue(), stderr.getvalue())
     result.transport_calls = transport.calls
+    result.published_main_calls = published_main_calls
     return result
 
 
@@ -700,6 +741,37 @@ def test_gh420_o3_cross_device_quarantine_failure_keeps_original(tmp_path: Path,
     assert "output_closeout" in json.loads(state_path.read_text(encoding="utf-8"))
 
 
+def test_gh420_o5_nested_device_observation_refuses_during_tree_traversal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    case = _new_authored(tmp_path, attempt="nested-device")
+    assert _run_review(case).returncode == 0
+    state_dir = tmp_path / "state"
+    _state(state_dir, case)
+    root = _attempt(case)
+    nested = root / "synthetic-mounted-descendant"
+    nested.mkdir()
+    (nested / "sentinel.txt").write_text("retained nested source\n", encoding="utf-8")
+    before_node = [root.stat().st_dev, root.stat().st_ino]
+    actual_lstat = Path.lstat
+
+    def observe_different_device(path: Path):
+        info = actual_lstat(path)
+        if path == nested:
+            return SimpleNamespace(st_dev=info.st_dev + 1, st_mode=info.st_mode,
+                                   st_nlink=info.st_nlink, st_size=info.st_size,
+                                   st_ino=info.st_ino)
+        return info
+
+    monkeypatch.setattr(Path, "lstat", observe_different_device)
+    result = _closeout(case, state_dir, tmp_path / "durable", execute=True, authorize=True)
+
+    assert result.returncode == 1
+    assert "nested filesystem refused" in result.stdout + result.stderr
+    assert root.is_dir() and [root.stat().st_dev, root.stat().st_ino] == before_node
+    assert (nested / "sentinel.txt").read_text(encoding="utf-8") == "retained nested source\n"
+
+
 def test_gh420_o1_selected_shared_helper_refuses_missing_source_before_action(tmp_path: Path):
     case = _new_authored(tmp_path)
     assert _run_review(case).returncode == 0
@@ -1022,6 +1094,7 @@ def test_gh420_o3_active_runner_and_protected_cache_remain(tmp_path: Path):
         run_dir = _attempt(active)
         deadline = time.monotonic() + 10
         lock_check = None
+        time.sleep(0.25)  # Let the public runner acquire its lock before probing it.
         while time.monotonic() < deadline:
             if (run_dir / "attempt-state.json").is_file():
                 lock_check = subprocess.run(
@@ -1203,7 +1276,7 @@ def test_gh420_o5_paused_task_and_damaged_reference_never_move_output(tmp_path: 
 
 def test_gh420_o5_move_before_result_persistence_reconciles_exact_quarantine(tmp_path: Path,
                                                                               monkeypatch: pytest.MonkeyPatch):
-    case = _new_authored(tmp_path, attempt="interrupted")
+    case = _new_authored(tmp_path, attempt="interrupted", with_prior_main=True)
     assert _run_review(case).returncode == 0
     state_dir = tmp_path / "state"
     _state(state_dir, case)
@@ -1234,14 +1307,139 @@ def test_gh420_o5_move_before_result_persistence_reconciles_exact_quarantine(tmp
     assert [destination.stat().st_dev, destination.stat().st_ino] == original_node
 
     monkeypatch.setattr(task_output_cleanup.os, "rename", actual_rename)
+    candidate = str(case["request"]["expected_head"])
+    case["published_main_sequence"] = [candidate, candidate, str(case["prior_main_sha"])]
+    refused_reconciliation = _closeout(case, state_dir, durable, execute=True, authorize=True)
+    assert refused_reconciliation.returncode == 1
+    assert len(refused_reconciliation.published_main_calls) >= 3
+    assert destination.is_dir() and not original_root.exists()
+    still_pending = json.loads((state_dir / "issue-420.json").read_text())
+    pending = next(item for item in still_pending["output_closeout"]["operations"]
+                   if item["name"] == "attempt-root")
+    assert pending["status"] in {"pending", "incomplete"}
+
+    case.pop("published_main_sequence")
     retry = _closeout(case, state_dir, durable, execute=True, authorize=True)
     assert retry.returncode == 0, retry.stdout + retry.stderr
     recovered = json.loads((state_dir / "issue-420.json").read_text())
     recovered_operation = next(item for item in recovered["output_closeout"]["operations"]
                                if item["name"] == "attempt-root")
     assert recovered_operation["status"] == "complete"
-    assert recovered_operation["destination"] == str(destination)
-    assert [destination.stat().st_dev, destination.stat().st_ino] == original_node
+
+
+def test_gh420_o2_published_main_reachability_accepts_advanced_containing_main(tmp_path: Path):
+    case = _new_authored(tmp_path, attempt="advanced-main", with_prior_main=True)
+    assert _run_review(case).returncode == 0
+    state_dir = tmp_path / "state"
+    _state(state_dir, case)
+    candidate = str(case["request"]["expected_head"])
+    tree = _git(Path(case["repo"]), "rev-parse", "HEAD^{tree}")
+    advanced = _git(Path(case["repo"]), "commit-tree", tree, "-p", candidate,
+                    "-m", "published main advanced after integration")
+    case["published_main_sha"] = advanced
+
+    result = _closeout(case, state_dir, tmp_path / "durable", execute=True, authorize=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.published_main_calls
+    assert all(item.get("published_main_sha") == advanced for item in _json_stdout(result)["items"])
+    operations = json.loads((state_dir / "issue-420.json").read_text())["output_closeout"]["operations"]
+    assert operations and all(item.get("published_main_sha") == advanced for item in operations)
+
+
+@pytest.mark.parametrize("main_kind", ["unpublished", "divergent"])
+def test_gh420_o2_unpublished_or_divergent_main_refuses_closeout(
+    tmp_path: Path, main_kind: str,
+):
+    case = _new_authored(tmp_path, attempt=f"main-{main_kind}", with_prior_main=True)
+    assert _run_review(case).returncode == 0
+    state_dir = tmp_path / "state"
+    state_path = _state(state_dir, case)
+    if main_kind == "unpublished":
+        case["published_main_sha"] = str(case["prior_main_sha"])
+    else:
+        repo = Path(case["repo"])
+        tree = _git(repo, "rev-parse", "HEAD^{tree}")
+        case["published_main_sha"] = _git(
+            repo, "commit-tree", tree, "-p", str(case["prior_main_sha"]),
+            "-m", "divergent published main",
+        )
+    root = _attempt(case)
+    before_node = [root.stat().st_dev, root.stat().st_ino]
+
+    result = _closeout(case, state_dir, tmp_path / "durable", execute=True, authorize=True)
+
+    assert result.returncode == 1
+    assert "OUTPUT_CLOSEOUT_CANDIDATE_NOT_REACHABLE_FROM_PUBLISHED_MAIN" in result.stdout + result.stderr
+    assert root.is_dir() and [root.stat().st_dev, root.stat().st_ino] == before_node
+    assert "output_closeout" not in json.loads(state_path.read_text())
+
+
+def test_gh420_o2_published_main_is_rechecked_immediately_before_move(tmp_path: Path):
+    case = _new_authored(tmp_path, attempt="main-advanced-before-move", with_prior_main=True)
+    assert _run_review(case).returncode == 0
+    state_dir = tmp_path / "state"
+    state_path = _state(state_dir, case)
+    candidate = str(case["request"]["expected_head"])
+    case["published_main_sequence"] = [candidate, candidate, candidate, candidate,
+                                        str(case["prior_main_sha"])]
+    root = _attempt(case)
+    before_node = [root.stat().st_dev, root.stat().st_ino]
+
+    result = _closeout(case, state_dir, tmp_path / "durable", execute=True, authorize=True)
+
+    assert result.returncode == 1
+    assert len(result.published_main_calls) >= 5
+    assert root.is_dir() and [root.stat().st_dev, root.stat().st_ino] == before_node
+    checkpoint = json.loads(state_path.read_text())
+    operation = next(item for item in checkpoint["output_closeout"]["operations"]
+                     if item["name"] == "attempt-root")
+    assert operation["status"] in {"pending", "incomplete"}
+
+
+@pytest.mark.parametrize("malformation", ["non-dictionary", "missing-receipt", "ambiguous-name"])
+def test_gh420_f6_malformed_output_isolated_from_independent_eligible_output(
+    tmp_path: Path, malformation: str,
+):
+    case = _new_authored(tmp_path, attempt=f"malformed-{malformation}")
+    assert _run_review(case).returncode == 0
+    root = _attempt(case)
+    record_path = root / "attempt-state.json"
+    record = json.loads(record_path.read_text())
+    outputs = record["output_ownership"]["outputs"]
+    root_receipt = next(item["receipt"] for item in outputs if item["name"] == "attempt-root")
+    stage = next(item for item in outputs if item["name"] == "bundle-stage")
+    stage_path = Path(stage["receipt"]["path"])
+    if malformation == "non-dictionary":
+        outputs[outputs.index(stage)] = None
+    elif malformation == "missing-receipt":
+        stage.pop("receipt")
+    else:
+        outputs.append({"name": "attempt-root", "kind": "plain", "receipt": root_receipt})
+    _write(record_path, record)
+    state_dir = tmp_path / "state"
+    _state(state_dir, case)
+    root_node = [root.stat().st_dev, root.stat().st_ino]
+
+    result = _closeout(case, state_dir, tmp_path / "durable", execute=True, authorize=True)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    current = json.loads((state_dir / "issue-420.json").read_text())
+    operations = current["output_closeout"]["operations"]
+    if malformation == "ambiguous-name":
+        assert not stage_path.exists()
+        assert root.is_dir() and [root.stat().st_dev, root.stat().st_ino] == root_node
+        assert not any(item.get("name") == "attempt-root" and item.get("status") == "complete"
+                       for item in operations)
+        independent = next(item for item in operations if item["name"] == "bundle-stage")
+    else:
+        assert stage_path.is_dir()
+        assert not root.exists()
+        independent = next(item for item in operations if item["name"] == "attempt-root")
+        assert independent["status"] == "complete"
+        assert not any(item.get("name") == "bundle-stage" and item.get("status") == "complete"
+                       for item in operations)
+    assert independent["status"] == "complete"
 
 
 def test_gh420_f6_unsafe_receipt_does_not_abort_independent_eligible_item(tmp_path: Path):
@@ -1292,6 +1490,271 @@ def test_gh420_o6_native_qualifier_quarantines_linked_roots_without_following(tm
         assert any(item["path"] == str((evidence / "manifest.json").resolve())
                    for item in owner["retained"])
         assert json.loads((evidence / "manifest.json").read_text())["output_ownership"]["state"] == "completed"
+    finally:
+        suite.doCleanups()
+
+
+def test_gh420_o1_native_expo_cache_is_quarantined_with_exact_producer_binding(tmp_path: Path):
+    spec = importlib.util.spec_from_file_location(
+        "gh420_ios_native_cache_fixture", ROOT / "scripts/tests/test_ios_native_qualification.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    suite = module.IosNativeQualificationTests()
+    result, evidence = suite._run_fixture_qualification("expo-cache")
+    try:
+        assert result.returncode == 0, result.stdout + result.stderr
+        owner = json.loads((evidence / "native-output-owner.json").read_text())["output_ownership"]
+        assert owner["state"] == "completed"
+        producer = owner["source"]["request"]
+        definitions = json.loads(Path(producer["path"]).read_text())
+        assert definitions["worktree_producer_outputs"][0] == {
+            "name": "expo-image-cache",
+            "producer_path": "apps/mobile/node_modules/@expo/image-utils/build/Cache.js",
+            "producer_sha256": module.hashlib.sha256(module.EXPO_CACHE_FIXTURE_SOURCE).hexdigest(),
+            "output_path": str(evidence / "Nutrition App Native/apps/mobile/.expo/web/cache/production/images"),
+        }
+        operation = next(item for item in owner["operations"].values() if item["name"] == "probe")
+        cache_root = Path(operation["destination"]) / "apps/mobile/.expo/web/cache/production/images"
+        icon = cache_root / "app-icon/fixture-icon-cache-key/icon.png"
+        assert not (evidence / "Nutrition App Native").exists()
+        assert icon.read_text(encoding="utf-8") == "cached app icon bytes\n"
+    finally:
+        suite.doCleanups()
+
+
+def test_gh420_o1_native_cache_plus_unexpected_expo_source_retains_worktree(tmp_path: Path):
+    spec = importlib.util.spec_from_file_location(
+        "gh420_ios_native_cache_extra_fixture", ROOT / "scripts/tests/test_ios_native_qualification.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    suite = module.IosNativeQualificationTests()
+    result, evidence = suite._run_fixture_qualification("expo-cache-extra")
+    try:
+        assert result.returncode != 0
+        assert "IOS_NATIVE_OUTPUT_OWNER_FINISH_FAILED" in result.stderr
+        assert "collapsed ignored directory contains unexpected source" in result.stderr
+        assert "IOS_NATIVE_QUALIFICATION=PASS" not in result.stdout
+        probe = evidence / "Nutrition App Native"
+        assert probe.is_dir()
+        assert (probe / "apps/mobile/.expo/web/cache/production/images/app-icon/fixture-icon-cache-key/icon.png").is_file()
+        assert (probe / "apps/mobile/.expo/unexpected-source.txt").read_text() == "unowned .expo source\n"
+    finally:
+        suite.doCleanups()
+
+
+def test_gh420_o3_native_quarantine_refuses_completed_invocation(tmp_path: Path):
+    spec = importlib.util.spec_from_file_location(
+        "gh420_ios_native_stale_invocation_fixture", ROOT / "scripts/tests/test_ios_native_qualification.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    suite = module.IosNativeQualificationTests()
+    result, evidence = suite._run_fixture_qualification("expo-cache")
+    try:
+        assert result.returncode == 0, result.stdout + result.stderr
+        owner_path = evidence / "native-output-owner.json"
+        owner_before = _sha(owner_path)
+        owner = json.loads(owner_path.read_text())["output_ownership"]
+        probe = next(item for item in owner["operations"].values() if item["name"] == "probe")
+        destination = Path(probe["destination"])
+        destination_node = [destination.stat().st_dev, destination.stat().st_ino]
+        fixture_repo = evidence.parent / "repository"
+        refused = subprocess.run(
+            [str(PYTHON), str(fixture_repo / "scripts/lib/task_output_cleanup.py"),
+             "native-quarantine-execute", "--owner-record", str(owner_path),
+             "--name", "probe", "--operation-id", "stale-invocation"],
+            cwd=fixture_repo, capture_output=True, text=True, check=False,
+        )
+        assert refused.returncode != 0
+        assert "native invocation" in refused.stderr
+        assert _sha(owner_path) == owner_before
+        assert [destination.stat().st_dev, destination.stat().st_ino] == destination_node
+        assert "stale-invocation" not in json.dumps(json.loads(owner_path.read_text()))
+    finally:
+        suite.doCleanups()
+
+
+def test_gh420_o5_native_move_interruption_reconciles_only_in_original_invocation(
+    tmp_path: Path,
+):
+    fixture_repo = tmp_path / "native-repository"
+    shutil.copytree(ROOT, fixture_repo, ignore=shutil.ignore_patterns(".git", "node_modules", "ios", "Pods"))
+    producer_source = b"interruption fixture Expo cache producer\n"
+    producer_hash = hashlib.sha256(producer_source).hexdigest()
+    cleanup_module = fixture_repo / "scripts/lib/task_output_cleanup.py"
+    module_text = cleanup_module.read_text(encoding="utf-8")
+    original_hash = "c85a1f47d7f3adb9572f425b35fdb0f198aa243e2c6a429b9eeb1a857d1fcef1"
+    assert module_text.count(original_hash) == 1
+    cleanup_module.write_text(module_text.replace(original_hash, producer_hash), encoding="utf-8")
+    _git(fixture_repo, "init", "-q")
+    _git(fixture_repo, "config", "user.name", "GH-420 native interruption fixture")
+    _git(fixture_repo, "config", "user.email", "gh420-native@example.invalid")
+    _git(fixture_repo, "add", ".")
+    _git(fixture_repo, "commit", "-qm", "native interruption fixture")
+    evidence = tmp_path / "native-evidence"
+    evidence.mkdir()
+    orchestrator = tmp_path / "native-interruption-orchestrator.py"
+    orchestrator.write_text(r'''import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+
+from lib import task_output_cleanup as cleanup
+
+repository = Path(os.environ["FIXTURE_REPOSITORY"]).resolve()
+evidence = Path(os.environ["FIXTURE_EVIDENCE"]).resolve()
+head = subprocess.check_output(["git", "-C", str(repository), "rev-parse", "HEAD"], text=True).strip()
+probe = evidence / "Nutrition App Native"
+generated = [str(probe / "apps/mobile/node_modules"), str(probe / "apps/mobile/ios"),
+             str(probe / "apps/mobile/.expo/web/cache/production/images")]
+created = cleanup.native_owner_init(evidence, repository, head,
+                                   str(evidence.parent / "npm-cache"),
+                                   str(evidence.parent / "pods-cache"), generated)
+owner_path = Path(created["owner_record"])
+subprocess.run(["git", "-C", str(repository), "worktree", "add", "--detach", str(probe), head],
+               check=True, capture_output=True, text=True)
+module_path = probe / "apps/mobile/node_modules/@expo/image-utils/build/Cache.js"
+module_path.parent.mkdir(parents=True)
+module_path.write_bytes(b"interruption fixture Expo cache producer\n")
+cache = probe / "apps/mobile/.expo/web/cache/production/images/app-icon/fixture-key/icon.png"
+cache.parent.mkdir(parents=True)
+cache.write_bytes(b"icon fixture\n")
+cleanup.native_bind_worktree(owner_path, head=head)
+(evidence / "stages.jsonl").write_text("native fixture stage\n", encoding="utf-8")
+holder_code = "from pathlib import Path; import sys; from lib.task_output_cleanup import native_owner_hold; raise SystemExit(native_owner_hold(Path(sys.argv[1])))"
+holder = subprocess.Popen([sys.executable, "-c", holder_code, str(owner_path)],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+try:
+    if holder.stdout is None or holder.stdout.readline().strip() != "READY":
+        raise RuntimeError("native observer did not become ready")
+finally:
+    holder.send_signal(signal.SIGTERM)
+    holder.communicate(timeout=10)
+    if holder.returncode != 0:
+        raise RuntimeError("native process observer returned an incomplete result")
+cleanup.native_owner_finish(owner_path, exit_code=0, signal_status=0)
+original_run = subprocess.run
+def interrupt_after_move(command, *args, **kwargs):
+    result = original_run(command, *args, **kwargs)
+    if (isinstance(command, list) and command[:1] == ["git"] and "worktree" in command
+            and "move" in command and Path(command[-2]) == probe):
+        raise OSError("synthetic interruption after native move before owner persistence")
+    return result
+cleanup.subprocess.run = interrupt_after_move
+try:
+    try:
+        cleanup.native_quarantine_execute(owner_path, name="probe", operation_id="probe-interrupted")
+    except OSError as error:
+        if "synthetic interruption" not in str(error):
+            raise
+    else:
+        raise AssertionError("native move interruption was not injected")
+finally:
+    cleanup.subprocess.run = original_run
+owner = cleanup._native_owner(owner_path)["output_ownership"]
+operation = owner["operations"]["probe-interrupted"]
+destination = Path(operation["destination"])
+if operation["status"] != "pending" or probe.exists() or not destination.is_dir():
+    raise AssertionError("interrupted native move was not retained as pending")
+node = cleanup._node(destination)
+retried = cleanup.native_quarantine_execute(owner_path, name="probe", operation_id="probe-interrupted")
+cleanup.native_quarantine_execute(owner_path, name="derived-data", operation_id="derived-data")
+cleanup.native_quarantine_execute(owner_path, name="harness-bin", operation_id="harness-bin")
+verified = cleanup.native_owner_verify_cleanup(owner_path)
+final_owner = cleanup._native_owner(owner_path)["output_ownership"]
+print(json.dumps({"first_status": operation["status"], "retry": retried["status"],
+                  "destination": str(destination), "node": list(node),
+                  "verify": verified["status"],
+                  "operations": {key: value["status"] for key, value in final_owner["operations"].items()}},
+                 sort_keys=True))
+''', encoding="utf-8")
+    environment = os.environ.copy()
+    environment.update({
+        "PYTHONPATH": str(fixture_repo / "scripts"),
+        "PYTHON_EXECUTABLE": str(PYTHON),
+        "FIXTURE_REPOSITORY": str(fixture_repo),
+        "FIXTURE_EVIDENCE": str(evidence),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    })
+    result = subprocess.run(
+        ["bash", "-c", '"$PYTHON_EXECUTABLE" "$1"; status=$?; exit "$status"',
+         "native-interruption", str(orchestrator)],
+        cwd=fixture_repo, env=environment, capture_output=True, text=True,
+        timeout=60, check=False, start_new_session=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    summary = json.loads(result.stdout.strip().splitlines()[-1])
+    assert summary["first_status"] == "pending" and summary["retry"] == "quarantined"
+    assert summary["verify"] == "verified"
+    assert set(summary["operations"].values()) == {"quarantined"}
+    destination = Path(summary["destination"])
+    assert destination.is_dir()
+    assert [destination.stat().st_dev, destination.stat().st_ino] == summary["node"]
+
+
+def test_gh420_o6_native_registration_readback_failure_keeps_moved_probe_pending(
+    tmp_path: Path,
+):
+    spec = importlib.util.spec_from_file_location(
+        "gh420_ios_native_registration_fixture", ROOT / "scripts/tests/test_ios_native_qualification.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    suite = module.IosNativeQualificationTests()
+    result, evidence = suite._run_fixture_qualification("registration-readback")
+    try:
+        assert result.returncode != 0
+        assert "IOS_NATIVE_QUALIFICATION=PASS" not in result.stdout
+        assert "worktree is not the exact unlocked detached registration" in result.stderr
+        owner = json.loads((evidence / "native-output-owner.json").read_text())["output_ownership"]
+        operation = next(item for item in owner["operations"].values() if item["name"] == "probe")
+        destination = Path(operation["destination"])
+        assert owner["state"] == "completed"
+        assert operation["status"] == "pending"
+        assert not Path(operation["original"]).exists() and destination.is_dir()
+        assert [destination.stat().st_dev, destination.stat().st_ino] == operation["original_node"]
+        assert "quarantined" not in {item["status"] for item in owner["operations"].values()
+                                     if item["name"] == "probe"}
+    finally:
+        suite.doCleanups()
+
+
+def test_gh420_o6_native_retention_failure_keeps_unproven_outputs_and_fails(
+    tmp_path: Path,
+):
+    spec = importlib.util.spec_from_file_location(
+        "gh420_ios_native_retention_fixture", ROOT / "scripts/tests/test_ios_native_qualification.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    suite = module.IosNativeQualificationTests()
+    result, evidence = suite._run_fixture_qualification("retention-failure")
+    try:
+        assert result.returncode != 0
+        assert "IOS_NATIVE_QUALIFICATION=PASS" not in result.stdout
+        assert "IOS_NATIVE_MANIFEST_WRITE_FAILED" in result.stderr
+        owner = json.loads((evidence / "native-output-owner.json").read_text())["output_ownership"]
+        probe = next(item for item in owner["outputs"] if item["name"] == "probe")
+        operation = next(item for item in owner["operations"].values() if item["name"] == "probe")
+        destination = Path(operation["destination"])
+        assert owner["state"] == "completed" and operation["status"] == "quarantined"
+        assert not Path(probe["receipt"]["path"]).exists() and destination.is_dir()
+        assert [destination.stat().st_dev, destination.stat().st_ino] == probe["receipt"]["node"]
+        assert (evidence / "DerivedData").is_dir() and (evidence / "harness-bin").is_dir()
+        stage = evidence / "stages.jsonl"
+        assert b"synthetic post-retention mutation" in stage.read_bytes()
+        retained_stage = next(item for item in owner["retained"] if item["path"] == str(stage))
+        assert retained_stage["sha256"] != hashlib.sha256(stage.read_bytes()).hexdigest()
     finally:
         suite.doCleanups()
 
