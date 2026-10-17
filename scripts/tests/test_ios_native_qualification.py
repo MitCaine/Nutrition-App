@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import plistlib
+import shlex
 import signal
 import shutil
 import stat
@@ -137,6 +138,10 @@ class IosNativeQualificationTests(
             "IBToolNeverDeque",
             "native_process_lifecycle.py",
             "cleanup_disposition",
+            ".python-version",
+            "NUTRITION_CONTROLLER_PYTHON",
+            "python-runtime.json",
+            "IOS_NATIVE_PYTHON_VERSION_MISMATCH",
         ]
 
         for token in required:
@@ -145,6 +150,7 @@ class IosNativeQualificationTests(
                     token,
                     text,
                 )
+        self.assertNotRegex(text, r"(?m)^\s*python3\s")
 
     def test_continuous_workflow_contract(self):
         text = (
@@ -190,6 +196,18 @@ class IosNativeQualificationTests(
         self.assertLess(
             text.index("Restore npm download cache"),
             text.index("Run repository-owned native qualifier"),
+        )
+        self.assertLess(
+            text.index("id: native-python"),
+            text.index("Run repository-owned native qualifier"),
+        )
+        self.assertIn("python-version-file: .python-version", text)
+        qualifier_step = text.split("- name: Run repository-owned native qualifier", 1)[1].split(
+            "\n      - ", 1
+        )[0]
+        self.assertIn(
+            "NUTRITION_CONTROLLER_PYTHON: ${{ steps.native-python.outputs.python-path }}",
+            qualifier_step,
         )
         self.assertLess(
             text.index("Run repository-owned native qualifier"),
@@ -242,8 +260,67 @@ class IosNativeQualificationTests(
         )
         self.assertIn("cache-operations.json", text)
         ios_job = text.split("  ios_native:\n", 1)[1].split("\n  finalize:", 1)[0]
+        self.assertLess(
+            ios_job.index("id: native-python"),
+            ios_job.index("Run repository-owned native qualifier"),
+        )
+        self.assertIn("python-version-file: .python-version", ios_job)
+        qualifier_step = ios_job.split("- name: Run repository-owned native qualifier", 1)[1].split(
+            "\n      - ", 1
+        )[0]
+        self.assertIn(
+            "NUTRITION_CONTROLLER_PYTHON: ${{ steps.native-python.outputs.python-path }}",
+            qualifier_step,
+        )
         self.assertIn("Summarize qualification and cleanup separately", ios_job)
         self.assertIn('"ios-native": os.environ["IOS_NATIVE_RESULT"]', text.split("  finalize:", 1)[1])
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_uses_verified_python_for_generated_ib_wrapper(self):
+        result, evidence = self._run_fixture_qualification("success")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        selection = json.loads((evidence / "python-runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(selection["required_version"], "3.14")
+        self.assertEqual(selection["actual_version"], "3.14")
+        self.assertEqual(selection["selection_source"], "explicit")
+        selected_python = str((evidence.parent / "bin" / "python3").resolve())
+        self.assertEqual(selection["configured_interpreter"], selected_python)
+        wrapper = (evidence / "native-lifecycle" / "ibtool").read_text(encoding="utf-8")
+        self.assertIn("exec " + shlex.quote(selected_python) + " ", wrapper)
+        self.assertEqual(
+            selection["runtime_executable"],
+            str(Path(sys.executable).resolve()),
+        )
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_selects_exact_versioned_command_when_unconfigured(self):
+        result, evidence = self._run_fixture_qualification(
+            "success",
+            versioned_python=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        selection = json.loads((evidence / "python-runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(selection["required_version"], "3.14")
+        self.assertEqual(selection["actual_version"], "3.14")
+        self.assertEqual(selection["selection_source"], "versioned-command")
+        self.assertEqual(
+            selection["configured_interpreter"],
+            str(evidence.parent / "bin" / "python3.14"),
+        )
+        wrapper = (evidence / "native-lifecycle" / "ibtool").read_text(encoding="utf-8")
+        self.assertIn(str((evidence.parent / "bin" / "python3").resolve()), wrapper)
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_rejects_wrong_explicit_python_without_fallback(self):
+        result, evidence = self._run_fixture_qualification(
+            "wrong-runtime",
+            wrong_runtime=True,
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("IOS_NATIVE_PYTHON_VERSION_MISMATCH:3.15:required=3.14", result.stderr)
+        self.assertFalse((evidence / "python-runtime.json").exists())
+        self.assertFalse((evidence / "native-lifecycle" / "invocation.json").exists())
+        self.assertFalse((evidence.parent / "wrong-python-launched").exists())
 
     def test_runner_context_is_not_used_in_job_level_env(self):
         for relative_path in (
@@ -2392,6 +2469,7 @@ PY
 fi
 exec "$REAL_PYTHON" "$@"
 ''')
+        (fake_bin / "python3.14").symlink_to("python3")
         write("git", r'''
 if [ -n "${IOS_NATIVE_FIXTURE_EVENTS-}" ]; then
   case " $* " in
@@ -2665,6 +2743,8 @@ exec /bin/rm "$@"
         *,
         manifest_directory: bool = False,
         asynchronous: bool = False,
+        wrong_runtime: bool = False,
+        versioned_python: bool = False,
     ):
         evidence_parent = Path(tempfile.mkdtemp(prefix="ios-native-fixture-"))
         evidence = evidence_parent / "evidence"
@@ -2680,6 +2760,27 @@ exec /bin/rm "$@"
         environment["IOS_NATIVE_FIXTURE_DEVELOPER_DIR"] = str(fake_bin / "Developer")
         environment["DEVELOPER_DIR"] = str(fake_bin / "Developer")
         environment["REAL_PYTHON"] = str(Path(sys.executable).resolve())
+        environment["NUTRITION_CONTROLLER_PYTHON"] = str(fake_bin / "python3")
+        if wrong_runtime:
+            wrong_python = fake_bin / "wrong-python"
+            wrong_python.write_text(
+                "#!/bin/sh\n"
+                "set -eu\n"
+                "if [ \"${3-}\" = \"-c\" ]; then\n"
+                "  printf '3.15\\t%s\\n' \"$REAL_PYTHON\"\n"
+                "  exit 0\n"
+                "fi\n"
+                "touch \"$IOS_NATIVE_FIXTURE_WRONG_PYTHON_LAUNCHED\"\n"
+                "exit 93\n",
+                encoding="utf-8",
+            )
+            wrong_python.chmod(wrong_python.stat().st_mode | stat.S_IXUSR)
+            environment["NUTRITION_CONTROLLER_PYTHON"] = str(wrong_python)
+            environment["IOS_NATIVE_FIXTURE_WRONG_PYTHON_LAUNCHED"] = str(
+                evidence_parent / "wrong-python-launched"
+            )
+        elif versioned_python:
+            environment.pop("NUTRITION_CONTROLLER_PYTHON", None)
         environment["REAL_GIT"] = shutil.which("git") or "/usr/bin/git"
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
@@ -2767,6 +2868,7 @@ exec /bin/rm "$@"
         environment["IOS_NATIVE_FIXTURE_DEVELOPER_DIR"] = str(fake_bin / "Developer")
         environment["DEVELOPER_DIR"] = str(fake_bin / "Developer")
         environment["REAL_PYTHON"] = str(Path(sys.executable).resolve())
+        environment["NUTRITION_CONTROLLER_PYTHON"] = str(fake_bin / "python3")
         environment["REAL_GIT"] = shutil.which("git") or "/usr/bin/git"
         environment["IOS_NATIVE_FIXTURE_MODE"] = "parent-signal"
         environment["IOS_NATIVE_FIXTURE_PARENT_SIGNAL_READY"] = str(ready)

@@ -88,6 +88,8 @@ native_lifecycle_helper="$repo_root/scripts/lib/native_process_lifecycle.py"
 native_lifecycle_binding="$native_lifecycle_dir/invocation.json"
 native_lifecycle_wrapper="$native_lifecycle_dir/ibtool"
 native_lifecycle_python=""
+native_lifecycle_python_version=""
+native_lifecycle_python_executable=""
 native_lifecycle_ibtool=""
 native_lifecycle_ibtoold=""
 native_lifecycle_xcodebuild=""
@@ -352,7 +354,9 @@ cleanup_stage() {
     fi
     cleanup_removed_roots="${cleanup_removed_roots}${probe_root}
 "
-    if ! record_native_phase worktree-removed "{\"root\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$probe_root")}"
+    if ! record_native_phase worktree-removed "{\"root\":$(
+      "$native_lifecycle_python" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$probe_root"
+    )}"
     then
       mark_cleanup_incomplete "worktree removal phase evidence failed after removing $probe_root"
       return 1
@@ -393,7 +397,9 @@ cleanup_stage() {
     fi
     cleanup_removed_roots="${cleanup_removed_roots}${derived_data}
 "
-    if ! record_native_phase derived-data-removed "{\"root\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$derived_data")}"
+    if ! record_native_phase derived-data-removed "{\"root\":$(
+      "$native_lifecycle_python" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$derived_data"
+    )}"
     then
       mark_cleanup_incomplete "DerivedData removal phase evidence failed"
       return 1
@@ -413,7 +419,9 @@ cleanup_stage() {
     fi
     cleanup_removed_roots="${cleanup_removed_roots}${harness_bin}
 "
-    if ! record_native_phase harness-bin-removed "{\"root\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$harness_bin")}"
+    if ! record_native_phase harness-bin-removed "{\"root\":$(
+      "$native_lifecycle_python" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$harness_bin"
+    )}"
     then
       mark_cleanup_incomplete "harness binary removal phase evidence failed"
       return 1
@@ -441,7 +449,7 @@ record_outcome() {
   local exit_code="$4"
   local reason="$5"
 
-  python3 - "$path" "$name" "$status" "$exit_code" "$reason" <<'PY'
+  "$native_lifecycle_python" - "$path" "$name" "$status" "$exit_code" "$reason" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -503,7 +511,7 @@ write_manifest() {
   IOS_NATIVE_CLEANUP_DISPOSITION="$cleanup_disposition" \
   IOS_NATIVE_CLEANUP_REASON="$cleanup_reason" \
   IOS_NATIVE_CLEANUP_RETAINED_ROOTS="$cleanup_retained_roots" \
-  python3 - "$timings_file" "$manifest" <<'PY'
+  "$native_lifecycle_python" - "$timings_file" "$manifest" <<'PY'
 import json
 import os
 import shlex
@@ -935,15 +943,164 @@ on_exit() {
   exit "$qualifier_exit_status"
 }
 
-trap 'on_signal INT 130' INT
-trap 'on_signal TERM 143' TERM
-trap 'on_exit $?' EXIT
+select_native_python() {
+  local required_version
+  local interpreter_candidate
+  local selection_source
+  local interpreter_info
+  local actual_version
+  local actual_executable
+
+  if ! required_version="$(cat "$repo_root/.python-version")" ||
+    test -z "$required_version"
+  then
+    echo "IOS_NATIVE_PYTHON_VERSION_FILE_UNAVAILABLE:$repo_root/.python-version" >&2
+    return 2
+  fi
+  case "$required_version" in
+    *[!0-9.]*|*.*.*|.*|*.)
+      echo "IOS_NATIVE_PYTHON_VERSION_FILE_INVALID:$required_version" >&2
+      return 2
+      ;;
+  esac
+  case "$required_version" in
+    [0-9]*.[0-9]*)
+      ;;
+    *)
+      echo "IOS_NATIVE_PYTHON_VERSION_FILE_INVALID:$required_version" >&2
+      return 2
+      ;;
+  esac
+
+  if test "${NUTRITION_CONTROLLER_PYTHON+x}" = x
+  then
+    if test -z "$NUTRITION_CONTROLLER_PYTHON"
+    then
+      echo "IOS_NATIVE_PYTHON_EXPLICIT_PATH_EMPTY" >&2
+      return 2
+    fi
+    interpreter_candidate="$NUTRITION_CONTROLLER_PYTHON"
+    selection_source="explicit"
+    case "$interpreter_candidate" in
+      /*)
+        ;;
+      *)
+        echo "IOS_NATIVE_PYTHON_EXPLICIT_PATH_NOT_ABSOLUTE:$interpreter_candidate" >&2
+        return 2
+        ;;
+    esac
+  else
+    local interpreter_command="python${required_version}"
+    if ! interpreter_candidate="$(command -v "$interpreter_command")" ||
+      test -z "$interpreter_candidate"
+    then
+      echo "IOS_NATIVE_PYTHON_VERSIONED_COMMAND_UNAVAILABLE:$interpreter_command" >&2
+      return 2
+    fi
+    selection_source="versioned-command"
+  fi
+
+  if ! test -f "$interpreter_candidate" ||
+    ! test -x "$interpreter_candidate"
+  then
+    echo "IOS_NATIVE_PYTHON_BINARY_UNAVAILABLE:$interpreter_candidate" >&2
+    return 2
+  fi
+
+  if ! interpreter_info="$(
+    "$interpreter_candidate" -I -B -c \
+      'import os,sys; print("%s.%s\t%s" % (sys.version_info.major, sys.version_info.minor, os.path.realpath(sys.executable)))'
+  )" ||
+    test -z "$interpreter_info"
+  then
+    echo "IOS_NATIVE_PYTHON_VERSION_PROBE_FAILED:$interpreter_candidate" >&2
+    return 2
+  fi
+  case "$interpreter_info" in
+    *$'\n'*|*$'\r'*)
+      echo "IOS_NATIVE_PYTHON_VERSION_PROBE_INVALID:$interpreter_candidate" >&2
+      return 2
+      ;;
+  esac
+  IFS=$'\t' read -r actual_version actual_executable <<< "$interpreter_info"
+  case "$actual_version" in
+    [0-9]*.[0-9]*)
+      ;;
+    *)
+      echo "IOS_NATIVE_PYTHON_VERSION_PROBE_INVALID:$interpreter_candidate" >&2
+      return 2
+      ;;
+  esac
+  case "$actual_executable" in
+    /*)
+      ;;
+    *)
+      echo "IOS_NATIVE_PYTHON_EXECUTABLE_PATH_INVALID:$interpreter_candidate" >&2
+      return 2
+      ;;
+  esac
+  if ! test -x "$actual_executable"
+  then
+    echo "IOS_NATIVE_PYTHON_EXECUTABLE_UNAVAILABLE:$actual_executable" >&2
+    return 2
+  fi
+  if test "$actual_version" != "$required_version"
+  then
+    echo "IOS_NATIVE_PYTHON_VERSION_MISMATCH:$actual_version:required=$required_version" >&2
+    return 2
+  fi
+
+  native_lifecycle_python="$interpreter_candidate"
+  native_lifecycle_python_version="$actual_version"
+  native_lifecycle_python_executable="$actual_executable"
+  export NUTRITION_CONTROLLER_PYTHON="$native_lifecycle_python"
+  export IOS_NATIVE_PYTHON_REQUIRED_VERSION="$required_version"
+  export IOS_NATIVE_PYTHON_VERSION="$native_lifecycle_python_version"
+  export IOS_NATIVE_PYTHON_CONFIGURED_PATH="$native_lifecycle_python"
+  export IOS_NATIVE_PYTHON_EXECUTABLE="$native_lifecycle_python_executable"
+  export IOS_NATIVE_PYTHON_SELECTION_SOURCE="$selection_source"
+
+  "$native_lifecycle_python" -I -B - \
+    "$evidence_dir/python-runtime.json" \
+    "$repo_root/.python-version" \
+    "$required_version" \
+    "$actual_version" \
+    "$native_lifecycle_python" \
+    "$native_lifecycle_python_executable" \
+    "$selection_source" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+record, version_file, required, actual, configured, executable, source = sys.argv[1:]
+Path(record).write_text(
+    json.dumps({
+        "required_version": required,
+        "actual_version": actual,
+        "configured_interpreter": configured,
+        "runtime_executable": executable,
+        "selection_source": source,
+        "version_file": version_file,
+        "version_file_sha256": hashlib.sha256(Path(version_file).read_bytes()).hexdigest(),
+    }, sort_keys=True, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+  local record_status="$?"
+  if test "$record_status" -ne 0
+  then
+    native_lifecycle_python=""
+    echo "IOS_NATIVE_PYTHON_SELECTION_EVIDENCE_FAILED" >&2
+    return 2
+  fi
+}
 
 capture_toolchain() {
   local tool
   local xcode_info
   local swift_info
-  for tool in node npm python3 pod xcrun xcode-select ruby
+  for tool in node npm pod xcrun xcode-select ruby
   do
     if ! command -v "$tool" >/dev/null 2>&1
     then
@@ -966,8 +1123,8 @@ capture_toolchain() {
     return 1
   fi
 
-  if ! native_lifecycle_python="$(command -v python3)" ||
-    test -z "$native_lifecycle_python"
+  if test -z "$native_lifecycle_python" ||
+    ! test -x "$native_lifecycle_python"
   then
     echo "IOS_NATIVE_PYTHON_BINARY_UNAVAILABLE" >&2
     return 1
@@ -998,7 +1155,7 @@ capture_toolchain() {
     echo "IOS_NATIVE_IBTOOL_BINARY_UNAVAILABLE" >&2
     return 1
   fi
-  if ! native_lifecycle_ibtool="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$native_lifecycle_ibtool")"
+  if ! native_lifecycle_ibtool="$("$native_lifecycle_python" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$native_lifecycle_ibtool")"
   then
     echo "IOS_NATIVE_IBTOOL_PATH_RESOLUTION_FAILED" >&2
     return 1
@@ -1009,12 +1166,12 @@ capture_toolchain() {
     echo "IOS_NATIVE_IBTOOLD_BINARY_UNAVAILABLE:$native_lifecycle_ibtoold" >&2
     return 1
   fi
-  if ! native_lifecycle_ibtoold="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$native_lifecycle_ibtoold")"
+  if ! native_lifecycle_ibtoold="$("$native_lifecycle_python" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$native_lifecycle_ibtoold")"
   then
     echo "IOS_NATIVE_IBTOOLD_PATH_RESOLUTION_FAILED" >&2
     return 1
   fi
-  native_lifecycle_xcodebuild="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$xcodebuild_binary")"
+  native_lifecycle_xcodebuild="$("$native_lifecycle_python" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$xcodebuild_binary")"
   xcodebuild_binary="$native_lifecycle_xcodebuild"
 
   local spec_root
@@ -1152,7 +1309,7 @@ capture_toolchain() {
     cocoapods_cache_path_source="CocoaPods Config DEFAULTS cache_root"
   fi
 
-  if ! python3 \
+  if ! "$native_lifecycle_python" \
     "$repo_root/scripts/toolchain-report.py" \
     --check node \
     > "$evidence_dir/node-toolchain.log"
@@ -1295,7 +1452,9 @@ ibtool_capability_stage() {
     echo "IOS_NATIVE_SPLASH_STORYBOARD_AMBIGUOUS:${#storyboards[@]}" >&2
     return 1
   fi
-  if ! record_native_phase capability-required "{\"storyboard\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${storyboards[0]}")}"
+  if ! record_native_phase capability-required "{\"storyboard\":$(
+    "$native_lifecycle_python" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${storyboards[0]}"
+  )}"
   then
     echo "IOS_NATIVE_CAPABILITY_PHASE_RECORD_FAILED" >&2
     return 1
@@ -1516,7 +1675,7 @@ capture_build_invocation() {
     IOS_NATIVE_BUILD_DERIVED_DATA="$derived_data" \
     IOS_NATIVE_BUILD_NODE_BINARY="$node_binary" \
     IOS_NATIVE_IBTOOL_WRAPPER="$native_lifecycle_wrapper" \
-    python3 - "$executable" "$workspace" "$scheme" "$derived_data" "$node_binary" "$@" <<'PY'
+    "$native_lifecycle_python" - "$executable" "$workspace" "$scheme" "$derived_data" "$node_binary" "$@" <<'PY'
 import json
 import os
 import shlex
@@ -1676,7 +1835,7 @@ capture_candidate_build_evidence() {
     )
   fi
 
-  if ! python3 - \
+  if ! "$native_lifecycle_python" - \
     "$evidence_dir" \
     "$app_product" \
     "$provider_file" \
@@ -1928,7 +2087,7 @@ module_evidence_stage() {
       sed -n '1p'
   )"
   if test -z "$provider_file" ||
-    ! python3 - "$provider_file" <<'PY'
+    ! "$native_lifecycle_python" - "$provider_file" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -1997,7 +2156,7 @@ PY
   test -n "$module_object"
   test -n "$app_product"
 
-  if ! app_link_map="$(python3 - \
+  if ! app_link_map="$("$native_lifecycle_python" - \
     "$candidate_build_evidence" \
     "$app_product" \
     "$intermediates_root" \
@@ -2357,7 +2516,7 @@ PY
   MODULE_EVIDENCE_OBJECT="$module_object" \
   MODULE_EVIDENCE_LINK_MAP="$app_link_map" \
   MODULE_EVIDENCE_APP_PRODUCT="$app_product" \
-  python3 - <<'PY'
+  "$native_lifecycle_python" - <<'PY'
 import hashlib
 import json
 import os
@@ -2541,7 +2700,9 @@ NODE
     return 1
   fi
 
-  if ! record_native_phase xcode-build-started "{\"build_invocation\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$build_invocation_file")}"
+  if ! record_native_phase xcode-build-started "{\"build_invocation\":$(
+    "$native_lifecycle_python" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$build_invocation_file"
+  )}"
   then
     echo "IOS_NATIVE_XCODE_BUILD_PHASE_RECORD_FAILED" >&2
     return 1
@@ -2558,7 +2719,9 @@ NODE
       > "$evidence_dir/xcodebuild.log" \
       2>&1 || xcodebuild_exit="$?"
 
-  if ! record_native_phase xcode-build-finished "{\"build_invocation\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$build_invocation_file"),\"xcodebuild_exit\":$xcodebuild_exit}"
+  if ! record_native_phase xcode-build-finished "{\"build_invocation\":$(
+    "$native_lifecycle_python" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$build_invocation_file"
+  ),\"xcodebuild_exit\":$xcodebuild_exit}"
   then
     echo "IOS_NATIVE_XCODE_BUILD_FINISH_PHASE_RECORD_FAILED" >&2
     return 1
@@ -2706,6 +2869,16 @@ swift_harnesses_stage() {
 }
 
 mobile="$probe_root/apps/mobile"
+
+if ! select_native_python
+then
+  qualifier_exit_status=2
+  exit 2
+fi
+
+trap 'on_signal INT 130' INT
+trap 'on_signal TERM 143' TERM
+trap 'on_exit $?' EXIT
 
 capture_toolchain
 stage_exit="$?"

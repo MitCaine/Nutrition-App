@@ -581,6 +581,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: actions/setup-python@v7
+        id: native-python
+        with:
+          python-version-file: .python-version
+
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -629,6 +634,7 @@ jobs:
           IOS_NATIVE_COCOAPODS_CACHE_OUTCOME: ${{ steps.cocoapods-download-cache.outcome }}
           IOS_NATIVE_COCOAPODS_CACHE_HIT: ${{ steps.cocoapods-download-cache.outputs.cache-hit }}
           IOS_NATIVE_COCOAPODS_CACHE_RESTORED_KEY: ${{ steps.cocoapods-download-cache.outputs.cache-matched-key }}
+          NUTRITION_CONTROLLER_PYTHON: ${{ steps.native-python.outputs.python-path }}
         run: >-
           bash scripts/ios-native-qualification.sh
           --evidence-dir "${RUNNER_TEMP}/ios-native-evidence"
