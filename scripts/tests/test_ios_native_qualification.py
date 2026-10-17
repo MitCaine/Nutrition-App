@@ -731,6 +731,166 @@ class IosNativeQualificationTests(
         self.assertEqual(manifest["native_process_lifecycle"]["capability_proof"]["status"], "INVALID_JSON")
 
     @MACOS_NATIVE_FIXTURE_ONLY
+    def test_post_proof_mandatory_evidence_corruption_is_required_failure(self):
+        evidence_root = os.environ.get("GH421_IMPL_R8_GREEN_EVIDENCE")
+        green_root = Path(evidence_root) / "green-post-proof-cases" if evidence_root else None
+        observations = []
+        cases = tuple(
+            (evidence_class, mutation)
+            for evidence_class in ("start", "bound", "phase")
+            for mutation in ("invalid-json", "missing", "shape", "binding")
+        )
+        for evidence_class, mutation_kind in cases:
+            mode = f"post-proof-{evidence_class}-{mutation_kind}"
+            with self.subTest(evidence_class=evidence_class, mutation=mutation_kind):
+                result, evidence = self._run_fixture_qualification(mode)
+                preserved = None
+                if green_root is not None:
+                    preserved = green_root / f"{evidence_class}-{mutation_kind}"
+                    preserved.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(evidence, preserved)
+                    (preserved / "qualifier.stdout").write_bytes(
+                        result.stdout.encode("utf-8")
+                    )
+                    (preserved / "qualifier.stderr").write_bytes(
+                        result.stderr.encode("utf-8")
+                    )
+                mutation = json.loads(
+                    (evidence / "fixture-post-proof-mutation.json").read_text(encoding="utf-8")
+                )
+                manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+                retained = {}
+                for name, path in (
+                    ("worktree", evidence / "Nutrition App Native"),
+                    ("derived_data", evidence / "DerivedData"),
+                    ("harness_bin", evidence / "harness-bin"),
+                ):
+                    retained[name] = {
+                        "exists": path.exists() or path.is_symlink(),
+                        "device": path.lstat().st_dev if path.exists() or path.is_symlink() else None,
+                        "inode": path.lstat().st_ino if path.exists() or path.is_symlink() else None,
+                    }
+                movement_events_path = evidence / "movement-events.jsonl"
+                movement_events = (
+                    movement_events_path.read_text(encoding="utf-8").splitlines()
+                    if movement_events_path.exists()
+                    else []
+                )
+                stage_statuses = {
+                    stage["stage"]: stage["status"] for stage in manifest["stages"]
+                }
+                observation = {
+                    "evidence_class": evidence_class,
+                    "mutation_variant": mutation_kind,
+                    "mode": mode,
+                    "qualifier_exit_code": result.returncode,
+                    "mutation": mutation,
+                    "application_build": manifest["application_build"]["status"],
+                    "simulator_build": manifest["simulator_build"],
+                    "stage_statuses": stage_statuses,
+                    "propagation_proof": manifest["propagation_proof"]["status"],
+                    "propagation_proof_exit_code": manifest["propagation_proof"]["exit_code"],
+                    "cleanup_disposition": manifest["cleanup_disposition"]["status"],
+                    "manifest_result": manifest["result"],
+                    "retained_roots_after_qualification": retained,
+                    "movement_events": movement_events,
+                }
+                observations.append(observation)
+                if preserved is not None:
+                    (preserved / "post-run-observation.json").write_text(
+                        json.dumps(observation, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                    )
+                self.assertEqual(mutation["mode"], mode)
+                self.assertEqual(mutation["variant"], mutation_kind)
+                self.assertEqual(mutation["evidence_class"], evidence_class)
+                mutated_target = evidence / mutation["target_relative_path"]
+                if mutation_kind == "invalid-json":
+                    self.assertEqual(
+                        mutated_target.read_bytes(), b"{broken post-proof evidence\n"
+                    )
+                elif mutation_kind == "missing":
+                    self.assertFalse(mutated_target.exists())
+                elif mutation_kind == "shape":
+                    mutated_record = json.loads(mutated_target.read_text(encoding="utf-8"))
+                    required_field = {
+                        "start": "stage",
+                        "bound": "birth",
+                        "phase": "monotonic_ns",
+                    }[evidence_class]
+                    self.assertNotIn(required_field, mutated_record)
+                else:
+                    mutated_record = json.loads(mutated_target.read_text(encoding="utf-8"))
+                    self.assertNotEqual(
+                        mutated_record["invocation_nonce"],
+                        mutation["selected_evidence"]["invocation_nonce"],
+                    )
+                self.assertEqual(mutation["proof_status_before_mutation"], "PASS")
+                self.assertEqual(
+                    mutation["stage_statuses_before_mutation"]["xcode_build"], "PASS"
+                )
+                self.assertEqual(
+                    mutation["stage_statuses_before_mutation"]["swift_harnesses"], "PASS"
+                )
+                self.assertEqual(mutation["selected_evidence"]["evidence_class"], evidence_class)
+                if evidence_class in {"start", "bound"}:
+                    self.assertEqual(mutation["selected_evidence"]["stage"], "compile")
+                    self.assertEqual(mutation["selected_evidence"]["kind"], "compile")
+                    self.assertTrue(
+                        mutation["target_relative_path"].endswith(
+                            ".started.json" if evidence_class == "start" else ".bound.json"
+                        )
+                    )
+                else:
+                    self.assertEqual(
+                        mutation["selected_evidence"]["phase"], "xcode-build-started"
+                    )
+                    self.assertEqual(
+                        mutation["target_relative_path"],
+                        "native-lifecycle/phases/xcode-build-started.json",
+                    )
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(manifest["application_build"]["status"], "PASS")
+                self.assertEqual(manifest["simulator_build"], "PASS")
+                self.assertEqual(stage_statuses["xcode_build"], "PASS")
+                self.assertEqual(stage_statuses["swift_harnesses"], "PASS")
+                self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
+                self.assertEqual(manifest["propagation_proof"]["exit_code"], 2)
+                self.assertIn(
+                    "REQUIRED_EVIDENCE_INVALID",
+                    manifest["propagation_proof"]["reason"],
+                )
+                self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+                self.assertIn(
+                    "REQUIRED_EVIDENCE_INVALID",
+                    manifest["cleanup_disposition"]["reason"],
+                )
+                self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+                for name, path in (
+                    ("worktree", evidence / "Nutrition App Native"),
+                    ("derived_data", evidence / "DerivedData"),
+                    ("harness_bin", evidence / "harness-bin"),
+                ):
+                    before = mutation["roots_before_mutation"][name]
+                    self.assertTrue(retained[name]["exists"], name)
+                    self.assertEqual(before["path"], str(path))
+                    self.assertEqual(before["device"], retained[name]["device"], name)
+                    self.assertEqual(before["inode"], retained[name]["inode"], name)
+                self.assertFalse(
+                    any(
+                        event.startswith(
+                            ("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE")
+                        )
+                        for event in movement_events
+                    ),
+                    movement_events,
+                )
+
+        if green_root is not None:
+            (green_root / "green-summary.json").write_text(
+                json.dumps(observations, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_required_process_evidence_corruption_fails_proof_and_preserves_build_status(self):
         cases = (
             ("missing-required-output-log", "PROCESS_OUTPUT_MISSING"),
@@ -1726,6 +1886,124 @@ if [ -n "${IOS_NATIVE_FIXTURE_EVENTS-}" ]; then
     *" worktree prune "*) printf '%s\n' WORKTREE_PRUNE >> "$IOS_NATIVE_FIXTURE_EVENTS" ;;
   esac
 fi
+case "${IOS_NATIVE_FIXTURE_MODE-}" in
+  post-proof-*)
+    if printf '%s\n' "$*" | grep -Fq "worktree list --porcelain" &&
+      ! test -e "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-post-proof-mutation.json"
+    then
+      "$REAL_PYTHON" - "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}" "${IOS_NATIVE_FIXTURE_MODE}" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+evidence = Path(sys.argv[1])
+mode = sys.argv[2]
+evidence_class, variant = mode.removeprefix("post-proof-").split("-", 1)
+if evidence_class not in {"start", "bound", "phase"}:
+    raise SystemExit(f"unexpected required evidence class: {evidence_class}")
+if variant not in {"invalid-json", "missing", "shape", "binding"}:
+    raise SystemExit(f"unexpected required evidence mutation: {variant}")
+proof_path = evidence / "native-lifecycle" / "full-build-proof.json"
+proof_bytes = proof_path.read_bytes()
+proof = json.loads(proof_bytes)
+if proof.get("status") != "PASS":
+    raise SystemExit("post-proof mutation requires a passing full-build proof")
+stages_path = evidence / "stages.jsonl"
+stages_bytes = stages_path.read_bytes()
+stages = [json.loads(line) for line in stages_bytes.decode("utf-8").splitlines() if line.strip()]
+statuses = {entry.get("stage"): entry.get("status") for entry in stages}
+if statuses.get("xcode_build") != "PASS" or statuses.get("swift_harnesses") != "PASS":
+    raise SystemExit("post-proof mutation requires passing build and Swift stages")
+records = evidence / "native-lifecycle" / "records"
+selected_call = None
+if evidence_class in {"start", "bound"}:
+    calls = []
+    for record_path in sorted(records.glob("*.record.json")):
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        if record.get("stage") == "compile" and record.get("kind") == "compile":
+            calls.append(record)
+    if len(calls) != 1:
+        raise SystemExit(f"expected one full-build storyboard compile record, got {len(calls)}")
+    selected_call = calls[0]
+    call_id = selected_call["call_id"]
+    suffix = ".started.json" if evidence_class == "start" else ".bound.json"
+    target = records / f"{call_id}{suffix}"
+    selected_evidence = {
+        "evidence_class": evidence_class,
+        "record_type": "native_process_start" if evidence_class == "start" else "native_process_bound",
+        "call_id": call_id,
+        "stage": selected_call.get("stage"),
+        "kind": selected_call.get("kind"),
+    }
+else:
+    target = evidence / "native-lifecycle" / "phases" / "xcode-build-started.json"
+    selected_evidence = {
+        "evidence_class": evidence_class,
+        "record_type": "native_phase",
+        "phase": "xcode-build-started",
+    }
+if not target.is_file():
+    raise SystemExit(f"required post-proof evidence is missing before mutation: {target}")
+before = target.read_bytes()
+selected_record = json.loads(before)
+selected_evidence.update({
+    "source_commit": selected_record.get("source_commit"),
+    "invocation_nonce": selected_record.get("invocation_nonce"),
+})
+roots_before = {}
+for name, path in (
+    ("worktree", evidence / "Nutrition App Native"),
+    ("derived_data", evidence / "DerivedData"),
+    ("harness_bin", evidence / "harness-bin"),
+):
+    info = path.lstat()
+    roots_before[name] = {
+        "path": str(path),
+        "device": info.st_dev,
+        "inode": info.st_ino,
+    }
+if variant == "invalid-json":
+    target.write_bytes(b"{broken post-proof evidence\n")
+elif variant == "missing":
+    target.unlink()
+elif variant == "shape":
+    if evidence_class == "start":
+        selected_record.pop("stage", None)
+    elif evidence_class == "bound":
+        selected_record.pop("birth", None)
+    else:
+        selected_record.pop("monotonic_ns", None)
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+else:
+    selected_record["invocation_nonce"] = "0" * 32
+    if selected_record["invocation_nonce"] == selected_evidence["invocation_nonce"]:
+        selected_record["invocation_nonce"] = "1" * 32
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+after = target.read_bytes() if target.exists() else None
+(evidence / "fixture-post-proof-mutation-before.bin").write_bytes(before)
+(evidence / "fixture-post-proof-mutation.json").write_text(
+    json.dumps({
+        "mode": mode,
+        "evidence_class": evidence_class,
+        "variant": variant,
+        "target_relative_path": str(target.relative_to(evidence)),
+        "selected_evidence": selected_evidence,
+        "proof_status_before_mutation": proof["status"],
+        "proof_sha256_before_mutation": hashlib.sha256(proof_bytes).hexdigest(),
+        "stage_statuses_before_mutation": statuses,
+        "stages_sha256_before_mutation": hashlib.sha256(stages_bytes).hexdigest(),
+        "roots_before_mutation": roots_before,
+        "before_sha256": hashlib.sha256(before).hexdigest(),
+        "after_sha256": hashlib.sha256(after).hexdigest() if after is not None else None,
+        "after_bytes": len(after) if after is not None else None,
+    }, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+    fi
+    ;;
+esac
 if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree remove"; then exit 17; fi
 exec "${REAL_GIT:-/usr/bin/git}" "$@"
 ''')

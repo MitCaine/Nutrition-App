@@ -206,6 +206,74 @@ def _read_json(path: Path, *, max_bytes: int = 2_000_000) -> dict[str, Any]:
     return value
 
 
+def _required_evidence_error(kind: str, detail: str) -> LifecycleError:
+    return LifecycleError(f"REQUIRED_EVIDENCE_INVALID:{kind}:{detail}")
+
+
+def _read_required_json(path: Path, kind: str) -> dict[str, Any]:
+    try:
+        return _read_json(path)
+    except LifecycleError as error:
+        raise _required_evidence_error(kind, str(error)) from error
+
+
+def _validate_required_record_binding(
+    value: dict[str, Any], binding: dict[str, Any], path: Path, kind: str
+) -> None:
+    invocation = binding["invocation"]
+    expected = {
+        "schema_version": SCHEMA_VERSION,
+        "source_commit": binding["source"]["commit"],
+        "invocation_nonce": invocation["nonce"],
+        "invocation_root": invocation["root"],
+    }
+    if any(value.get(key) != expected_value for key, expected_value in expected.items()):
+        raise _required_evidence_error(kind, f"RECORD_BINDING_MISMATCH:{path}")
+
+
+def _validate_phase_record(value: dict[str, Any], path: Path, binding: dict[str, Any]) -> None:
+    phase = value.get("phase")
+    if (
+        value.get("record_type") != "native_phase"
+        or not isinstance(phase, str)
+        or not _STAGE_RE.fullmatch(phase)
+        or path.name != f"{phase}.json"
+    ):
+        raise _required_evidence_error("PHASE_RECORD", f"RECORD_SHAPE_INVALID:{path}")
+    _validate_required_record_binding(value, binding, path, "PHASE_RECORD")
+
+
+def _require_full_build_phase_pair(invocation_root: Path, phases: Sequence[dict[str, Any]]) -> None:
+    phase_names = [phase.get("phase") for phase in phases]
+    proof_path = invocation_root / "full-build-proof.json"
+    build_evidence_present = (
+        proof_path.exists()
+        or proof_path.is_symlink()
+        or "xcode-build-finished" in phase_names
+        or (
+            "xcode-build-started" in phase_names
+            and "xcode-build-finished" in phase_names
+        )
+    )
+    if not build_evidence_present:
+        return
+    for required_phase in ("xcode-build-started", "xcode-build-finished"):
+        if phase_names.count(required_phase) != 1:
+            raise _required_evidence_error(
+                "PHASE_RECORD", f"REQUIRED_BUILD_PHASE_MISSING_OR_AMBIGUOUS:{required_phase}"
+            )
+    for phase in phases:
+        if phase.get("phase") in {"xcode-build-started", "xcode-build-finished"} and (
+            type(phase.get("monotonic_ns")) is not int
+            or phase["monotonic_ns"] <= 0
+            or not isinstance(phase.get("build_invocation"), str)
+            or not phase["build_invocation"]
+        ):
+            raise _required_evidence_error(
+                "PHASE_RECORD", f"BUILD_PHASE_SHAPE_INVALID:{phase.get('phase')}"
+            )
+
+
 def _no_symlink_components(path: Path) -> None:
     absolute = Path(os.path.abspath(path))
     current = Path(absolute.anchor)
@@ -994,29 +1062,65 @@ def _run_gated_ibtool(
     return (0 if result_record["status"] == "PASS" else 1), result_record
 
 
-def _started_records(invocation_root: Path) -> list[dict[str, Any]]:
+def _started_records(invocation_root: Path, binding: dict[str, Any]) -> list[dict[str, Any]]:
     records = invocation_root / "records"
     if not records.is_dir() or records.is_symlink():
-        raise LifecycleError("INVOCATION_RECORDS_DIRECTORY_INVALID")
-    return [
-        value
-        for path in sorted(records.glob("*.started.json"))
-        if (value := _read_json(path)).get("record_type") == "native_process_start"
-    ]
+        raise _required_evidence_error("PROCESS_START", "RECORDS_DIRECTORY_INVALID")
+    started = []
+    for path in sorted(records.glob("*.started.json")):
+        # Known-helper births are cleanup observations. Their uncertainty must
+        # retain outputs without changing otherwise valid required proof.
+        if path.name.startswith("known-"):
+            continue
+        value = _read_required_json(path, "PROCESS_START")
+        call_id = value.get("call_id")
+        if (
+            value.get("record_type") != "native_process_start"
+            or not isinstance(call_id, str)
+            or not re.fullmatch(r"[0-9a-f]{32}", call_id)
+            or path.name != f"{call_id}.started.json"
+            or not isinstance(value.get("stage"), str)
+            or not _STAGE_RE.fullmatch(value["stage"])
+            or not isinstance(value.get("argv"), list)
+            or any(not isinstance(argument, str) for argument in value["argv"])
+        ):
+            raise _required_evidence_error("PROCESS_START", f"RECORD_SHAPE_INVALID:{path}")
+        _validate_required_record_binding(value, binding, path, "PROCESS_START")
+        started.append(value)
+    return started
 
 
 def _known_child_starts(invocation_root: Path) -> list[dict[str, Any]]:
     records = invocation_root / "records"
     if not records.is_dir() or records.is_symlink():
         raise LifecycleError("INVOCATION_RECORDS_DIRECTORY_INVALID")
-    return [
-        value
-        for path in sorted(records.glob("*.started.json"))
-        if (value := _read_json(path)).get("record_type") == "known_child_start"
-    ]
+    starts = []
+    for path in sorted(records.glob("known-*.started.json")):
+        value = _read_json(path)
+        call_id = value.get("call_id")
+        if (
+            value.get("record_type") != "known_child_start"
+            or not isinstance(call_id, str)
+            or path.name != f"{call_id}.started.json"
+            or not isinstance(value.get("child_pid"), int)
+            or isinstance(value.get("child_pid"), bool)
+            or value["child_pid"] <= 0
+            or not isinstance(value.get("child_birth"), str)
+            or not value["child_birth"]
+        ):
+            raise LifecycleError(f"KNOWN_CHILD_START_RECORD_INVALID:{path}")
+        starts.append(value)
+    return starts
 
 
-def _completed_records(invocation_root: Path, supplied: Sequence[str | Path] = ()) -> list[dict[str, Any]]:
+def _completed_records(
+    invocation_root: Path,
+    supplied: Sequence[str | Path] = (),
+    *,
+    binding: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    if binding is None:
+        binding, _ = _binding(invocation_root / "invocation.json")
     records_dir = invocation_root / "records"
     paths = sorted(records_dir.glob("*.record.json"))
     supplied_paths = [Path(value).resolve(strict=True) for value in supplied]
@@ -1033,25 +1137,50 @@ def _completed_records(invocation_root: Path, supplied: Sequence[str | Path] = (
         raise LifecycleError("PROCESS_CALL_ID_INVALID")
     if len(set(completed_call_ids)) != len(completed_call_ids):
         raise LifecycleError("PROCESS_CALL_ID_DUPLICATE")
-    started = _started_records(invocation_root)
+    started = _started_records(invocation_root, binding)
     started_ids = {value.get("call_id") for value in started}
     completed_ids = {value.get("call_id") for value in completed}
     if None in started_ids or started_ids != completed_ids:
-        raise LifecycleError("STARTED_CALL_WITHOUT_FINAL_RECORD")
-    bound = {
-        value.get("call_id"): value
-        for path in sorted(records_dir.glob("*.bound.json"))
-        if (value := _read_json(path)).get("record_type") == "native_process_bound"
-    }
+        raise _required_evidence_error("PROCESS_START", "STARTED_CALL_SET_MISMATCH")
+    bound = {}
+    for path in sorted(records_dir.glob("*.bound.json")):
+        value = _read_required_json(path, "PROCESS_BIRTH")
+        call_id = value.get("call_id")
+        if (
+            value.get("record_type") != "native_process_bound"
+            or not isinstance(call_id, str)
+            or not re.fullmatch(r"[0-9a-f]{32}", call_id)
+            or path.name != f"{call_id}.bound.json"
+            or not isinstance(value.get("pid"), int)
+            or isinstance(value.get("pid"), bool)
+            or value["pid"] <= 0
+            or not isinstance(value.get("birth"), str)
+            or not value["birth"]
+        ):
+            raise _required_evidence_error("PROCESS_BIRTH", f"RECORD_SHAPE_INVALID:{path}")
+        _validate_required_record_binding(value, binding, path, "PROCESS_BIRTH")
+        if call_id in bound:
+            raise _required_evidence_error("PROCESS_BIRTH", f"CALL_ID_DUPLICATE:{call_id}")
+        bound[call_id] = value
+    if not set(bound).issubset(started_ids):
+        raise _required_evidence_error("PROCESS_BIRTH", "BOUND_RECORD_WITHOUT_START_RECORD")
     for record in completed:
         call_id = record.get("call_id")
         if record.get("status") == "PASS":
             process = record.get("process")
             bound_record = bound.get(call_id)
             if not isinstance(process, dict) or not isinstance(bound_record, dict):
-                raise LifecycleError("PROCESS_BIRTH_BINDING_MISSING")
+                raise _required_evidence_error("PROCESS_BIRTH", "BIRTH_BINDING_MISSING")
+            if (
+                not isinstance(process.get("pid"), int)
+                or isinstance(process.get("pid"), bool)
+                or process["pid"] <= 0
+                or not isinstance(process.get("birth"), str)
+                or not process["birth"]
+            ):
+                raise _required_evidence_error("PROCESS_BIRTH", f"PROCESS_IDENTITY_SHAPE_INVALID:{call_id}")
             if process.get("pid") != bound_record.get("pid") or process.get("birth") != bound_record.get("birth"):
-                raise LifecycleError("PROCESS_BIRTH_BINDING_MISMATCH")
+                raise _required_evidence_error("PROCESS_BIRTH", f"BIRTH_BINDING_MISMATCH:{call_id}")
         for output in (record.get("stdout"), record.get("stderr")):
             if not isinstance(output, dict):
                 raise LifecycleError("PROCESS_OUTPUT_RECORD_MISSING")
@@ -1064,13 +1193,18 @@ def _completed_records(invocation_root: Path, supplied: Sequence[str | Path] = (
     return completed
 
 
-def _phase_records(invocation_root: Path) -> list[dict[str, Any]]:
+def _phase_records(invocation_root: Path, binding: dict[str, Any]) -> list[dict[str, Any]]:
     directory = invocation_root / "phases"
     if not directory.exists():
         return []
     if directory.is_symlink() or not directory.is_dir():
-        raise LifecycleError("INVOCATION_PHASE_DIRECTORY_INVALID")
-    return [_read_json(path) for path in sorted(directory.glob("*.json"))]
+        raise _required_evidence_error("PHASE_RECORD", "PHASE_DIRECTORY_INVALID")
+    phases = []
+    for path in sorted(directory.glob("*.json")):
+        value = _read_required_json(path, "PHASE_RECORD")
+        _validate_phase_record(value, path, binding)
+        phases.append(value)
+    return phases
 
 
 def record_phase(binding_path: str | Path, phase: str, **details: Any) -> Path:
@@ -1166,14 +1300,15 @@ def verify_invocation(binding_path: str | Path, supplied_records: Sequence[str |
     if current is None:
         if not finished.is_file():
             raise LifecycleError("QUALIFIER_OWNERSHIP_NOT_CURRENT")
-        finished_record = _read_json(finished)
+        finished_record = _read_required_json(finished, "PHASE_RECORD")
+        _validate_phase_record(finished_record, finished, binding)
         if (
             finished_record.get("record_type") != "native_phase"
             or finished_record.get("phase") != "qualifier-finished"
             or finished_record.get("source_commit") != binding["source"]["commit"]
             or finished_record.get("invocation_nonce") != invocation["nonce"]
         ):
-            raise LifecycleError("QUALIFIER_TERMINAL_RECORD_INVALID")
+            raise _required_evidence_error("PHASE_RECORD", "QUALIFIER_TERMINAL_RECORD_INVALID")
     elif current["birth"] != qualifier_birth:
         raise LifecycleError("QUALIFIER_PID_BIRTH_CHANGED")
     else:
@@ -1215,7 +1350,7 @@ def verify_invocation(binding_path: str | Path, supplied_records: Sequence[str |
                     raise LifecycleError("GENERATED_WORKTREE_SOURCE_CHANGED") from error
             else:
                 raise
-    records = _completed_records(invocation_root, supplied_records)
+    records = _completed_records(invocation_root, supplied_records, binding=binding)
     for record in records:
         if (
             record.get("source_commit") != binding["source"]["commit"]
@@ -1273,7 +1408,8 @@ def verify_invocation(binding_path: str | Path, supplied_records: Sequence[str |
                 or exit_record.get("invocation_nonce") != invocation["nonce"]
             ):
                 raise LifecycleError("KNOWN_CHILD_EXIT_RECORD_INVALID")
-    phases = _phase_records(invocation_root)
+    phases = _phase_records(invocation_root, binding)
+    _require_full_build_phase_pair(invocation_root, phases)
     phase_names = {phase.get("phase") for phase in phases}
     if "capability-required" in phase_names:
         capability = invocation_root / "capability-proof.json"
@@ -1632,9 +1768,10 @@ def write_full_build_proof(
         raise LifecycleError("BUILD_IBC_EXEC_CAPTURE_MISMATCH")
     if not log["compile"] or not log["link"]:
         raise LifecycleError("BUILD_STORYBOARD_TASKS_UNOBSERVED")
-    phases = _phase_records(invocation_root)
+    phases = _phase_records(invocation_root, binding)
+    _require_full_build_phase_pair(invocation_root, phases)
     build_started_ns, build_finished_ns = _build_interval(phases, build_invocation_path)
-    records = _completed_records(invocation_root)
+    records = _completed_records(invocation_root, binding=binding)
     all_calls = [record for record in records if record.get("record_type") == "native_process_call"]
     compiled = [record for record in all_calls if record.get("stage") == "compile"]
     linked = [record for record in all_calls if record.get("stage") == "link"]
@@ -2258,6 +2395,7 @@ def verify_command(binding_path: str | Path, records: Sequence[str | Path]) -> i
                 "FULL_BUILD_",
                 "BUILD_",
                 "PROCESS_",
+                "REQUIRED_EVIDENCE_INVALID",
                 "STARTED_CALL_WITHOUT_FINAL_RECORD",
                 "RECORD_BINDING_MISMATCH",
                 "RECORD_TYPE_INVALID",
