@@ -733,7 +733,7 @@ class IosNativeQualificationTests(
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_post_proof_malformed_process_output_path_is_required_failure(self):
         result, evidence = self._run_fixture_qualification("post-proof-call-output-path-null")
-        preserved_root = os.environ.get("GH421_IMPL_R9_GREEN_EVIDENCE")
+        preserved_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         preserved = Path(preserved_root) / "call-output-path-null" if preserved_root else None
         if preserved is not None:
             preserved.parent.mkdir(parents=True, exist_ok=True)
@@ -773,7 +773,7 @@ class IosNativeQualificationTests(
             "post-proof-call-output-path-missing",
             "post-proof-call-output-hash-invalid",
         )
-        evidence_root = os.environ.get("GH421_IMPL_R9_GREEN_EVIDENCE")
+        evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         preserve_root = Path(evidence_root) / "call-output-path-cases" if evidence_root else None
         for mode in cases:
             with self.subTest(mode=mode):
@@ -843,7 +843,7 @@ class IosNativeQualificationTests(
             ("post-proof-capability-output-path-outside", "compile_output"),
             ("post-proof-capability-log-hash-invalid", "calls"),
         )
-        evidence_root = os.environ.get("GH421_IMPL_R9_GREEN_EVIDENCE")
+        evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         preserve_root = Path(evidence_root) / "proof-consumers-c8" if evidence_root else None
         for mode, selected_field in cases:
             with self.subTest(mode=mode):
@@ -904,7 +904,7 @@ class IosNativeQualificationTests(
             ("post-proof-full-build-output-path-outside", "output"),
             ("post-proof-full-build-log-hash-invalid", "build_log"),
         )
-        evidence_root = os.environ.get("GH421_IMPL_R9_GREEN_EVIDENCE")
+        evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         preserve_root = Path(evidence_root) / "proof-consumers-c8" if evidence_root else None
         for mode, selected_field in cases:
             with self.subTest(mode=mode):
@@ -969,7 +969,7 @@ class IosNativeQualificationTests(
                 "PROCESS_BIRTH_UNAVAILABLE",
             ),
         )
-        preserved_root = os.environ.get("GH421_IMPL_R9_GREEN_EVIDENCE")
+        preserved_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         for mode, expected_error in cases:
             with self.subTest(observation_error=expected_error):
                 result, evidence = self._run_fixture_qualification(mode)
@@ -1032,8 +1032,131 @@ class IosNativeQualificationTests(
                 )
 
     @MACOS_NATIVE_FIXTURE_ONLY
+    def test_post_proof_decoded_call_and_storyboard_output_shapes_are_required_failures(self):
+        cases = (
+            "post-proof-call-stage-object",
+            "post-proof-call-stage-null",
+            "post-proof-call-argv-null",
+            "post-proof-call-argv-object",
+            "post-proof-call-argv-nonstring",
+            "post-proof-full-build-storyboard-outputs-null",
+            "post-proof-full-build-storyboard-outputs-object",
+            "post-proof-full-build-storyboard-output-entry-nonobject",
+            "post-proof-full-build-storyboard-output-entry-field-object",
+            "post-proof-full-build-storyboard-outputs-null-observation-unavailable",
+            "post-proof-full-build-storyboard-outputs-null-known-helper-live",
+        )
+        evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
+        preserved_root = (
+            Path(evidence_root) / "post-proof-decoded-shapes" if evidence_root else None
+        )
+        observations = []
+        for mode in cases:
+            with self.subTest(mode=mode):
+                result, evidence = self._run_fixture_qualification(mode)
+                preserved = preserved_root / mode if preserved_root is not None else None
+                if preserved is not None:
+                    preserved.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(evidence, preserved)
+                    (preserved / "qualifier.stdout").write_bytes(result.stdout.encode("utf-8"))
+                    (preserved / "qualifier.stderr").write_bytes(result.stderr.encode("utf-8"))
+                mutation = json.loads(
+                    (evidence / "fixture-post-proof-mutation.json").read_text(encoding="utf-8")
+                )
+                manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+                stage_statuses = {
+                    entry["stage"]: entry["status"] for entry in manifest["stages"]
+                }
+                retained = {}
+                for name, root_name in (
+                    ("worktree", "Nutrition App Native"),
+                    ("derived_data", "DerivedData"),
+                    ("harness_bin", "harness-bin"),
+                ):
+                    path = evidence / root_name
+                    retained[name] = {
+                        "exists": path.exists() or path.is_symlink(),
+                        "device": path.lstat().st_dev if path.exists() or path.is_symlink() else None,
+                        "inode": path.lstat().st_ino if path.exists() or path.is_symlink() else None,
+                    }
+                movement_path = evidence / "movement-events.jsonl"
+                movement_events = movement_path.read_text(encoding="utf-8").splitlines() if movement_path.exists() else []
+                observation = {
+                    "mode": mode,
+                    "qualifier_exit_code": result.returncode,
+                    "application_build": manifest["application_build"]["status"],
+                    "simulator_build": manifest["simulator_build"],
+                    "stage_statuses": stage_statuses,
+                    "propagation_proof": manifest["propagation_proof"],
+                    "cleanup_disposition": manifest["cleanup_disposition"],
+                    "manifest_result": manifest["result"],
+                    "retained_roots": retained,
+                    "movement_events": movement_events,
+                }
+                observations.append(observation)
+                if preserved is not None:
+                    (preserved / "post-run-observation.json").write_text(
+                        json.dumps(observation, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+                self.assertEqual(mutation["mode"], mode)
+                self.assertEqual(mutation["proof_status_before_mutation"], "PASS")
+                self.assertEqual(mutation["stage_statuses_before_mutation"]["xcode_build"], "PASS")
+                self.assertEqual(mutation["stage_statuses_before_mutation"]["swift_harnesses"], "PASS")
+                self.assertEqual(manifest["application_build"]["status"], "PASS")
+                self.assertEqual(manifest["simulator_build"], "PASS")
+                self.assertEqual(stage_statuses["xcode_build"], "PASS")
+                self.assertEqual(stage_statuses["swift_harnesses"], "PASS")
+                self.assertNotEqual(result.returncode, 0, json.dumps(observation, sort_keys=True))
+                self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
+                self.assertEqual(manifest["propagation_proof"]["exit_code"], 2)
+                self.assertIn(
+                    "REQUIRED_EVIDENCE_INVALID",
+                    manifest["propagation_proof"]["reason"],
+                    json.dumps(observation, sort_keys=True),
+                )
+                self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+                self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+                for name, root_name in (
+                    ("worktree", "Nutrition App Native"),
+                    ("derived_data", "DerivedData"),
+                    ("harness_bin", "harness-bin"),
+                ):
+                    before = mutation["roots_before_mutation"][name]
+                    self.assertTrue(retained[name]["exists"], root_name)
+                    self.assertEqual(before["device"], retained[name]["device"], root_name)
+                    self.assertEqual(before["inode"], retained[name]["inode"], root_name)
+                self.assertFalse(
+                    any(
+                        event.startswith(("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE"))
+                        for event in movement_events
+                    ),
+                    movement_events,
+                )
+                if mode.endswith("observation-unavailable"):
+                    injected = json.loads(
+                        (evidence / "fixture-child-observation-unavailable.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    self.assertTrue(injected["injected"])
+                    self.assertEqual(injected["verify_exit_code"], 2)
+                if mode.endswith("known-helper-live"):
+                    blocker = json.loads(
+                        (evidence / "fixture-known-helper-blocker.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    self.assertTrue(blocker["injected"])
+                    self.assertEqual(blocker["verify_exit_code"], 2)
+        if preserved_root is not None:
+            (preserved_root / "summary.json").write_text(
+                json.dumps(observations, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_post_proof_mandatory_evidence_corruption_is_required_failure(self):
-        evidence_root = os.environ.get("GH421_IMPL_R9_GREEN_EVIDENCE")
+        evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         green_root = Path(evidence_root) / "green-post-proof-cases" if evidence_root else None
         observations = []
         cases = tuple(
@@ -2117,7 +2240,8 @@ fi
 """)
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
         write("python3", r'''
-if [ "$IOS_NATIVE_FIXTURE_MODE" = "post-proof-ib-child-observation-unavailable" ] || [ "$IOS_NATIVE_FIXTURE_MODE" = "post-proof-ib-child-observation-birth-unavailable" ]; then
+case "$IOS_NATIVE_FIXTURE_MODE" in
+  post-proof-ib-child-observation-unavailable|post-proof-ib-child-observation-birth-unavailable|post-proof-full-build-*-observation-unavailable|post-proof-full-build-*-known-helper-live)
   case "$1" in
     */native_process_lifecycle.py)
       if [ "$2" = "verify" ]; then
@@ -2145,31 +2269,57 @@ selected = next(
 )
 selected_pid = selected["process"]["pid"]
 selected_birth = selected["process"]["birth"]
-observation_error = (
-    "PROCESS_BIRTH_UNAVAILABLE"
-    if os.environ["IOS_NATIVE_FIXTURE_MODE"].endswith("birth-unavailable")
-    else "PROCESS_EXECUTABLE_UNAVAILABLE"
-)
 original_identity = lifecycle.process_identity
+mode = os.environ["IOS_NATIVE_FIXTURE_MODE"]
+if mode.endswith("known-helper-live"):
+    blocker_pid = os.getpid() + 100000
+    blocker_birth = "fixture-known-helper-birth"
+    lifecycle._known_child_starts = lambda root: [{
+        "record_type": "known_child_start",
+        "call_id": "known-" + "a" * 32,
+        "source_commit": document["source"]["commit"],
+        "invocation_nonce": document["invocation"]["nonce"],
+        "child_pid": blocker_pid,
+        "child_birth": blocker_birth,
+    }]
 
-def unavailable(candidate):
-    if candidate == selected_pid:
-        raise lifecycle.LifecycleError(
-            f"{observation_error}:{candidate}:fixture-injected"
-        )
-    return original_identity(candidate)
+    def known_helper_live(candidate):
+        if candidate == blocker_pid:
+            return {"pid": blocker_pid, "birth": blocker_birth, "executable": "/fixture/helper"}
+        return original_identity(candidate)
 
-lifecycle.process_identity = unavailable
+    lifecycle.process_identity = known_helper_live
+    observation_error = "KNOWN_CHILD_STILL_LIVE"
+else:
+    observation_error = (
+        "PROCESS_BIRTH_UNAVAILABLE"
+        if mode.endswith("birth-unavailable")
+        else "PROCESS_EXECUTABLE_UNAVAILABLE"
+    )
+
+    def unavailable(candidate):
+        if candidate == selected_pid:
+            raise lifecycle.LifecycleError(
+                f"{observation_error}:{candidate}:fixture-injected"
+            )
+        return original_identity(candidate)
+
+    lifecycle.process_identity = unavailable
 status = lifecycle.verify_command(binding, [])
-Path(os.environ["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"], "fixture-child-observation-unavailable.json").write_text(
-    json.dumps({
+evidence = Path(os.environ["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"])
+if mode.endswith("known-helper-live"):
+    target = evidence / "fixture-known-helper-blocker.json"
+    details = {"pid": blocker_pid, "birth": blocker_birth, "observation_error": observation_error}
+else:
+    target = evidence / "fixture-child-observation-unavailable.json"
+    details = {
         "stage": selected["stage"],
         "pid": selected_pid,
         "birth": selected_birth,
-        "injected": True,
         "observation_error": observation_error,
-        "verify_exit_code": status,
-    }, sort_keys=True) + "\n",
+    }
+target.write_text(
+    json.dumps({**details, "injected": True, "verify_exit_code": status}, sort_keys=True) + "\n",
     encoding="utf-8",
 )
 raise SystemExit(status)
@@ -2177,7 +2327,8 @@ PY
       fi
       ;;
   esac
-fi
+  ;;
+esac
 if [ "$IOS_NATIVE_FIXTURE_MODE" = "known-writer" ] || [ "$IOS_NATIVE_FIXTURE_MODE" = "known-writer-detached" ]; then
   case "${1-}" in
     */native_process_lifecycle.py)
@@ -2261,7 +2412,12 @@ from pathlib import Path
 
 evidence = Path(sys.argv[1])
 mode = sys.argv[2]
-mode_detail = mode.removeprefix("post-proof-")
+mutation_mode = mode
+for suffix in ("-observation-unavailable", "-known-helper-live"):
+    if mutation_mode.endswith(suffix):
+        mutation_mode = mutation_mode.removesuffix(suffix)
+        break
+mode_detail = mutation_mode.removeprefix("post-proof-")
 if mode_detail.startswith("full-build-"):
     evidence_class = "full-build"
     variant = mode_detail.removeprefix("full-build-")
@@ -2285,6 +2441,15 @@ if variant not in {
     "log-hash-invalid",
     "invocation-path-null",
     "log-path-object",
+    "stage-object",
+    "stage-null",
+    "argv-null",
+    "argv-object",
+    "argv-nonstring",
+    "storyboard-outputs-null",
+    "storyboard-outputs-object",
+    "storyboard-output-entry-nonobject",
+    "storyboard-output-entry-field-object",
 }:
     raise SystemExit(f"unexpected required evidence mutation: {variant}")
 proof_path = evidence / "native-lifecycle" / "full-build-proof.json"
@@ -2420,6 +2585,33 @@ elif evidence_class == "full-build" and variant == "output-path-outside":
     target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
 elif evidence_class == "full-build" and variant == "log-hash-invalid":
     selected_record["build_log"]["sha256"] = None
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "call" and variant == "stage-object":
+    selected_record["stage"] = {"unexpected": "container"}
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "call" and variant == "stage-null":
+    selected_record["stage"] = None
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "call" and variant == "argv-null":
+    selected_record["argv"] = None
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "call" and variant == "argv-object":
+    selected_record["argv"] = {"0": "ibtool"}
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "call" and variant == "argv-nonstring":
+    selected_record["argv"][1] = None
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "full-build" and variant == "storyboard-outputs-null":
+    selected_record["storyboard_compile_outputs"] = None
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "full-build" and variant == "storyboard-outputs-object":
+    selected_record["storyboard_compile_outputs"] = {"output": "not-an-array"}
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "full-build" and variant == "storyboard-output-entry-nonobject":
+    selected_record["storyboard_compile_outputs"][0] = "not-an-object"
+    target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "full-build" and variant == "storyboard-output-entry-field-object":
+    selected_record["storyboard_compile_outputs"][0]["output"] = {"not": "a-path"}
     target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
 else:
     selected_record["invocation_nonce"] = "0" * 32

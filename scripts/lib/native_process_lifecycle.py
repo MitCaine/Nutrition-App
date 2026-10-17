@@ -1225,6 +1225,12 @@ def _completed_records(
         raise _required_evidence_error("PROCESS_BIRTH", "BOUND_RECORD_WITHOUT_START_RECORD")
     for record in completed:
         call_id = record.get("call_id")
+        stage = record.get("stage")
+        argv = record.get("argv")
+        if not isinstance(stage, str) or not _STAGE_RE.fullmatch(stage):
+            raise _required_evidence_error("PROCESS_CALL", f"CALL_STAGE_SHAPE_INVALID:{call_id}")
+        if not isinstance(argv, list) or any(not isinstance(argument, str) for argument in argv):
+            raise _required_evidence_error("PROCESS_CALL", f"CALL_ARGV_SHAPE_INVALID:{call_id}")
         if type(record.get("outputs_complete")) is not bool:
             raise _required_evidence_error("PROCESS_OUTPUT", f"OUTPUT_COMPLETION_SHAPE_INVALID:{call_id}")
         if record.get("status") == "PASS":
@@ -1463,6 +1469,44 @@ def verify_invocation(binding_path: str | Path, supplied_records: Sequence[str |
             raise LifecycleError(f"PROCESS_TERMINAL_RESULT_UNOBSERVED:{record.get('call_id')}")
         if record.get("launch_error") or record.get("observation_error"):
             raise LifecycleError(f"PROCESS_LAUNCH_OR_OBSERVATION_FAILED:{record.get('call_id')}")
+    phases = _phase_records(invocation_root, binding)
+    _require_full_build_phase_pair(invocation_root, phases)
+    phase_names = {phase.get("phase") for phase in phases}
+    if "capability-required" in phase_names:
+        capability = invocation_root / "capability-proof.json"
+        if not capability.is_file():
+            raise LifecycleError("CAPABILITY_PROOF_MISSING_OR_FAILED")
+        try:
+            capability_record = _read_json(capability)
+        except LifecycleError as error:
+            raise LifecycleError(f"CAPABILITY_PROOF_CORRUPT:{error}") from error
+        if (
+            capability_record.get("status") != "PASS"
+            or capability_record.get("source_commit") != binding["source"]["commit"]
+            or capability_record.get("invocation_nonce") != invocation["nonce"]
+        ):
+            raise LifecycleError("CAPABILITY_PROOF_MISSING_OR_FAILED")
+        _verify_capability_proof(binding, invocation_root, capability_record, records)
+    if "xcode-build-started" in phase_names:
+        proof = invocation_root / "full-build-proof.json"
+        if not proof.is_file():
+            raise LifecycleError("FULL_BUILD_PROOF_MISSING")
+        try:
+            document = _read_json(proof)
+        except LifecycleError as error:
+            raise LifecycleError(f"FULL_BUILD_PROOF_CORRUPT:{error}") from error
+        if (
+            document.get("source_commit") != binding["source"]["commit"]
+            or document.get("invocation_nonce") != invocation["nonce"]
+            or document.get("status") != "PASS"
+        ):
+            raise LifecycleError("FULL_BUILD_PROOF_INVALID")
+        try:
+            _verify_full_build_proof(binding, invocation_root, document, records, phases)
+        except LifecycleError as error:
+            raise LifecycleError(f"FULL_BUILD_PROOF_INVALID:{error}") from error
+    # Complete retained proof validation before cleanup-only process observations.
+    for record in records:
         child = record.get("process")
         if isinstance(child, dict):
             birth = child.get("birth")
@@ -1512,42 +1556,6 @@ def verify_invocation(binding_path: str | Path, supplied_records: Sequence[str |
                 or exit_record.get("invocation_nonce") != invocation["nonce"]
             ):
                 raise LifecycleError("KNOWN_CHILD_EXIT_RECORD_INVALID")
-    phases = _phase_records(invocation_root, binding)
-    _require_full_build_phase_pair(invocation_root, phases)
-    phase_names = {phase.get("phase") for phase in phases}
-    if "capability-required" in phase_names:
-        capability = invocation_root / "capability-proof.json"
-        if not capability.is_file():
-            raise LifecycleError("CAPABILITY_PROOF_MISSING_OR_FAILED")
-        try:
-            capability_record = _read_json(capability)
-        except LifecycleError as error:
-            raise LifecycleError(f"CAPABILITY_PROOF_CORRUPT:{error}") from error
-        if (
-            capability_record.get("status") != "PASS"
-            or capability_record.get("source_commit") != binding["source"]["commit"]
-            or capability_record.get("invocation_nonce") != invocation["nonce"]
-        ):
-            raise LifecycleError("CAPABILITY_PROOF_MISSING_OR_FAILED")
-        _verify_capability_proof(binding, invocation_root, capability_record, records)
-    if "xcode-build-started" in phase_names:
-        proof = invocation_root / "full-build-proof.json"
-        if not proof.is_file():
-            raise LifecycleError("FULL_BUILD_PROOF_MISSING")
-        try:
-            document = _read_json(proof)
-        except LifecycleError as error:
-            raise LifecycleError(f"FULL_BUILD_PROOF_CORRUPT:{error}") from error
-        if (
-            document.get("source_commit") != binding["source"]["commit"]
-            or document.get("invocation_nonce") != invocation["nonce"]
-            or document.get("status") != "PASS"
-        ):
-            raise LifecycleError("FULL_BUILD_PROOF_INVALID")
-        try:
-            _verify_full_build_proof(binding, invocation_root, document, records, phases)
-        except LifecycleError as error:
-            raise LifecycleError(f"FULL_BUILD_PROOF_INVALID:{error}") from error
     return {
         "source_commit": binding["source"]["commit"],
         "invocation_nonce": invocation["nonce"],
@@ -2141,6 +2149,30 @@ def _verify_full_build_proof(
     kind = "FULL_BUILD_PROOF"
     if proof.get("record_type") != "native_full_build_proof":
         raise _required_evidence_error(kind, "RECORD_TYPE_INVALID")
+    proof_compile_outputs = proof.get("storyboard_compile_outputs")
+    if not isinstance(proof_compile_outputs, list):
+        raise _required_evidence_error(
+            kind, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISSING"
+        )
+    for observed in proof_compile_outputs:
+        if not isinstance(observed, dict):
+            raise _required_evidence_error(
+                kind, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISSING"
+            )
+        call_id = observed.get("call_id")
+        if not isinstance(call_id, str) or not call_id:
+            raise _required_evidence_error(kind, "FULL_BUILD_STORYBOARD_CALL_ID_INVALID")
+        for field in ("source", "compilation_directory", "output"):
+            value = observed.get(field)
+            if not isinstance(value, str) or not value or not Path(value).is_absolute():
+                raise _required_evidence_error(
+                    kind, f"FULL_BUILD_STORYBOARD_{field.upper()}_PATH_INVALID"
+                )
+        _required_sha256(
+            observed.get("sha256"),
+            kind,
+            "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT",
+        )
     evidence_root = invocation_root.parent.resolve(strict=True)
     build_invocation_record = proof.get("build_invocation")
     build_log_record = proof.get("build_log")
@@ -2278,15 +2310,11 @@ def _verify_full_build_proof(
         or len(task_paths) != len(log["compile"])
         or sorted(task_paths) != sorted(compile_paths)
         or not any(Path(path).name == proof.get("required_storyboard", "") for path in compile_paths)
-        or sorted(link_paths) != sorted(
-            item.get("output") for item in proof.get("storyboard_compile_outputs", [])
-            if isinstance(item, dict)
-        )
+        or sorted(link_paths) != sorted(item["output"] for item in proof_compile_outputs)
     ):
         raise LifecycleError("FULL_BUILD_STORYBOARD_CORRELATION_MISMATCH")
     compile_output_records = _storyboard_compile_outputs(storyboard_compiled)
-    proof_compile_outputs = proof.get("storyboard_compile_outputs")
-    if not isinstance(proof_compile_outputs, list) or len(proof_compile_outputs) != len(compile_output_records):
+    if len(proof_compile_outputs) != len(compile_output_records):
         raise _required_evidence_error(
             kind, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISMATCH"
         )
@@ -2296,21 +2324,6 @@ def _verify_full_build_proof(
         None,
     )
     for expected, observed in zip(compile_output_records, proof_compile_outputs):
-        if not isinstance(observed, dict):
-            raise _required_evidence_error(
-                kind, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISSING"
-            )
-        for field in ("source", "compilation_directory", "output"):
-            value = observed.get(field)
-            if not isinstance(value, str) or not value or not Path(value).is_absolute():
-                raise _required_evidence_error(
-                    kind, f"FULL_BUILD_STORYBOARD_{field.upper()}_PATH_INVALID"
-                )
-        _required_sha256(
-            observed.get("sha256"),
-            kind,
-            "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT",
-        )
         if any(
             observed.get(key) != expected[key]
             for key in ("call_id", "source", "compilation_directory", "output")
