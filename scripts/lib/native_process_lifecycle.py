@@ -269,6 +269,16 @@ def _verify_required_file_hash(path: Path, value: Any, kind: str, label: str) ->
         raise _required_evidence_error(kind, f"{mismatch_label}:{path}")
 
 
+def _verify_required_directory_hash(path: Path, value: Any, kind: str, label: str) -> None:
+    expected = _required_sha256(value, kind, label)
+    try:
+        observed = _directory_sha256(path)
+    except OSError as error:
+        raise _required_evidence_error(kind, f"{label}_UNREADABLE:{error}") from error
+    if observed != expected:
+        raise _required_evidence_error(kind, f"{label}_HASH_MISMATCH:{path}")
+
+
 def _read_required_json(path: Path, kind: str) -> dict[str, Any]:
     try:
         return _read_json(path)
@@ -1768,9 +1778,23 @@ def _storyboard_compile_outputs(records: Sequence[dict[str, Any]]) -> list[dict[
 
 
 def _directory_sha256(directory: Path) -> str:
-    if not directory.is_dir():
+    try:
+        directory_info = directory.stat()
+    except FileNotFoundError as error:
+        raise LifecycleError(f"STORYBOARD_OUTPUT_NOT_DIRECTORY:{directory}") from error
+    if not stat.S_ISDIR(directory_info.st_mode):
         raise LifecycleError(f"STORYBOARD_OUTPUT_NOT_DIRECTORY:{directory}")
-    files = sorted(path for path in directory.rglob("*") if path.is_file())
+
+    def raise_walk_error(error: OSError) -> None:
+        raise error
+
+    files = []
+    for root, _, names in os.walk(directory, onerror=raise_walk_error):
+        for name in names:
+            path = Path(root) / name
+            if stat.S_ISREG(path.stat().st_mode):
+                files.append(path)
+    files.sort()
     if not files:
         raise LifecycleError(f"STORYBOARD_OUTPUT_EMPTY:{directory}")
     digest = hashlib.sha256()
@@ -2173,7 +2197,10 @@ def _verify_full_build_proof(
             kind,
             "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT",
         )
-    evidence_root = invocation_root.parent.resolve(strict=True)
+    try:
+        evidence_root = invocation_root.parent.resolve(strict=True)
+    except OSError as error:
+        raise _required_evidence_error(kind, f"FULL_BUILD_EVIDENCE_ROOT_UNREADABLE:{error}") from error
     build_invocation_record = proof.get("build_invocation")
     build_log_record = proof.get("build_log")
     if not isinstance(build_invocation_record, dict) or not isinstance(build_log_record, dict):
@@ -2245,7 +2272,10 @@ def _verify_full_build_proof(
             or not build_started_ns < record["started_monotonic_ns"] < record["finished_monotonic_ns"] < build_finished_ns
         ):
             raise LifecycleError("FULL_BUILD_IB_RECORD_OUTSIDE_BUILD_INTERVAL")
-    log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    try:
+        log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as error:
+        raise _required_evidence_error(kind, f"BUILD_LOG_UNREADABLE:{error}") from error
     wrapper_commands = _correlate_wrapper_commands(log_lines, binding["wrapper"]["path"], compiled + linked)
     if proof.get("wrapper_commands") != wrapper_commands:
         raise _required_evidence_error(kind, "FULL_BUILD_WRAPPER_COMMAND_INVENTORY_MISMATCH")
@@ -2350,16 +2380,12 @@ def _verify_full_build_proof(
         if output_path.parent != compilation_directory:
             raise _required_evidence_error(kind, "FULL_BUILD_STORYBOARD_COMPILE_DIRECTORY_MISMATCH")
         if removed_phase is None:
-            try:
-                output_digest = _directory_sha256(output_path)
-            except OSError as error:
-                raise _required_evidence_error(
-                    kind, f"FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_UNREADABLE:{error}"
-                ) from error
-            if output_digest != observed["sha256"]:
-                raise _required_evidence_error(
-                    kind, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_HASH_MISMATCH"
-                )
+            _verify_required_directory_hash(
+                output_path,
+                observed["sha256"],
+                kind,
+                "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT",
+            )
     output = proof.get("output")
     if not isinstance(output, dict):
         raise _required_evidence_error(kind, "FULL_BUILD_OUTPUT_BINDING_MISSING")
@@ -2385,13 +2411,9 @@ def _verify_full_build_proof(
     if output_path.exists():
         if removed_phase is not None:
             raise LifecycleError("FULL_BUILD_OUTPUT_REAPPEARED_AFTER_CLEANUP")
-        digest = hashlib.sha256()
-        for path in sorted(output_path.rglob("*")):
-            if path.is_file():
-                digest.update(path.relative_to(output_path).as_posix().encode())
-                digest.update(bytes.fromhex(_sha256_file(path)))
-        if digest.hexdigest() != output.get("sha256"):
-            raise _required_evidence_error(kind, "FULL_BUILD_OUTPUT_HASH_MISMATCH")
+        _verify_required_directory_hash(
+            output_path, output.get("sha256"), kind, "FULL_BUILD_OUTPUT"
+        )
     elif removed_phase is None:
         raise _required_evidence_error(kind, "FULL_BUILD_OUTPUT_MISSING_BEFORE_CLEANUP")
 

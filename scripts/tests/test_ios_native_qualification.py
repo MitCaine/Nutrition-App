@@ -1232,6 +1232,146 @@ class IosNativeQualificationTests(
             )
 
     @MACOS_NATIVE_FIXTURE_ONLY
+    def test_post_proof_mandatory_read_errors_are_required_failures(self):
+        cases = (
+            ("post-proof-full-build-output-read-denied", "FULL_BUILD_OUTPUT_UNREADABLE"),
+            (
+                "post-proof-full-build-compile-output-read-denied",
+                "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_UNREADABLE",
+            ),
+            ("post-proof-full-build-build-log-read-denied", "BUILD_LOG_UNREADABLE"),
+            (
+                "post-proof-capability-storyboard-read-denied",
+                "CAPABILITY_PROOF_STORYBOARD_UNREADABLE",
+            ),
+            ("post-proof-call-output-read-denied", "PROCESS_OUTPUT_STDOUT_UNREADABLE"),
+            (
+                "post-proof-full-build-output-read-denied-observation-unavailable",
+                "FULL_BUILD_OUTPUT_UNREADABLE",
+            ),
+        )
+        evidence_root = os.environ.get("GH421_IMPL_R12_GREEN_EVIDENCE")
+        preserved_root = Path(evidence_root) / "mandatory-read-errors" if evidence_root else None
+        observations = []
+
+        def copy_preserving_denied_modes(source, destination):
+            source = Path(source)
+            destination = Path(destination)
+            original_mode = source.stat().st_mode
+            denied = not (original_mode & 0o444)
+            if denied:
+                source.chmod(original_mode | stat.S_IRUSR)
+            try:
+                shutil.copy2(source, destination)
+            finally:
+                if denied:
+                    source.chmod(original_mode)
+                    destination.chmod(original_mode)
+
+        for mode, expected_detail in cases:
+            with self.subTest(mode=mode):
+                result, evidence = self._run_fixture_qualification(mode)
+                preserved = preserved_root / mode if preserved_root is not None else None
+                if preserved is not None:
+                    preserved.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(
+                        evidence,
+                        preserved,
+                        copy_function=copy_preserving_denied_modes,
+                    )
+                    (preserved / "qualifier.stdout").write_bytes(result.stdout.encode("utf-8"))
+                    (preserved / "qualifier.stderr").write_bytes(result.stderr.encode("utf-8"))
+                mutation = json.loads(
+                    (evidence / "fixture-post-proof-mutation.json").read_text(encoding="utf-8")
+                )
+                manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+                fault = mutation["selected_evidence"]["fixture_read_error"]
+                fault_path = Path(fault["path"])
+                self.assertEqual(fault["error_type"], "PermissionError")
+                self.assertNotEqual(int(fault["mode_before"], 8) & 0o444, 0)
+                self.assertEqual(int(fault["mode_after"], 8) & 0o444, 0)
+                self.assertFalse(stat.S_IMODE(fault_path.stat().st_mode) & 0o444)
+                self.assertEqual(mutation["proof_status_before_mutation"], "PASS")
+                self.assertEqual(
+                    mutation["stage_statuses_before_mutation"]["xcode_build"], "PASS"
+                )
+                self.assertEqual(
+                    mutation["stage_statuses_before_mutation"]["swift_harnesses"], "PASS"
+                )
+                self.assertEqual(manifest["application_build"]["status"], "PASS")
+                self.assertEqual(manifest["simulator_build"], "PASS")
+                self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
+                self.assertEqual(manifest["propagation_proof"]["exit_code"], 2)
+                self.assertIn(expected_detail, manifest["propagation_proof"]["reason"])
+                self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+                self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+                self.assertNotEqual(result.returncode, 0)
+                roots_after = {}
+                for name, root_name in (
+                    ("worktree", "Nutrition App Native"),
+                    ("derived_data", "DerivedData"),
+                    ("harness_bin", "harness-bin"),
+                ):
+                    path = evidence / root_name
+                    info = path.lstat()
+                    roots_after[name] = {"device": info.st_dev, "inode": info.st_ino}
+                    before = mutation["roots_before_mutation"][name]
+                    self.assertEqual(before["device"], info.st_dev, root_name)
+                    self.assertEqual(before["inode"], info.st_ino, root_name)
+                movement_path = evidence / "movement-events.jsonl"
+                movement = (
+                    movement_path.read_text(encoding="utf-8").splitlines()
+                    if movement_path.exists()
+                    else []
+                )
+                self.assertFalse(
+                    any(
+                        event.startswith(
+                            ("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE")
+                        )
+                        for event in movement
+                    ),
+                    movement,
+                )
+                observation = {
+                    "mode": mode,
+                    "qualifier_exit_code": result.returncode,
+                    "fault": fault,
+                    "application_build": manifest["application_build"]["status"],
+                    "simulator_build": manifest["simulator_build"],
+                    "xcode_build": mutation["stage_statuses_before_mutation"]["xcode_build"],
+                    "swift_harnesses": mutation["stage_statuses_before_mutation"]["swift_harnesses"],
+                    "proof": manifest["propagation_proof"],
+                    "expected_detail": expected_detail,
+                    "required_read_failure": True,
+                    "cleanup": manifest["cleanup_disposition"],
+                    "aggregate": manifest["result"],
+                    "roots_before": mutation["roots_before_mutation"],
+                    "roots_after": roots_after,
+                    "movement_events": movement,
+                }
+                observations.append(observation)
+                if preserved is not None:
+                    (preserved / "post-run-observation.json").write_text(
+                        json.dumps(observation, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+                if mode.endswith("observation-unavailable"):
+                    unavailable = json.loads(
+                        (evidence / "fixture-child-observation-unavailable.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    self.assertTrue(unavailable["injected"])
+                    self.assertEqual(unavailable["verify_exit_code"], 2)
+
+        if preserved_root is not None:
+            (preserved_root / "summary.json").write_text(
+                json.dumps(observations, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_post_proof_mandatory_evidence_corruption_is_required_failure(self):
         evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         green_root = Path(evidence_root) / "green-post-proof-cases" if evidence_root else None
@@ -2517,6 +2657,10 @@ if variant not in {
     "storyboard-path-object",
     "output-path-outside",
     "log-hash-invalid",
+    "output-read-denied",
+    "compile-output-read-denied",
+    "build-log-read-denied",
+    "storyboard-read-denied",
     "invocation-path-null",
     "log-path-object",
     "stage-object",
@@ -2611,6 +2755,29 @@ for name, path in (
         "device": info.st_dev,
         "inode": info.st_ino,
     }
+
+def deny_read(path):
+    path = Path(path)
+    if path.is_dir():
+        path = next(candidate for candidate in sorted(path.rglob("*")) if candidate.is_file())
+    before = path.stat()
+    path.chmod(before.st_mode & ~0o444)
+    try:
+        path.read_bytes()
+    except PermissionError as error:
+        selected_evidence["fixture_read_error"] = {
+            "path": str(path),
+            "error_type": type(error).__name__,
+            "error_number": error.errno,
+            "error": str(error),
+            "mode_before": oct(before.st_mode),
+            "mode_after": oct(path.stat().st_mode),
+            "device": path.stat().st_dev,
+            "inode": path.stat().st_ino,
+        }
+    else:
+        raise SystemExit(f"fixture read-denial did not produce PermissionError: {path}")
+
 if variant == "invalid-json":
     target.write_bytes(b"{broken post-proof evidence\n")
 elif variant == "missing":
@@ -2664,6 +2831,16 @@ elif evidence_class == "full-build" and variant == "output-path-outside":
 elif evidence_class == "full-build" and variant == "log-hash-invalid":
     selected_record["build_log"]["sha256"] = None
     target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
+elif evidence_class == "full-build" and variant == "output-read-denied":
+    deny_read(selected_record["output"]["path"])
+elif evidence_class == "full-build" and variant == "compile-output-read-denied":
+    deny_read(selected_record["storyboard_compile_outputs"][0]["output"])
+elif evidence_class == "full-build" and variant == "build-log-read-denied":
+    deny_read(selected_record["build_log"]["path"])
+elif evidence_class == "capability" and variant == "storyboard-read-denied":
+    deny_read(selected_record["storyboard"]["path"])
+elif evidence_class == "call" and variant == "output-read-denied":
+    deny_read(selected_record["stdout"]["path"])
 elif evidence_class == "call" and variant == "stage-object":
     selected_record["stage"] = {"unexpected": "container"}
     target.write_text(json.dumps(selected_record, sort_keys=True) + "\n", encoding="utf-8")
