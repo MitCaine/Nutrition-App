@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +27,13 @@ from lib.qualification_profiles import (  # noqa: E402
 )
 from lib.task_authorization import (  # noqa: E402
     required_profiles_for_paths,
+)
+from lib import native_process_lifecycle as lifecycle  # noqa: E402
+
+
+MACOS_NATIVE_FIXTURE_ONLY = unittest.skipUnless(
+    sys.platform == "darwin",
+    "macOS-only lifecycle qualifier fixture; fake uname cannot provide native proc identity or NOTE_EXIT",
 )
 
 
@@ -115,7 +123,7 @@ class IosNativeQualificationTests(
             "CocoaPods download cache",
             "DerivedData",
             "IBC_EXEC=",
-            "IBTOOLNEVERDEQUE",
+            "IBToolNeverDeque",
             "native_process_lifecycle.py",
             "cleanup_disposition",
         ]
@@ -469,6 +477,7 @@ class IosNativeQualificationTests(
                 True,
             )
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_retains_partial_failure_and_cleanup(self):
         result, evidence = self._run_fixture_qualification("failure")
         self.assertEqual(result.returncode, 17, result.stderr)
@@ -482,6 +491,7 @@ class IosNativeQualificationTests(
         self.assertFalse((evidence / "Nutrition App Native").exists())
         self.assertFalse((evidence / "DerivedData").exists())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_retains_signal_and_cleanup(self):
         result, evidence = self._run_fixture_qualification("signal")
         self.assertEqual(result.returncode, 143, result.stderr)
@@ -492,6 +502,7 @@ class IosNativeQualificationTests(
         self.assertEqual(statuses["cleanup"], "PASS")
         self.assertFalse((evidence / "Nutrition App Native").exists())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_parent_signal_runs_cleanup(self):
         result, evidence = self._run_parent_signal_fixture()
         self.assertEqual(result.returncode, 143, result.stderr)
@@ -503,6 +514,7 @@ class IosNativeQualificationTests(
         self.assertFalse((evidence / "Nutrition App Native").exists())
         self.assertFalse((evidence / "DerivedData").exists())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_cleanup_only_failure_keeps_product_pass_and_roots(self):
         result, evidence = self._run_fixture_qualification("cleanup-failure")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -510,11 +522,147 @@ class IosNativeQualificationTests(
         self.assertEqual(manifest["result"], "PASS")
         self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
         self.assertIn("Nutrition App Native", manifest["cleanup_disposition"]["retained_roots"][0])
+        self.assertIn("git worktree remove failed", manifest["cleanup_disposition"]["reason"])
+        self.assertNotIn("all generated outputs removed", manifest["cleanup_disposition"]["reason"])
         self.assertTrue((evidence / "Nutrition App Native").exists())
         statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
         self.assertEqual(statuses["xcode_build"], "PASS")
         self.assertEqual(statuses["cleanup"], "INCOMPLETE")
 
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_cleanup_reason_records_partial_removal(self):
+        result, evidence = self._run_fixture_qualification("partial-cleanup-failure")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        cleanup = manifest["cleanup_disposition"]
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(cleanup["status"], "INCOMPLETE")
+        self.assertIn("completed removals before refusal", cleanup["reason"])
+        self.assertIn("removal failed; retained", cleanup["reason"])
+        self.assertFalse((evidence / "Nutrition App Native").exists())
+        self.assertTrue((evidence / "DerivedData").exists())
+        self.assertTrue((evidence / "harness-bin").exists())
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_live_writer_retention_keeps_product_pass_and_cleanup_incomplete(self):
+        result, evidence = self._run_fixture_qualification("known-writer-retained")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        cleanup = manifest["cleanup_disposition"]
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(cleanup["status"], "INCOMPLETE")
+        self.assertIn("KNOWN_CHILD_STILL_LIVE", cleanup["reason"])
+        root = evidence / "Nutrition App Native"
+        derived = evidence / "DerivedData"
+        harness = evidence / "harness-bin"
+        root_inode = root.stat().st_ino
+        writer = json.loads((evidence / "qualifier-writer.json").read_text(encoding="utf-8"))
+        writes = Path(writer["writes_path"])
+        first_size = writes.stat().st_size
+        time.sleep(0.1)
+        self.assertGreater(writes.stat().st_size, first_size)
+        self.assertTrue(all(path.exists() for path in (root, derived, harness)))
+        self.assertEqual(root.stat().st_ino, root_inode)
+        self.assertEqual((evidence / "movement-events.jsonl").read_text(encoding="utf-8"), "")
+        binding = Path(writer["binding_path"])
+        binding_record = json.loads(binding.read_text(encoding="utf-8"))
+        with patch.dict(os.environ, {"DEVELOPER_DIR": binding_record["toolchain"]["developer_dir"]}):
+            identity = lifecycle.process_identity(writer["pid"])
+            self.assertIsNotNone(identity)
+            self.assertEqual(identity["birth"], writer["birth"])
+            kqueue = lifecycle._register_note_exit(writer["pid"], writer["birth"])
+            try:
+                Path(writer["stop_path"]).touch()
+                lifecycle._record_known_child_exit(
+                    binding,
+                    writer["pid"],
+                    writer["birth"],
+                    kqueue,
+                    timeout=5,
+                )
+                self.assertEqual(lifecycle.verify_invocation(binding)["status"], "PASS")
+            finally:
+                kqueue.close()
+        unchanged = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(unchanged["result"], "PASS")
+        self.assertEqual(unchanged["cleanup_disposition"]["status"], "INCOMPLETE")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_movement_boundary_waits_for_same_session_writer_exit(self):
+        self._assert_qualifier_writer_movement_boundary("known-writer")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_movement_boundary_waits_for_detached_writer_exit(self):
+        self._assert_qualifier_writer_movement_boundary("known-writer-detached")
+
+    def _assert_qualifier_writer_movement_boundary(self, mode):
+        process, evidence, _ = self._run_fixture_qualification(mode, asynchronous=True)
+        writer = None
+        kqueue = None
+        stop = evidence / "qualifier-writer-stop"
+        release = evidence / "verify-release"
+        try:
+            deadline = time.monotonic() + 90
+            ready = evidence / "verify-refused-ready"
+            while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(ready.exists(), "qualifier did not pause after its live-writer refusal")
+            writer = json.loads((evidence / "qualifier-writer.json").read_text(encoding="utf-8"))
+            binding = Path(writer["binding_path"])
+            pid = writer["pid"]
+            birth = writer["birth"]
+            root = evidence / "Nutrition App Native"
+            derived = evidence / "DerivedData"
+            harness = evidence / "harness-bin"
+            root_inode = root.stat().st_ino
+            retained_inodes = {path: path.stat().st_ino for path in (root, derived, harness)}
+            writes = Path(writer["writes_path"])
+            first_size = writes.stat().st_size
+            time.sleep(0.1)
+            self.assertGreater(writes.stat().st_size, first_size)
+            self.assertEqual(root.stat().st_ino, root_inode)
+            self.assertTrue(all(path.exists() and path.stat().st_ino == inode for path, inode in retained_inodes.items()))
+            events_path = evidence / "movement-events.jsonl"
+            events = events_path.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(events, ["VERIFY_REFUSED"])
+            binding_record = json.loads(binding.read_text(encoding="utf-8"))
+            with patch.dict(os.environ, {"DEVELOPER_DIR": binding_record["toolchain"]["developer_dir"]}):
+                identity = lifecycle.process_identity(pid)
+                self.assertIsNotNone(identity)
+                self.assertEqual(identity["birth"], birth)
+                kqueue = lifecycle._register_note_exit(pid, birth)
+                stop.touch()
+                lifecycle._record_known_child_exit(binding, pid, birth, kqueue, timeout=5)
+            with events_path.open("a", encoding="utf-8") as stream:
+                stream.write("NOTE_EXIT_CONFIRMED\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            release.touch()
+            stdout, stderr = process.communicate(timeout=90)
+            self.assertEqual(process.returncode, 0, f"{stderr}\n{stdout}")
+            manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["result"], "PASS")
+            self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+            self.assertFalse(root.exists())
+            events = events_path.read_text(encoding="utf-8").splitlines()
+            self.assertLess(events.index("VERIFY_REFUSED"), events.index("NOTE_EXIT_CONFIRMED"))
+            self.assertLess(events.index("NOTE_EXIT_CONFIRMED"), events.index("VERIFY_PASS"))
+            self.assertLess(events.index("VERIFY_PASS"), events.index("WORKTREE_REMOVE"))
+            self.assertLess(events.index("WORKTREE_REMOVE"), events.index("WORKTREE_PRUNE"))
+            self.assertTrue(any(item.startswith("FILESYSTEM_REMOVE:") for item in events))
+        finally:
+            stop.touch()
+            release.touch()
+            if process.poll() is None:
+                process.communicate(timeout=90)
+            if kqueue is not None:
+                kqueue.close()
+            if writer is not None:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and lifecycle.process_identity(writer["pid"]) is not None:
+                    time.sleep(0.02)
+
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_missing_full_build_ibrouting_blocks_qualification(self):
         result, evidence = self._run_fixture_qualification("ibc-bypass")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -524,6 +672,30 @@ class IosNativeQualificationTests(
         self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
         self.assertEqual(manifest["stages"][4]["status"], "FAILURE")
         self.assertTrue((evidence / "Nutrition App Native").exists())
+        lifecycle = manifest["native_process_lifecycle"]
+        self.assertEqual(lifecycle["capability_proof"]["content"]["status"], "PASS")
+        self.assertEqual(lifecycle["full_build_proof"]["status"], "MISSING")
+        self.assertIsNone(lifecycle["full_build_proof"]["sha256"])
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_missing_required_full_build_proof_blocks_qualification(self):
+        result, evidence = self._run_fixture_qualification("missing-full-proof")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("FULL_BUILD_PROOF_MISSING", manifest["cleanup_disposition"]["reason"])
+        self.assertEqual(manifest["native_process_lifecycle"]["full_build_proof"]["status"], "MISSING")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_corrupt_required_capability_proof_blocks_qualification(self):
+        result, evidence = self._run_fixture_qualification("corrupt-capability-proof")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("CAPABILITY_PROOF_CORRUPT", manifest["cleanup_disposition"]["reason"])
+        self.assertEqual(manifest["native_process_lifecycle"]["capability_proof"]["status"], "INVALID_JSON")
 
     def test_incremental_compilation_request_is_rejected_without_falling_back_to_clean(self):
         with tempfile.TemporaryDirectory(prefix="ios-native-unsupported-mode-") as temporary:
@@ -566,6 +738,7 @@ class IosNativeQualificationTests(
             self.assertFalse(evidence.exists())
             self.assertFalse(cache_dir.exists())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_missing_module_membership_fails_native_evidence(self):
         result, evidence = self._run_fixture_qualification("missing-module")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -576,6 +749,7 @@ class IosNativeQualificationTests(
         self.assertEqual(statuses["xcode_build"], "FAILURE")
         self.assertNotIn("IOS_NATIVE_QUALIFICATION=PASS", result.stdout)
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_unlinked_module_fails_final_application_evidence(self):
         result, evidence = self._run_fixture_qualification("unlinked-module")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -598,6 +772,7 @@ class IosNativeQualificationTests(
             ).is_file()
         )
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_library_search_path_does_not_count_as_application_link(self):
         result, evidence = self._run_fixture_qualification("search-path-only")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -607,11 +782,17 @@ class IosNativeQualificationTests(
             result.stderr,
         )
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_universal_thin_link_maps_match_final_application_slices(self):
         result, evidence = self._run_fixture_qualification("thin-universal")
         self.assertEqual(result.returncode, 0, result.stderr)
         manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
         self._assert_build_invocation(evidence, manifest)
+        lifecycle = manifest["native_process_lifecycle"]
+        for name in ("capability_proof", "full_build_proof"):
+            self.assertEqual(lifecycle[name]["status"], "PASS")
+            self.assertIsNotNone(lifecycle[name]["sha256"])
+            self.assertIsInstance(lifecycle[name]["content"], dict)
         self.assertEqual(
             manifest["compilation"],
             {"mode": "clean"},
@@ -643,6 +824,7 @@ class IosNativeQualificationTests(
         self.assertTrue((evidence / "nutrition-ocr-provider-registration.swift").is_file())
         self.assertFalse((evidence / "DerivedData").exists())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_thin_link_map_with_mismatched_final_app_slice_fails(self):
         result, evidence = self._run_fixture_qualification("thin-slice-mismatch")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -666,6 +848,7 @@ class IosNativeQualificationTests(
         self.assertEqual(len(list((evidence / "candidate-native-evidence" / "link-maps").glob("*.txt"))), 2)
         self.assertTrue((evidence / "nutrition-ocr-provider-registration.swift").is_file())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_foreign_application_link_map_is_retained_but_rejected(self):
         result, evidence = self._run_fixture_qualification("foreign-map")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -689,6 +872,7 @@ class IosNativeQualificationTests(
         self.assertTrue((evidence / "nutrition-ocr-provider-registration.swift").is_file())
         self.assertTrue((evidence / "nutrition-ocr-source-evidence" / "Pods.xcodeproj-project.pbxproj").is_file())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_failed_xcode_build_retains_all_candidate_maps_and_provider(self):
         result, evidence = self._run_fixture_qualification(
             "thin-universal-xcode-failure"
@@ -697,6 +881,9 @@ class IosNativeQualificationTests(
         manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["stages"][4]["status"], "FAILURE")
         self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertEqual(manifest["native_process_lifecycle"]["capability_proof"]["content"]["status"], "PASS")
+        self.assertIsNotNone(manifest["native_process_lifecycle"]["capability_proof"]["sha256"])
+        self.assertEqual(manifest["native_process_lifecycle"]["full_build_proof"]["status"], "MISSING")
         self._assert_build_invocation(evidence, manifest)
         candidate = json.loads(
             (evidence / "candidate-build-evidence.json").read_text(
@@ -713,6 +900,7 @@ class IosNativeQualificationTests(
         self.assertTrue((evidence / "Nutrition App Native").exists())
         self.assertTrue((evidence / "DerivedData").exists())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_missing_provider_registration_fails_native_evidence(self):
         result, evidence = self._run_fixture_qualification("missing-provider")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -722,6 +910,7 @@ class IosNativeQualificationTests(
         )
         self.assertFalse((evidence / "module-evidence.json").exists())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_internal_import_without_module_tuple_fails_provider_evidence(self):
         result, evidence = self._run_fixture_qualification("provider-import-only")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -731,6 +920,7 @@ class IosNativeQualificationTests(
         )
         self.assertFalse((evidence / "module-evidence.json").exists())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_module_tuple_without_import_fails_provider_evidence(self):
         result, evidence = self._run_fixture_qualification("provider-tuple-only")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -793,6 +983,7 @@ class IosNativeQualificationTests(
             self.assertIn(f"{name}={value}", manifest["generated_build_command"])
 
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_fails_closed_on_timing_write_failure(self):
         result, evidence = self._run_fixture_qualification(
             "timing-write-failure"
@@ -804,6 +995,7 @@ class IosNativeQualificationTests(
         self.assertTrue((evidence / "stages.jsonl").is_dir())
         self.assertFalse((evidence / "Nutrition App Native").exists())
 
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_fails_closed_on_manifest_write_failure(self):
         result, evidence = self._run_fixture_qualification(
             "success",
@@ -927,7 +1119,7 @@ static int copy_directory(const char *source, const char *destination) {
 }
 
 int main(int argc, char **argv) {
-    const char *override = getenv("IBTOOLNEVERDEQUE");
+    const char *override = getenv("IBToolNeverDeque");
     if (!override || strcmp(override, "1")) return 70;
     const char *mode = NULL, *output = NULL, *source = NULL;
     for (int index = 1; index < argc; index++) {
@@ -1110,6 +1302,75 @@ else
     "$wrapper" --link "$link_output" "$compile_output"
     printf 'CompileStoryboard %s (in target \\047NutritionApp\\047)\\n' "$storyboard"
     printf 'LinkStoryboards %s (in target \\047NutritionApp\\047)\\n' "$link_output"
+    printf '"%s" --compile "%s" "%s"\\n' "$wrapper" "$compile_output" "$storyboard"
+    printf '"%s" --link "%s" "%s"\\n' "$wrapper" "$link_output" "$compile_output"
+    case "${IOS_NATIVE_FIXTURE_MODE-}" in
+      known-writer|known-writer-detached|known-writer-retained)
+        "$REAL_PYTHON" - "${IOS_NATIVE_FIXTURE_REPO_ROOT:?}" "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}" "${IOS_NATIVE_FIXTURE_MODE}" <<'PY'
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+repo_root = Path(sys.argv[1])
+evidence = Path(sys.argv[2])
+mode = sys.argv[3]
+sys.path.insert(0, str(repo_root / "scripts" / "lib"))
+import native_process_lifecycle as lifecycle
+
+probe_root = evidence / "Nutrition App Native"
+stop = evidence / "qualifier-writer-stop"
+ready = evidence / "qualifier-writer-ready"
+writes = probe_root / "qualifier-writer.log"
+writer = (
+    "import pathlib,sys,time\\n"
+    "root,stop,ready=map(pathlib.Path,sys.argv[1:])\\n"
+    "path=root/'qualifier-writer.log'\\n"
+    "with path.open('a',encoding='utf-8') as output:\\n"
+    "  while not stop.exists():\\n"
+    "    output.write('writer-active\\\\n'); output.flush(); ready.touch(); time.sleep(.02)\\n"
+)
+child = subprocess.Popen(
+    [sys.executable, "-c", writer, str(probe_root), str(stop), str(ready)],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    close_fds=True,
+    start_new_session=(mode == "known-writer-detached"),
+)
+deadline = time.monotonic() + 5
+identity = None
+while time.monotonic() < deadline:
+    identity = lifecycle.process_identity(child.pid)
+    if identity is not None and ready.exists():
+        break
+    time.sleep(.01)
+if identity is None or not ready.exists():
+    raise SystemExit("fixture writer did not become observable")
+binding = evidence / "native-lifecycle" / "invocation.json"
+lifecycle._record_known_child(
+    binding,
+    child.pid,
+    identity["birth"],
+    label="qualifier-writer",
+    evidence_path=str(probe_root),
+)
+(evidence / "qualifier-writer.json").write_text(
+    json.dumps({
+        "pid": child.pid,
+        "birth": identity["birth"],
+        "stop_path": str(stop),
+        "ready_path": str(ready),
+        "writes_path": str(writes),
+        "detached": mode == "known-writer-detached",
+        "binding_path": str(binding),
+    }, sort_keys=True) + "\\n",
+    encoding="utf-8",
+)
+PY
+        ;;
+    esac
   else
     printf 'CompileStoryboard /bypassed/SplashScreen.storyboard (in target \\047NutritionApp\\047)\\n'
     printf 'LinkStoryboards /bypassed/NutritionApp.app (in target \\047NutritionApp\\047)\\n'
@@ -1207,6 +1468,8 @@ elif [ "${1-}" = "swiftc" ]; then
 case "$0" in
   *geometry)
     if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "harness-failure" ]; then exit 17; fi
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "missing-full-proof" ]; then rm -f "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/native-lifecycle/full-build-proof.json"; fi
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "corrupt-capability-proof" ]; then printf '{broken' > "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/native-lifecycle/capability-proof.json"; fi
     echo "NutritionOcrGeometryTests passed" ;;
   *image-quality) echo "NutritionImageQualityTests passed" ;;
   *vision-runtime) echo "NutritionOcrVisionRuntimeTests passed" ;;
@@ -1234,14 +1497,100 @@ else
 fi
 """)
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
-        write("python3", 'exec "$REAL_PYTHON" "$@"\n')
-        write("git", 'if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree remove"; then exit 17; fi; exec "${REAL_GIT:-/usr/bin/git}" "$@"\n')
+        write("python3", r'''
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "known-writer" ] || [ "${IOS_NATIVE_FIXTURE_MODE-}" = "known-writer-detached" ]; then
+  case "${1-}" in
+    */native_process_lifecycle.py)
+      if [ "${2-}" = "verify" ]; then
+        exec "$REAL_PYTHON" - "$@" <<'PY'
+import contextlib
+import io
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+arguments = sys.argv[1:]
+helper = Path(arguments[0]).resolve(strict=True)
+binding = Path(arguments[arguments.index("--invocation-record") + 1]).resolve(strict=True)
+records = [
+    Path(arguments[index + 1]).resolve(strict=True)
+    for index, value in enumerate(arguments[:-1])
+    if value == "--record"
+]
+sys.path.insert(0, str(helper.parent))
+import native_process_lifecycle as lifecycle
+
+def verify_once():
+    output = io.StringIO()
+    error_output = io.StringIO()
+    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error_output):
+        status = lifecycle.verify_command(binding, records)
+    return status, output.getvalue(), error_output.getvalue()
+
+evidence = Path(os.environ["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"])
+output_path = evidence / "verify.stdout"
+error_path = evidence / "verify.stderr"
+status, output, error_output = verify_once()
+output_path.write_text(output, encoding="utf-8")
+error_path.write_text(error_output, encoding="utf-8")
+if status != 0 and "KNOWN_CHILD_STILL_LIVE" in error_output:
+    with (evidence / "movement-events.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write("VERIFY_REFUSED\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    Path(os.environ["IOS_NATIVE_FIXTURE_VERIFY_READY"]).touch()
+    while not Path(os.environ["IOS_NATIVE_FIXTURE_VERIFY_RELEASE"]).exists():
+        time.sleep(0.02)
+    status, output, error_output = verify_once()
+    output_path.write_text(output, encoding="utf-8")
+    error_path.write_text(error_output, encoding="utf-8")
+    if status == 0:
+        with (evidence / "movement-events.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write("VERIFY_PASS\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+sys.stdout.write(output)
+sys.stderr.write(error_output)
+raise SystemExit(status)
+PY
+      fi
+      ;;
+  esac
+fi
+exec "$REAL_PYTHON" "$@"
+''')
+        write("git", r'''
+if [ -n "${IOS_NATIVE_FIXTURE_EVENTS-}" ]; then
+  case " $* " in
+    *" worktree remove "*) printf '%s\n' WORKTREE_REMOVE >> "$IOS_NATIVE_FIXTURE_EVENTS" ;;
+    *" worktree prune "*) printf '%s\n' WORKTREE_PRUNE >> "$IOS_NATIVE_FIXTURE_EVENTS" ;;
+  esac
+fi
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree remove"; then exit 17; fi
+exec "${REAL_GIT:-/usr/bin/git}" "$@"
+''')
+        write("rm", r'''
+if [ -n "${IOS_NATIVE_FIXTURE_EVENTS-}" ]; then
+  for target in "$@"; do
+    case "$target" in
+      */DerivedData|*/harness-bin|*/Nutrition\ App\ Native)
+        printf 'FILESYSTEM_REMOVE:%s\n' "$target" >> "$IOS_NATIVE_FIXTURE_EVENTS"
+        ;;
+    esac
+  done
+fi
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "partial-cleanup-failure" ] && printf "%s\n" "$*" | grep -Fq "/DerivedData"; then exit 17; fi
+exec /bin/rm "$@"
+''')
 
     def _run_fixture_qualification(
         self,
         mode: str,
         *,
         manifest_directory: bool = False,
+        asynchronous: bool = False,
     ):
         evidence_parent = Path(tempfile.mkdtemp(prefix="ios-native-fixture-"))
         evidence = evidence_parent / "evidence"
@@ -1260,10 +1609,19 @@ fi
         environment["REAL_GIT"] = shutil.which("git") or "/usr/bin/git"
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
+        environment["IOS_NATIVE_FIXTURE_EVENTS"] = str(evidence / "movement-events.jsonl")
+        if mode in {"known-writer", "known-writer-detached"}:
+            environment["IOS_NATIVE_FIXTURE_VERIFY_READY"] = str(evidence / "verify-refused-ready")
+            environment["IOS_NATIVE_FIXTURE_VERIFY_RELEASE"] = str(evidence / "verify-release")
+        if mode in {"known-writer", "known-writer-detached", "known-writer-retained"}:
+            (evidence / "movement-events.jsonl").write_text("", encoding="utf-8")
+        if mode in {"known-writer", "known-writer-detached", "known-writer-retained"}:
+            (evidence / "movement-events.jsonl").write_text("", encoding="utf-8")
         environment["IOS_NATIVE_FIXTURE_LIPO"] = str(fake_bin / "lipo")
         environment["NPM_CONFIG_CACHE"] = str(evidence_parent / "npm-cache")
         environment["CP_CACHE_DIR"] = str(evidence_parent / "pods-cache")
         fixture_root = evidence_parent / "repository"
+        environment["IOS_NATIVE_FIXTURE_REPO_ROOT"] = str(fixture_root)
         shutil.copytree(
             ROOT,
             fixture_root,
@@ -1300,14 +1658,26 @@ fi
             "--compilation-mode",
             "clean",
         ]
-        result = subprocess.run(
-            command,
-            cwd=fixture_root,
-            env=environment,
-            capture_output=True,
-            text=True,
-        )
+        if asynchronous:
+            result = subprocess.Popen(
+                command,
+                cwd=fixture_root,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        else:
+            result = subprocess.run(
+                command,
+                cwd=fixture_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
         self.addCleanup(shutil.rmtree, evidence_parent, ignore_errors=True)
+        if asynchronous:
+            return result, evidence, evidence_parent
         return result, evidence
 
     def _run_parent_signal_fixture(self):

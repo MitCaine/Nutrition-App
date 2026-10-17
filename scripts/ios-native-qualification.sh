@@ -99,6 +99,8 @@ native_lifecycle_xcode_spec_postprocessor=""
 cleanup_disposition="NOT_STARTED"
 cleanup_reason=""
 cleanup_retained_roots=""
+cleanup_removed_roots=""
+required_proof_failure=0
 
 export IOS_NATIVE_COMPILATION_MODE="$compilation_mode"
 
@@ -244,7 +246,11 @@ run_stage() {
   if test "$name" = cleanup &&
     test "$cleanup_disposition" = INCOMPLETE
   then
-    return 0
+    if test "$required_proof_failure" -eq 0
+    then
+      return 0
+    fi
+    return 1
   fi
   return "$exit_code"
 }
@@ -252,8 +258,10 @@ run_stage() {
 mark_cleanup_incomplete() {
   local reason="$1"
   cleanup_disposition="INCOMPLETE"
-  if test -z "$cleanup_reason"
+  if test -n "$cleanup_removed_roots"
   then
+    cleanup_reason="completed removals before refusal: ${cleanup_removed_roots//$'\n'/, }; $reason"
+  else
     cleanup_reason="$reason"
   fi
   cleanup_retained_roots=""
@@ -270,6 +278,7 @@ mark_cleanup_incomplete() {
 
 verify_before_disposal() {
   local operation="$1"
+  local verify_status=0
   local stdout_path="$native_lifecycle_dir/cleanup-verify-$operation.stdout.log"
   local stderr_path="$native_lifecycle_dir/cleanup-verify-$operation.stderr.log"
 
@@ -280,15 +289,25 @@ verify_before_disposal() {
     return 1
   fi
 
-  if ! "$native_lifecycle_python" \
+  "$native_lifecycle_python" \
       "$native_lifecycle_helper" \
       verify \
       --invocation-record "$native_lifecycle_binding" \
       > "$stdout_path" \
       2> "$stderr_path"
+  verify_status="$?"
+  if test "$verify_status" -ne 0
   then
     local detail
     detail="$(tail -n 1 "$stderr_path" 2>/dev/null || true)"
+    if test "$verify_status" -eq 2
+    then
+      required_proof_failure=1
+      if test "$qualifier_exit_status" -eq 0
+      then
+        qualifier_exit_status=1
+      fi
+    fi
     mark_cleanup_incomplete "verification refused before $operation: ${detail:-no verifier detail}"
     return 1
   fi
@@ -297,8 +316,9 @@ verify_before_disposal() {
 cleanup_stage() {
   local worktree_listed=0
 
-  cleanup_disposition="PASS"
-  cleanup_reason="all generated outputs removed after fresh source and invocation verification"
+  cleanup_disposition="IN_PROGRESS"
+  cleanup_reason=""
+  cleanup_removed_roots=""
 
   if test "$worktree_created" -eq 1 &&
     git -C "$repo_root" worktree list --porcelain |
@@ -322,6 +342,8 @@ cleanup_stage() {
       mark_cleanup_incomplete "git worktree remove failed; retained $probe_root"
       return 1
     fi
+    cleanup_removed_roots="${cleanup_removed_roots}${probe_root}
+"
     if ! record_native_phase worktree-removed "{\"root\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$probe_root")}"
     then
       mark_cleanup_incomplete "worktree removal phase evidence failed after removing $probe_root"
@@ -361,6 +383,8 @@ cleanup_stage() {
       mark_cleanup_incomplete "removal failed; retained $derived_data"
       return 1
     fi
+    cleanup_removed_roots="${cleanup_removed_roots}${derived_data}
+"
     if ! record_native_phase derived-data-removed "{\"root\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$derived_data")}"
     then
       mark_cleanup_incomplete "DerivedData removal phase evidence failed"
@@ -379,6 +403,8 @@ cleanup_stage() {
       mark_cleanup_incomplete "removal failed; retained $harness_bin"
       return 1
     fi
+    cleanup_removed_roots="${cleanup_removed_roots}${harness_bin}
+"
     if ! record_native_phase harness-bin-removed "{\"root\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$harness_bin")}"
     then
       mark_cleanup_incomplete "harness binary removal phase evidence failed"
@@ -395,6 +421,7 @@ cleanup_stage() {
   fi
 
   cleanup_disposition="PASS"
+  cleanup_reason="all generated outputs removed after fresh source and invocation verification"
   cleanup_retained_roots=""
   return 0
 }
@@ -566,6 +593,29 @@ def file_digest(path):
     return digest.hexdigest()
 
 
+def lifecycle_proof(path):
+    item = Path(path)
+    if not item.exists():
+        return {"path": str(item), "sha256": None, "content": None, "status": "MISSING"}
+    try:
+        raw = item.read_bytes()
+    except OSError as error:
+        return {"path": str(item), "sha256": None, "content": None, "status": f"UNREADABLE:{error}"}
+    try:
+        content = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        content = raw.decode("utf-8", "replace")
+        status = "INVALID_JSON"
+    else:
+        status = content.get("status", "UNKNOWN") if isinstance(content, dict) else "INVALID_DOCUMENT"
+    return {
+        "path": str(item),
+        "sha256": __import__("hashlib").sha256(raw).hexdigest(),
+        "content": content,
+        "status": status,
+    }
+
+
 def lifecycle_inventory():
     root_value = text("IOS_NATIVE_LIFECYCLE_DIR")
     if not root_value:
@@ -577,8 +627,8 @@ def lifecycle_inventory():
     phases_dir = root / "phases"
     return {
         "invocation_binding": document("IOS_NATIVE_LIFECYCLE_BINDING"),
-        "capability_proof": document(str(root / "capability-proof.json")),
-        "full_build_proof": document(str(root / "full-build-proof.json")),
+        "capability_proof": lifecycle_proof(root / "capability-proof.json"),
+        "full_build_proof": lifecycle_proof(root / "full-build-proof.json"),
         "records": [
             {"path": str(path), "sha256": file_digest(path)}
             for path in sorted(records_dir.glob("*.json"))
@@ -653,7 +703,7 @@ manifest = {
     "generated_cleanup": cleanup["status"],
     "cleanup_disposition": cleanup,
     "native_process_lifecycle": lifecycle_inventory(),
-    "native_process_lifecycle_control": "IBC_EXEC wrapper sets IBTOOLNEVERDEQUE=1 for admitted calls",
+    "native_process_lifecycle_control": "IBC_EXEC wrapper sets IBToolNeverDeque=1 for admitted calls",
     "compilation": compilation,
     "module_evidence": module_document,
     "candidate_build_evidence": candidate_build_document,
@@ -2374,6 +2424,7 @@ xcode_build_stage() {
   workspace="$(sed -n 's/^WORKSPACE=//p' "$prebuild_paths")"
   scheme="$(sed -n 's/^SCHEME=//p' "$prebuild_paths")"
   build_args=(
+    -verbose
     -workspace "$workspace"
     -scheme "$scheme"
     -configuration Debug
@@ -2446,6 +2497,12 @@ NODE
       "${build_args[@]}" \
       > "$evidence_dir/xcodebuild.log" \
       2>&1 || xcodebuild_exit="$?"
+
+  if ! record_native_phase xcode-build-finished "{\"build_invocation\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$build_invocation_file"),\"xcodebuild_exit\":$xcodebuild_exit}"
+  then
+    echo "IOS_NATIVE_XCODE_BUILD_FINISH_PHASE_RECORD_FAILED" >&2
+    return 1
+  fi
 
   if ! capture_candidate_build_evidence
   then

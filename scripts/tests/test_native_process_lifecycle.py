@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -43,37 +44,37 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         self.calls_file = self.root / "fake-tool-calls.log"
         self.environment_file = self.root / "fake-tool-environment.json"
         self.ibtool = self.tools / "ibtool"
+        self.ibtoold = Path("/bin/bash")
         self.ibtool.write_text(
-            f"#!{sys.executable}\n"
-            "import json, os, shutil, sys\n"
-            "import time\n"
-            "from pathlib import Path\n"
-            "args = sys.argv[1:]\n"
-            "time.sleep(.1)\n"
-            "calls = os.environ.get('NATIVE_TEST_CALLS')\n"
-            "if calls:\n"
-            "    with open(calls, 'a', encoding='utf-8') as stream: stream.write(' '.join(args) + '\\n')\n"
-            "environment = {'IBTOOLNEVERDEQUE': os.environ.get('IBTOOLNEVERDEQUE'), 'IBTOOLD-SECRET': os.environ.get('IBTOOLD-SECRET')}\n"
-            "target = os.environ.get('NATIVE_TEST_ENVIRONMENT')\n"
-            "if target:\n"
-            "    Path(target).write_text(json.dumps(environment), encoding='utf-8')\n"
-            "if os.environ.get('NATIVE_TEST_FAIL_COMPILE') == '1' and '--compile' in args: sys.exit(17)\n"
-            "if '--compile' in args:\n"
-            "    output = Path(args[args.index('--compile') + 1])\n"
-            "    output.mkdir(parents=True, exist_ok=True)\n"
-            "    (output / 'compiled.txt').write_text('compiled storyboard\\n', encoding='utf-8')\n"
-            "elif '--link' in args:\n"
-            "    output = Path(args[args.index('--link') + 1])\n"
-            "    source = Path(args[-1])\n"
-            "    output.mkdir(parents=True, exist_ok=True)\n"
-            "    destination = output / source.name\n"
-            "    if destination.exists(): shutil.rmtree(destination)\n"
-            "    shutil.copytree(source, destination)\n"
-            "print('fake ibtool completed')\n",
+            "#!/bin/bash\n"
+            "sleep 0.25\n"
+            "if [ -n \"${NATIVE_TEST_CALLS:-}\" ]; then printf '%s\\n' \"$*\" >> \"$NATIVE_TEST_CALLS\"; fi\n"
+            "if [ -n \"${NATIVE_TEST_ENVIRONMENT:-}\" ]; then\n"
+            "  secret=null\n"
+            "  if env | grep -q '^IBTOOLD-SECRET='; then secret='\\\"present\\\"'; fi\n"
+            "  printf '{\"IBToolNeverDeque\":\"%s\",\"IBTOOLD-SECRET\":%s}\\n' \"${IBToolNeverDeque:-}\" \"$secret\" > \"$NATIVE_TEST_ENVIRONMENT\"\n"
+            "fi\n"
+            "operation=\nnext=\noutput=\nlast=\n"
+            "for arg in \"$@\"; do\n"
+            "  if [ -n \"$next\" ]; then output=$arg; next=; fi\n"
+            "  case \"$arg\" in --compile) operation=compile; next=1 ;; --link) operation=link; next=1 ;; esac\n"
+            "  last=$arg\n"
+            "done\n"
+            "if [ \"$operation\" = compile ] && [ \"${NATIVE_TEST_FAIL_COMPILE:-0}\" = 1 ]; then exit 17; fi\n"
+            "if [ \"$operation\" = compile ]; then\n"
+            "  mkdir -p \"$output\"\n"
+            "  printf 'compiled storyboard\\n' > \"$output/compiled.txt\"\n"
+            "elif [ \"$operation\" = link ]; then\n"
+            "  mkdir -p \"$output\"\n"
+            "  destination=\"$output/${last##*/}\"\n"
+            "  rm -rf \"$destination\"\n"
+            "  cp -R \"$last\" \"$destination\"\n"
+            "fi\n"
+            "printf 'vendor stdout\\000\\n'\n"
+            "printf 'vendor stderr\\377\\n' >&2\n",
             encoding="utf-8",
         )
         self.ibtool.chmod(0o700)
-        self.ibtoold = Path(sys.executable).resolve(strict=True)
         self.specs = {
             "compiler": self.tools / "IBCompiler.xcspec",
             "storyboard_compiler": self.tools / "IBStoryboardCompiler.xcspec",
@@ -172,7 +173,6 @@ class NativeProcessLifecycleTests(unittest.TestCase):
             cwd=self.source_root,
             env=env,
             capture_output=True,
-            text=True,
             check=False,
         )
 
@@ -305,6 +305,8 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         environment["NATIVE_TEST_ENVIRONMENT"] = str(self.environment_file)
         result = self._run_wrapper(["--version"], environment=environment)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, b"vendor stdout\x00\n")
+        self.assertEqual(result.stderr, b"vendor stderr\xff\n")
         records = sorted((self.invocation_dir / "records").glob("*.record.json"))
         record = json.loads(records[-1].read_text(encoding="utf-8"))
         self.assertEqual(record["stage"], "version")
@@ -313,10 +315,32 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         self.assertEqual(record["exec_transition"]["executable"], str(self.ibtoold))
         self.assertEqual(record["process"]["pid"], record["exec_transition"]["pid"])
         self.assertEqual(record["process"]["birth"], record["exec_transition"]["birth"])
-        self.assertEqual(record["environment_allowlist"]["IBTOOLNEVERDEQUE"], "1")
+        self.assertEqual(record["environment_allowlist"]["IBToolNeverDeque"], "1")
         self.assertNotIn("IBTOOLD-SECRET", record["environment_allowlist"])
+        self.assertEqual(Path(record["stdout"]["path"]).read_bytes(), result.stdout)
+        self.assertEqual(Path(record["stderr"]["path"]).read_bytes(), result.stderr)
         observed = json.loads(self.environment_file.read_text(encoding="utf-8"))
-        self.assertEqual(observed, {"IBTOOLNEVERDEQUE": "1", "IBTOOLD-SECRET": None})
+        self.assertEqual(observed, {"IBToolNeverDeque": "1", "IBTOOLD-SECRET": None})
+
+    def test_child_exit_remains_distinct_when_note_exit_observation_fails(self):
+        binding, _ = lifecycle._binding(self.binding_path)
+        environment = os.environ.copy()
+        environment.update(NATIVE_TEST_CALLS=str(self.calls_file), NATIVE_TEST_ENVIRONMENT=str(self.environment_file))
+        with patch.object(lifecycle, "_wait_note_exit", return_value=False):
+            status, record = lifecycle._run_gated_ibtool(
+                self.binding_path,
+                binding,
+                [str(self.ibtool), "--version"],
+                stage="version",
+                environment=environment,
+                timeout=5,
+            )
+        self.assertEqual(status, 1)
+        self.assertEqual(Path(record["stdout"]["path"]).read_bytes(), b"vendor stdout\x00\n")
+        self.assertEqual(Path(record["stderr"]["path"]).read_bytes(), b"vendor stderr\xff\n")
+        self.assertEqual(record["child_exit"], 0)
+        self.assertEqual(record["observation_error"], "CHILD_NOTE_EXIT_UNOBSERVED")
+        self.assertEqual(record["status"], "FAILURE")
 
     def test_capability_failure_has_no_pooled_fallback(self):
         lifecycle.record_phase(self.binding_path, "capability-required")
@@ -368,18 +392,39 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         stop.touch()
         self.assertEqual(service.wait(timeout=5), 0)
 
-    def test_fullbuild_propagation_requires_compile_and_link_records(self):
+    def _prepare_full_build_fixture(
+        self,
+        *,
+        prebuild_compile: bool = False,
+        include_wrapper_commands: bool = True,
+        unmatched_link_command: bool = False,
+    ):
         lifecycle.record_phase(self.binding_path, "capability-required")
         storyboard = self.root / "generated" / "SplashScreen.storyboard"
         storyboard.parent.mkdir()
         storyboard.write_text("<document type='com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB'/>\n", encoding="utf-8")
-        cap_output = self.invocation_dir / "capability"
-        code, cap_record = lifecycle.run_capability(self.binding_path, storyboard, cap_output)
+        code, cap_record = lifecycle.run_capability(
+            self.binding_path,
+            storyboard,
+            self.invocation_dir / "capability",
+        )
         self.assertEqual(code, 0, cap_record)
         compile_output = self.root / "DerivedData" / "Build" / "Intermediates" / "SplashScreen.storyboardc"
         compile_output.parent.mkdir(parents=True)
-        compiled_result = self._run_wrapper(["--compile", str(compile_output), str(storyboard)])
-        self.assertEqual(compiled_result.returncode, 0, compiled_result.stderr)
+        app_product = self.root / "DerivedData" / "Build" / "Products" / "NutritionApp.app"
+        build_output = app_product / "Resources"
+        build_output.mkdir(parents=True)
+        compile_args = [
+            "--errors", "--warnings", "--notices", "--output-format", "human-readable-text",
+            "--compile", str(compile_output), str(storyboard),
+        ]
+        link_args = [
+            "--errors", "--warnings", "--notices", "--output-format", "human-readable-text",
+            "--link", str(build_output), str(compile_output),
+        ]
+        if prebuild_compile:
+            compiled = self._run_wrapper(compile_args)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
         build_invocation = self.evidence / "build-invocation.json"
         build_invocation.write_text(
             json.dumps(
@@ -392,55 +437,86 @@ class NativeProcessLifecycleTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        lifecycle.record_phase(
+            self.binding_path,
+            "xcode-build-started",
+            build_invocation=str(build_invocation),
+        )
+        if not prebuild_compile:
+            compiled = self._run_wrapper(compile_args)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+        linked = self._run_wrapper(link_args)
+        self.assertEqual(linked.returncode, 0, linked.stderr)
+        lifecycle.record_phase(
+            self.binding_path,
+            "xcode-build-finished",
+            build_invocation=str(build_invocation),
+            xcodebuild_exit=0,
+        )
+        logged_link_args = list(link_args)
+        if unmatched_link_command:
+            logged_link_args[logged_link_args.index("--link") + 1] = str(self.root / "unmatched-link-output")
+        command_lines = []
+        if include_wrapper_commands:
+            command_lines = [
+                shlex.join([str(self.wrapper_path), *compile_args]),
+                shlex.join([str(self.wrapper_path), *logged_link_args]),
+            ]
         build_log = self.evidence / "xcodebuild.log"
         build_log.write_text(
             f"CompileStoryboard {storyboard} (in target 'NutritionApp')\n"
-            "LinkStoryboards /fixture/NutritionApp.app (in target 'NutritionApp')\n",
+            f"LinkStoryboards {compile_output} (in target 'NutritionApp')\n"
+            + "\n".join(command_lines)
+            + ("\n" if command_lines else ""),
             encoding="utf-8",
         )
-        missing_link = self.evidence / "missing-link-build-invocation.json"
-        missing_link.write_text(build_invocation.read_text(encoding="utf-8"), encoding="utf-8")
-        app_product = self.root / "DerivedData" / "Build" / "Products" / "NutritionApp.app"
-        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_IB_RECORD_COUNT_MISMATCH"):
-            lifecycle.write_full_build_proof(
-                self.binding_path,
-                build_invocation_path=missing_link,
-                build_log_path=build_log,
-                app_product_path=app_product,
-            )
-        build_output = app_product / "Resources"
-        build_output.mkdir(parents=True)
-        linked = self._run_wrapper(["--link", str(build_output), str(compile_output)])
-        self.assertEqual(linked.returncode, 0, linked.stderr)
-        app_product.mkdir(parents=True, exist_ok=True)
+        return build_invocation, build_log, app_product
+
+    def test_fullbuild_propagation_requires_compile_and_link_records(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture()
         lifecycle.write_full_build_proof(
             self.binding_path,
             build_invocation_path=build_invocation,
             build_log_path=build_log,
             app_product_path=app_product,
         )
-        lifecycle.record_phase(self.binding_path, "xcode-build-started")
         self.assertEqual(lifecycle.verify_invocation(self.binding_path)["status"], "PASS")
-        proof_path = self.invocation_dir / "full-build-proof.json"
-        proof_bytes = proof_path.read_bytes()
-        proof = json.loads(proof_bytes)
+        proof = json.loads((self.invocation_dir / "full-build-proof.json").read_text(encoding="utf-8"))
         self.assertEqual(proof["status"], "PASS")
         self.assertEqual(proof["xcode_tasks"]["compile_count"], 1)
         self.assertEqual(proof["xcode_tasks"]["link_count"], 1)
-        proof["wrapper"] = str(self.root / "stale-wrapper")
-        proof_path.write_text(json.dumps(proof), encoding="utf-8")
-        with self.assertRaisesRegex(lifecycle.LifecycleError, "FULL_BUILD_WRAPPER_BINDING_MISMATCH"):
-            lifecycle.verify_invocation(self.binding_path)
-        proof_path.write_bytes(proof_bytes)
-        record_path = next(
-            path for path in (self.invocation_dir / "records").glob("*.record.json")
-            if json.loads(path.read_text(encoding="utf-8")).get("stage") == "compile"
-        )
-        record = json.loads(record_path.read_text(encoding="utf-8"))
-        record["exec_transition"]["sha256"] = "0" * 64
-        record_path.write_text(json.dumps(record), encoding="utf-8")
-        with self.assertRaisesRegex(lifecycle.LifecycleError, "FULL_BUILD_IB_RECORD_INVALID"):
-            lifecycle.verify_invocation(self.binding_path)
+        self.assertEqual(len(proof["wrapper_commands"]), 2)
+        self.assertGreater(proof["build_interval"]["finished_monotonic_ns"], proof["build_interval"]["started_monotonic_ns"])
+
+    def test_fullbuild_rejects_prebuild_compile_record(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(prebuild_compile=True)
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_IB_RECORD_OUTSIDE_BUILD_INTERVAL"):
+            lifecycle.write_full_build_proof(
+                self.binding_path,
+                build_invocation_path=build_invocation,
+                build_log_path=build_log,
+                app_product_path=app_product,
+            )
+
+    def test_fullbuild_rejects_unmatched_link_command(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(unmatched_link_command=True)
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_WRAPPER_COMMAND_RECORD_UNMATCHED"):
+            lifecycle.write_full_build_proof(
+                self.binding_path,
+                build_invocation_path=build_invocation,
+                build_log_path=build_log,
+                app_product_path=app_product,
+            )
+
+    def test_fullbuild_rejects_missing_logged_wrapper_command(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(include_wrapper_commands=False)
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_WRAPPER_COMMAND_RECORD_COUNT_MISMATCH"):
+            lifecycle.write_full_build_proof(
+                self.binding_path,
+                build_invocation_path=build_invocation,
+                build_log_path=build_log,
+                app_product_path=app_product,
+            )
 
     def test_missing_or_unmatched_ib_record_blocks_cleanup(self):
         lifecycle.record_phase(self.binding_path, "capability-required")

@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import selectors
 import select
 import shlex
 import shutil
@@ -39,7 +40,7 @@ _SAFE_ENVIRONMENT_KEYS = (
     "SDKROOT",
     "TOOLCHAINS",
     "PLATFORM_DIR",
-    "IBTOOLNEVERDEQUE",
+    "IBToolNeverDeque",
     "IBC_EXEC",
 )
 _STAGE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
@@ -758,6 +759,7 @@ def _run_gated_ibtool(
     error_read, error_write = os.pipe()
     os.set_inheritable(error_write, True)
     start_time = time.monotonic()
+    started_monotonic_ns = time.monotonic_ns()
     _write_record(
         binding,
         records_dir / f"{call_id}.started.json",
@@ -776,6 +778,23 @@ def _run_gated_ibtool(
     exit_code = None
     timed_out = False
     registration_error = None
+    outputs_complete = False
+    output_selector = selectors.DefaultSelector()
+
+    def pump_output(timeout: float) -> None:
+        for key, _ in output_selector.select(timeout):
+            pipe = key.fileobj
+            log_stream, caller_stream = key.data
+            data = os.read(pipe.fileno(), 65536)
+            if not data:
+                output_selector.unregister(pipe)
+                pipe.close()
+                continue
+            log_stream.write(data)
+            log_stream.flush()
+            caller_stream.write(data)
+            caller_stream.flush()
+
     try:
         with os.fdopen(stdout_fd, "ab", closefd=True) as stdout_stream, os.fdopen(
             stderr_fd, "ab", closefd=True
@@ -784,13 +803,17 @@ def _run_gated_ibtool(
             child = subprocess.Popen(
                 [sys.executable, str(Path(__file__).resolve()), "_exec-gated", str(error_write), *argv],
                 stdin=subprocess.PIPE,
-                stdout=stdout_stream,
-                stderr=stderr_stream,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 env=environment,
                 shell=False,
                 close_fds=True,
                 pass_fds=(error_write,),
+                bufsize=0,
             )
+            assert child.stdout is not None and child.stderr is not None
+            output_selector.register(child.stdout, selectors.EVENT_READ, (stdout_stream, sys.stdout.buffer))
+            output_selector.register(child.stderr, selectors.EVENT_READ, (stderr_stream, sys.stderr.buffer))
             os.close(error_write)
             error_write = -1
             try:
@@ -809,10 +832,12 @@ def _run_gated_ibtool(
                         "initial_executable": identity["executable"],
                         "selected_executable": binding["toolchain"]["tools"]["ibtool"],
                         "selected_ibtoold": binding["toolchain"]["tools"]["ibtoold"],
+                        "wrapper": binding["wrapper"]["path"],
                         "wrapper_pid": os.getpid(),
                         "wrapper_birth": (process_identity(os.getpid()) or {}).get("birth"),
                         "environment_allowlist": _safe_effective_environment(environment),
                         "timeout_seconds": timeout,
+                        "started_monotonic_ns": started_monotonic_ns,
                     },
                 )
                 same, _ = _identity_matches(child.pid, identity["birth"])
@@ -825,8 +850,10 @@ def _run_gated_ibtool(
                 expected_ibtoold = binding["toolchain"]["tools"]["ibtoold"]["path"]
                 transition_deadline = time.monotonic() + min(timeout, KNOWN_HELPER_WAIT_SECONDS)
                 while time.monotonic() < transition_deadline:
+                    pump_output(0.01)
                     current = process_identity(child.pid)
                     if current is None:
+                        exit_code = child.poll()
                         break
                     if current["birth"] != identity["birth"]:
                         raise LifecycleError("CHILD_BIRTH_CHANGED_DURING_EXEC_TRANSITION")
@@ -838,10 +865,16 @@ def _run_gated_ibtool(
                     time.sleep(0.01)
                 if transition is None:
                     raise LifecycleError("IBTOOLD_EXEC_TRANSITION_UNOBSERVED")
-                try:
-                    exit_code = child.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
+                wait_deadline = time.monotonic() + timeout
+                while child.poll() is None and time.monotonic() < wait_deadline:
+                    pump_output(min(0.05, max(0.0, wait_deadline - time.monotonic())))
+                if child.poll() is None:
                     timed_out = True
+                else:
+                    exit_code = child.wait()
+                    drain_deadline = time.monotonic() + 1.0
+                    while output_selector.get_map() and time.monotonic() < drain_deadline:
+                        pump_output(0.02)
                 if not timed_out:
                     if kqueue is None or not _wait_note_exit(kqueue, child.pid, identity["birth"], KNOWN_HELPER_WAIT_SECONDS):
                         raise LifecycleError("CHILD_NOTE_EXIT_UNOBSERVED")
@@ -850,10 +883,9 @@ def _run_gated_ibtool(
                         raise LifecycleError("CHILD_STILL_LIVE_AFTER_WAIT")
                     if current is not None:
                         raise LifecycleError("CHILD_PID_BIRTH_CHANGED_AFTER_WAIT")
-                    stdout_stream.flush()
-                    os.fsync(stdout_stream.fileno())
-                    stderr_stream.flush()
-                    os.fsync(stderr_stream.fileno())
+                    if not output_selector.get_map():
+                        os.fsync(stdout_stream.fileno())
+                        os.fsync(stderr_stream.fileno())
             except LifecycleError as error:
                 registration_error = str(error)
                 if child is not None and child.stdin is not None and not child.stdin.closed:
@@ -864,10 +896,19 @@ def _run_gated_ibtool(
                     except (OSError, BrokenPipeError):
                         pass
                 if child is not None and child.poll() is None:
-                    try:
-                        exit_code = child.wait(timeout=0.2)
-                    except subprocess.TimeoutExpired:
+                    wait_deadline = time.monotonic() + 0.2
+                    while child.poll() is None and time.monotonic() < wait_deadline:
+                        pump_output(min(0.02, max(0.0, wait_deadline - time.monotonic())))
+                    if child.poll() is None:
                         timed_out = True
+                    else:
+                        exit_code = child.wait()
+                elif child is not None:
+                    exit_code = child.poll()
+                if child is not None and exit_code is not None:
+                    drain_deadline = time.monotonic() + 1.0
+                    while output_selector.get_map() and time.monotonic() < drain_deadline:
+                        pump_output(0.02)
             try:
                 os.set_blocking(error_read, False)
                 data = os.read(error_read, 65536)
@@ -878,6 +919,12 @@ def _run_gated_ibtool(
     except OSError as error:
         registration_error = f"{type(error).__name__}: {error}"
     finally:
+        outputs_complete = not output_selector.get_map()
+        output_selector.close()
+        if child is not None:
+            for pipe in (child.stdout, child.stderr):
+                if pipe is not None and not pipe.closed:
+                    pipe.close()
         for descriptor in (stdout_fd, stderr_fd, error_read, error_write):
             if descriptor >= 0:
                 try:
@@ -892,10 +939,11 @@ def _run_gated_ibtool(
         and transition is not None
         and not timed_out
         and exit_code is not None
+        and outputs_complete
     )
     normalized = None if exit_code is None else (exit_code if exit_code >= 0 else 128 + abs(exit_code))
-    stdout_digest = _sha256_file(stdout_path) if complete else None
-    stderr_digest = _sha256_file(stderr_path) if complete else None
+    stdout_digest = _sha256_file(stdout_path) if outputs_complete else None
+    stderr_digest = _sha256_file(stderr_path) if outputs_complete else None
     bound_record_path = records_dir / f"{call_id}.bound.json"
     bound_record = _read_json(bound_record_path) if bound_record_path.is_file() else {}
     result_record = {
@@ -906,6 +954,7 @@ def _run_gated_ibtool(
         "argv": list(argv),
         "selected_executable": binding["toolchain"]["tools"]["ibtool"],
         "selected_ibtoold": binding["toolchain"]["tools"]["ibtoold"],
+        "wrapper": binding["wrapper"]["path"],
         "process": None if child is None else {
             "pid": child.pid,
             "birth": bound_record.get("birth"),
@@ -927,6 +976,8 @@ def _run_gated_ibtool(
         "stdout": {"path": str(stdout_path), "sha256": stdout_digest},
         "stderr": {"path": str(stderr_path), "sha256": stderr_digest},
         "duration_seconds": round(time.monotonic() - start_time, 3),
+        "started_monotonic_ns": started_monotonic_ns,
+        "finished_monotonic_ns": time.monotonic_ns(),
         "status": "PASS" if complete and normalized == 0 else "FAILURE",
     }
     _write_record(binding, records_dir / f"{call_id}.record.json", result_record)
@@ -1016,7 +1067,10 @@ def record_phase(binding_path: str | Path, phase: str, **details: Any) -> Path:
     directory = root / "phases"
     directory.mkdir(mode=0o700, exist_ok=True)
     path = directory / f"{phase}.json"
-    _write_record(binding, path, {"record_type": "native_phase", "phase": phase, **details})
+    record = {"record_type": "native_phase", "phase": phase, **details}
+    if phase in {"xcode-build-started", "xcode-build-finished"}:
+        record["monotonic_ns"] = time.monotonic_ns()
+    _write_record(binding, path, record)
     return path
 
 
@@ -1212,7 +1266,10 @@ def verify_invocation(binding_path: str | Path, supplied_records: Sequence[str |
         capability = invocation_root / "capability-proof.json"
         if not capability.is_file():
             raise LifecycleError("CAPABILITY_PROOF_MISSING_OR_FAILED")
-        capability_record = _read_json(capability)
+        try:
+            capability_record = _read_json(capability)
+        except LifecycleError as error:
+            raise LifecycleError(f"CAPABILITY_PROOF_CORRUPT:{error}") from error
         if (
             capability_record.get("status") != "PASS"
             or capability_record.get("source_commit") != binding["source"]["commit"]
@@ -1224,14 +1281,20 @@ def verify_invocation(binding_path: str | Path, supplied_records: Sequence[str |
         proof = invocation_root / "full-build-proof.json"
         if not proof.is_file():
             raise LifecycleError("FULL_BUILD_PROOF_MISSING")
-        document = _read_json(proof)
+        try:
+            document = _read_json(proof)
+        except LifecycleError as error:
+            raise LifecycleError(f"FULL_BUILD_PROOF_CORRUPT:{error}") from error
         if (
             document.get("source_commit") != binding["source"]["commit"]
             or document.get("invocation_nonce") != invocation["nonce"]
             or document.get("status") != "PASS"
         ):
             raise LifecycleError("FULL_BUILD_PROOF_INVALID")
-        _verify_full_build_proof(binding, invocation_root, document, records, phases)
+        try:
+            _verify_full_build_proof(binding, invocation_root, document, records, phases)
+        except LifecycleError as error:
+            raise LifecycleError(f"FULL_BUILD_PROOF_INVALID:{error}") from error
     return {
         "source_commit": binding["source"]["commit"],
         "invocation_nonce": invocation["nonce"],
@@ -1245,6 +1308,107 @@ def _classify_build_log(log_path: Path) -> dict[str, list[str]]:
     compile_lines = [line for line in lines if "CompileStoryboard" in line]
     link_lines = [line for line in lines if "LinkStoryboards" in line]
     return {"compile": compile_lines, "link": link_lines}
+
+
+def _build_interval(phases: Sequence[dict[str, Any]], build_invocation_path: Path) -> tuple[int, int]:
+    started = [phase for phase in phases if phase.get("phase") == "xcode-build-started"]
+    finished = [phase for phase in phases if phase.get("phase") == "xcode-build-finished"]
+    if len(started) != 1 or len(finished) != 1:
+        raise LifecycleError("BUILD_INTERVAL_PHASES_MISSING_OR_AMBIGUOUS")
+    start_ns = started[0].get("monotonic_ns")
+    finish_ns = finished[0].get("monotonic_ns")
+    invocation_record = started[0].get("build_invocation")
+    finish_record = finished[0].get("build_invocation")
+    if (
+        type(start_ns) is not int
+        or type(finish_ns) is not int
+        or finish_ns <= start_ns
+        or invocation_record != str(build_invocation_path)
+        or finish_record != str(build_invocation_path)
+    ):
+        raise LifecycleError("BUILD_INTERVAL_BINDING_INVALID")
+    return start_ns, finish_ns
+
+
+def _logged_wrapper_commands(lines: Sequence[str], wrapper: str) -> list[dict[str, Any]]:
+    commands = []
+    for line in lines:
+        if wrapper not in line or not ("--compile" in line or "--link" in line):
+            continue
+        candidates = [line]
+        try:
+            candidates.extend(
+                token for token in shlex.split(line)
+                if wrapper in token and ("--compile" in token or "--link" in token)
+            )
+        except ValueError:
+            continue
+        parsed = None
+        for candidate in candidates:
+            try:
+                tokens = shlex.split(candidate)
+            except ValueError:
+                continue
+            try:
+                index = tokens.index(wrapper)
+            except ValueError:
+                continue
+            argv = tokens[index + 1 :]
+            operation = "--compile" if "--compile" in argv else "--link" if "--link" in argv else None
+            if operation is None:
+                continue
+            parsed = {"wrapper": wrapper, "operation": operation, "argv": argv, "line": line}
+            break
+        if parsed is not None:
+            commands.append(parsed)
+    return commands
+
+
+def _correlate_wrapper_commands(
+    lines: Sequence[str], wrapper: str, records: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    commands = _logged_wrapper_commands(lines, wrapper)
+    relevant_records = [record for record in records if record.get("stage") in {"compile", "link"}]
+    if len(commands) != len(relevant_records):
+        raise LifecycleError("BUILD_WRAPPER_COMMAND_RECORD_COUNT_MISMATCH")
+    unmatched = list(relevant_records)
+    for command in commands:
+        stage = "compile" if command["operation"] == "--compile" else "link"
+        args = command["argv"]
+        operation_index = args.index(command["operation"])
+        if operation_index + 2 >= len(args):
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_ARGUMENTS_MISSING")
+        output_arg = os.path.realpath(args[operation_index + 1])
+        input_suffix = ".storyboard" if stage == "compile" else ".storyboardc"
+        command_inputs = [os.path.realpath(value) for value in args[operation_index + 2 :] if value.endswith(input_suffix)]
+        if len(command_inputs) != 1:
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_INPUT_MISSING_OR_AMBIGUOUS")
+        matches = []
+        for record in unmatched:
+            if record.get("stage") != stage or record.get("wrapper") != wrapper:
+                continue
+            record_args = record.get("argv", [])[1:]
+            try:
+                record_index = record_args.index(command["operation"])
+            except ValueError:
+                continue
+            if record_index + 2 >= len(record_args):
+                continue
+            if (
+                os.path.realpath(record_args[record_index + 1]) == output_arg
+                and [
+                    os.path.realpath(value)
+                    for value in record_args[record_index + 2 :]
+                    if value.endswith(input_suffix)
+                ] == command_inputs
+            ):
+                matches.append(record)
+        if len(matches) != 1:
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_RECORD_UNMATCHED")
+        unmatched.remove(matches[0])
+    if unmatched:
+        raise LifecycleError("BUILD_WRAPPER_RECORD_COMMAND_MISSING")
+    return commands
 
 
 def _storyboard_sources(records: Sequence[dict[str, Any]]) -> list[str]:
@@ -1328,12 +1492,23 @@ def write_full_build_proof(
         raise LifecycleError("BUILD_IBC_EXEC_CAPTURE_MISMATCH")
     if not log["compile"] or not log["link"]:
         raise LifecycleError("BUILD_STORYBOARD_TASKS_UNOBSERVED")
+    phases = _phase_records(invocation_root)
+    build_started_ns, build_finished_ns = _build_interval(phases, build_invocation_path)
     records = _completed_records(invocation_root)
     all_calls = [record for record in records if record.get("record_type") == "native_process_call"]
     compiled = [record for record in all_calls if record.get("stage") == "compile"]
     linked = [record for record in all_calls if record.get("stage") == "link"]
     storyboard_compiled = [record for record in compiled if any(arg.endswith(".storyboard") for arg in record.get("argv", []))]
     storyboard_linked = [record for record in linked if any(arg.endswith(".storyboardc") for arg in record.get("argv", []))]
+    for record in compiled + linked:
+        if (
+            type(record.get("started_monotonic_ns")) is not int
+            or type(record.get("finished_monotonic_ns")) is not int
+            or not build_started_ns < record["started_monotonic_ns"] < record["finished_monotonic_ns"] < build_finished_ns
+        ):
+            raise LifecycleError("BUILD_IB_RECORD_OUTSIDE_BUILD_INTERVAL")
+    log_lines = build_log.read_text(encoding="utf-8", errors="replace").splitlines()
+    wrapper_commands = _correlate_wrapper_commands(log_lines, wrapper, compiled + linked)
     compile_task_paths = _task_storyboard_paths(log["compile"], ".storyboard", "CompileStoryboard")
     link_task_paths = _task_storyboard_paths(log["link"], ".storyboardc", "LinkStoryboards")
     compile_record_paths = _storyboard_sources(storyboard_compiled)
@@ -1347,7 +1522,6 @@ def write_full_build_proof(
         raise LifecycleError("BUILD_IB_RECORD_COUNT_MISMATCH")
     if not any(expected_storyboard in path for path in compile_record_paths):
         raise LifecycleError("BUILD_REQUIRED_STORYBOARD_COMPILE_MISSING")
-    log_lines = build_log.read_text(encoding="utf-8", errors="replace").splitlines()
     xib_tasks = [line for line in log_lines if "CompileXIB" in line]
     xib_task_paths = _task_storyboard_paths(xib_tasks, ".xib", "CompileXIB")
     xib_records = [record for record in compiled if any(arg.endswith(".xib") for arg in record.get("argv", []))]
@@ -1379,7 +1553,7 @@ def write_full_build_proof(
         if (
             transition.get("executable") != expected_tool["path"]
             or transition.get("sha256") != expected_tool["sha256"]
-            or record.get("environment_allowlist", {}).get("IBTOOLNEVERDEQUE") != "1"
+            or record.get("environment_allowlist", {}).get("IBToolNeverDeque") != "1"
             or record.get("child_exit") != 0
             or record.get("status") != "PASS"
         ):
@@ -1418,7 +1592,9 @@ def write_full_build_proof(
         "invocation_nonce": binding["invocation"]["nonce"],
         "build_invocation": {"path": str(build_invocation_path), "sha256": _sha256_file(build_invocation_path)},
         "build_log": {"path": str(build_log), "sha256": _sha256_file(build_log)},
+        "build_interval": {"started_monotonic_ns": build_started_ns, "finished_monotonic_ns": build_finished_ns},
         "wrapper": wrapper,
+        "wrapper_commands": wrapper_commands,
         "xcode_tasks": {"compile_count": len(log["compile"]), "link_count": len(log["link"]), "compile": log["compile"], "link": log["link"]},
         "compile_record_ids": [record["call_id"] for record in compiled],
         "link_record_ids": [record["call_id"] for record in linked],
@@ -1449,7 +1625,7 @@ def _verify_capability_proof(
     proof: dict[str, Any],
     records: Sequence[dict[str, Any]],
 ) -> None:
-    if proof.get("fallback") != "none" or proof.get("ibtoolneverdeque") != "1":
+    if proof.get("fallback") != "none" or proof.get("IBToolNeverDeque") != "1":
         raise LifecycleError("CAPABILITY_PROOF_CONTROL_INVALID")
     calls = proof.get("calls")
     if not isinstance(calls, list) or [call.get("stage") for call in calls if isinstance(call, dict)] != [
@@ -1476,7 +1652,7 @@ def _verify_capability_proof(
             or call.get("exit_code") != 0
             or record.get("status") != "PASS"
             or record.get("child_exit") != 0
-            or record.get("environment_allowlist", {}).get("IBTOOLNEVERDEQUE") != "1"
+            or record.get("environment_allowlist", {}).get("IBToolNeverDeque") != "1"
             or not isinstance(transition, dict)
             or not isinstance(process, dict)
             or transition.get("pid") != process.get("pid")
@@ -1541,6 +1717,12 @@ def _verify_full_build_proof(
         raise LifecycleError("FULL_BUILD_INVOCATION_BINDING_MISMATCH")
     if proof.get("wrapper") != binding["wrapper"]["path"]:
         raise LifecycleError("FULL_BUILD_WRAPPER_BINDING_MISMATCH")
+    build_started_ns, build_finished_ns = _build_interval(phases, invocation_path)
+    if proof.get("build_interval") != {
+        "started_monotonic_ns": build_started_ns,
+        "finished_monotonic_ns": build_finished_ns,
+    }:
+        raise LifecycleError("FULL_BUILD_INTERVAL_BINDING_MISMATCH")
     log = _classify_build_log(log_path)
     tasks = proof.get("xcode_tasks")
     if (
@@ -1554,6 +1736,17 @@ def _verify_full_build_proof(
     call_records = [record for record in records if record.get("record_type") == "native_process_call"]
     compiled = [record for record in call_records if record.get("stage") == "compile"]
     linked = [record for record in call_records if record.get("stage") == "link"]
+    for record in compiled + linked:
+        if (
+            type(record.get("started_monotonic_ns")) is not int
+            or type(record.get("finished_monotonic_ns")) is not int
+            or not build_started_ns < record["started_monotonic_ns"] < record["finished_monotonic_ns"] < build_finished_ns
+        ):
+            raise LifecycleError("FULL_BUILD_IB_RECORD_OUTSIDE_BUILD_INTERVAL")
+    log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    wrapper_commands = _correlate_wrapper_commands(log_lines, binding["wrapper"]["path"], compiled + linked)
+    if proof.get("wrapper_commands") != wrapper_commands:
+        raise LifecycleError("FULL_BUILD_WRAPPER_COMMAND_INVENTORY_MISMATCH")
     storyboard_compiled = [record for record in compiled if any(arg.endswith(".storyboard") for arg in record.get("argv", []))]
     storyboard_linked = [record for record in linked if any(arg.endswith(".storyboardc") for arg in record.get("argv", []))]
     if (
@@ -1577,12 +1770,11 @@ def _verify_full_build_proof(
             or transition.get("sha256") != expected_tool["sha256"]
             or record.get("selected_executable") != expected_ibtool
             or record.get("selected_ibtoold") != expected_tool
-            or record.get("environment_allowlist", {}).get("IBTOOLNEVERDEQUE") != "1"
+            or record.get("environment_allowlist", {}).get("IBToolNeverDeque") != "1"
             or record.get("child_exit") != 0
             or record.get("status") != "PASS"
         ):
             raise LifecycleError("FULL_BUILD_IB_RECORD_INVALID")
-    log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
     postprocessor_lines = [
         line for line in log_lines
         if "IBPostprocessor" in line or "PostprocessInterfaceBuilder" in line
@@ -1669,7 +1861,7 @@ def run_capability(binding_path: str | Path, storyboard_path: str | Path, output
         raise LifecycleError("IBC_EXEC_WRAPPER_UNAVAILABLE")
     outputs = compile_dir / "SplashScreen.storyboardc"
     env = dict(os.environ)
-    env["IBTOOLNEVERDEQUE"] = "1"
+    env["IBToolNeverDeque"] = "1"
     for key in tuple(env):
         if key.startswith("IBTOOLD-"):
             env.pop(key)
@@ -1805,7 +1997,7 @@ def run_capability(binding_path: str | Path, storyboard_path: str | Path, output
         "xcode_build": binding["toolchain"]["xcode_build"],
         "ibtool": binding["toolchain"]["tools"]["ibtool"],
         "ibtoold": binding["toolchain"]["tools"]["ibtoold"],
-        "ibtoolneverdeque": "1",
+        "IBToolNeverDeque": "1",
         "removed_environment_prefixes": ["IBTOOLD-"],
         "storyboard": {"path": str(copied), "sha256": _sha256_file(copied)},
         "compile_output": {"path": str(outputs), "exists": output_present},
@@ -1826,7 +2018,7 @@ def ibtool_wrapper(binding_path: str | Path, argv: Sequence[str]) -> int:
     for key in tuple(environment):
         if key.startswith("IBTOOLD-"):
             environment.pop(key)
-    environment["IBTOOLNEVERDEQUE"] = "1"
+    environment["IBToolNeverDeque"] = "1"
     executable = binding["toolchain"]["tools"]["ibtool"]["path"]
     selected_ibtoold = binding["toolchain"]["tools"]["ibtoold"]["path"]
     if _sha256_file(Path(executable)) != binding["toolchain"]["tools"]["ibtool"]["sha256"]:
@@ -1841,8 +2033,6 @@ def ibtool_wrapper(binding_path: str | Path, argv: Sequence[str]) -> int:
         environment=environment,
         timeout=IBTOOL_TIMEOUT_SECONDS,
     )
-    if return_code != 0:
-        print("NATIVE_IBTOOL_EXECUTION_OR_OBSERVATION_FAILED", file=sys.stderr)
     return return_code
 
 
@@ -1851,6 +2041,9 @@ def verify_command(binding_path: str | Path, records: Sequence[str | Path]) -> i
         result = verify_invocation(binding_path, records)
     except LifecycleError as error:
         print(str(error), file=sys.stderr)
+        message = str(error)
+        if message.startswith(("CAPABILITY_PROOF", "FULL_BUILD_PROOF", "FULL_BUILD_", "BUILD_")):
+            return 2
         return 1
     print(json.dumps(result, sort_keys=True))
     return 0

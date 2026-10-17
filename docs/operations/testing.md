@@ -510,13 +510,18 @@ source, qualifier PID and birth, selected developer directory, Xcode build, `ibt
 `ibtoold` paths and hashes, and the installed Interface Builder specs. A copied generated
 `SplashScreen.storyboard` must compile and link through that invocation's wrapper before the full
 build starts. The wrapper is passed as `IBC_EXEC`; it removes inherited `IBTOOLD-*` variables and
-sets `IBTOOLNEVERDEQUE=1` for the admitted child call. The record requires the same PID and native
+sets `IBToolNeverDeque=1` for the admitted child call. The record requires the same PID and native
 birth to transition to the selected `ibtoold`, then observes and records its exit. A missed
 transition, exit, or required call is a failed proof; no pooled or shared-service fallback is used.
-The simulator build records its literal argv and uses `ENABLE_DEBUG_DYLIB=NO` with
+The wrapper preserves the vendor's stdout and stderr bytes at the caller while retaining separate
+logs; lifecycle records and diagnostics do not enter vendor stdout. The simulator build records its
+literal argv, emits verbose build commands, and uses `ENABLE_DEBUG_DYLIB=NO` with
 `LD_GENERATE_MAP_FILE=YES` so Xcode emits application link maps. Full-build evidence matches the
 actual `SplashScreen.storyboard` compile and `SplashScreen.storyboardc` link tasks in Xcode's log to
-the wrapper's per-call records and verifies the generated output. This establishes the observed
+the wrapper's per-call records, including matching command wrapper, input and output paths inside
+the recorded build start/end interval, and verifies the generated output. Task headings alone do
+not establish a wrapper call. The capability and full-build proof documents and hashes are retained
+in success and failure manifests. This establishes the observed
 `IBC_EXEC` route for the required storyboard work; it does not establish universal process or
 descendant tracking, and unrelated native entrypoints remain synchronous observations.
 
