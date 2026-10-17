@@ -444,8 +444,11 @@ migrations/configuration plus backend database, ORM model, repository, operator
 authority paths, and `apps/backend/tests/*_postgres.py` require `postgresql`. The
 existing iOS-native triggers remain additive, so `apps/mobile/app.json` requires
 both `mobile` and `ios-native`. These rules match complete path components. The
-controller checks observed changes and exact authorized paths or concrete scoped
-subtrees, including when a planning commit changes only its capsule. A broad
+repository-owned `scripts/lib/native_process_lifecycle.py` helper also requires
+`repository` and `ios-native` together, without applying the native floor to other
+repository helper modules. The controller checks observed changes and exact
+authorized paths or concrete scoped subtrees, including when a planning commit
+changes only its capsule. A broad
 `apps/backend/**` authorization requires `backend`; it does not imply `postgresql`
 unless the concrete scope names a PostgreSQL authority subtree or the changed paths
 enter one. The controller rejects an owner authorization that omits a required

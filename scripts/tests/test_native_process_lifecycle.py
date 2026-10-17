@@ -100,7 +100,7 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         self.ibtoold = Path("/bin/bash")
         self.ibtool.write_text(
             "#!/bin/bash\n"
-            "sleep 0.25\n"
+            "sleep \"${NATIVE_TEST_IBTOOL_SLEEP:-0.25}\"\n"
             "if [ -n \"${NATIVE_TEST_CALLS:-}\" ]; then printf '%s\\n' \"$*\" >> \"$NATIVE_TEST_CALLS\"; fi\n"
             "if [ -n \"${NATIVE_TEST_ENVIRONMENT:-}\" ]; then\n"
             "  secret=null\n"
@@ -168,6 +168,8 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         evidence: Path | None = None,
         worktree_root: Path | None = None,
         assignment_guard: dict[str, str] | None = None,
+        ibtool_path: Path | None = None,
+        ibtoold_path: Path | None = None,
     ):
         evidence = evidence or self.evidence
         evidence.mkdir(parents=True, exist_ok=True)
@@ -178,8 +180,8 @@ class NativeProcessLifecycleTests(unittest.TestCase):
             worktree_root=worktree_root or (self.root / "not-created-worktree"),
             derived_data_root=self.root / "DerivedData",
             harness_root=self.root / "harness-bin",
-            ibtool_path=self.ibtool,
-            ibtoold_path=self.ibtoold,
+            ibtool_path=ibtool_path or self.ibtool,
+            ibtoold_path=ibtoold_path or self.ibtoold,
             xcodebuild_path=Path(sys.executable).resolve(strict=True),
             developer_dir=Path(os.environ.get("DEVELOPER_DIR", "/Applications/Xcode.app/Contents/Developer")).resolve(strict=True),
             xcode_version="fixture-27.1",
@@ -423,6 +425,57 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         self.assertEqual(record["observation_error"], "CHILD_NOTE_EXIT_UNOBSERVED")
         self.assertEqual(record["status"], "FAILURE")
 
+    def test_gated_ibtool_transition_and_execution_share_one_deadline(self):
+        delayed_ibtool = self.tools / "delayed-ibtool"
+        delayed_source = self.tools / "delayed-ibtool.c"
+        delayed_source.write_text(
+            "#include <unistd.h>\n"
+            "int main(int argc, char **argv) {\n"
+            "  (void)argc; (void)argv;\n"
+            "  usleep(300000);\n"
+            "  execl(\"/bin/sleep\", \"/bin/sleep\", \"0.6\", (char *)0);\n"
+            "  return 127;\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ["/usr/bin/clang", "-Wall", "-Wextra", "-Werror", str(delayed_source), "-o", str(delayed_ibtool)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        _, binding_path, wrapper_path = self._create_invocation(
+            evidence=self.evidence / "delayed-transition",
+            ibtool_path=delayed_ibtool,
+            ibtoold_path=Path("/bin/sleep"),
+        )
+        lifecycle.write_wrapper(binding_path, wrapper_path, sys.executable)
+        binding, _ = lifecycle._binding(binding_path)
+
+        status, record = lifecycle._run_gated_ibtool(
+            binding_path,
+            binding,
+            [str(delayed_ibtool), "--version"],
+            stage="version",
+            environment=os.environ.copy(),
+            timeout=0.8,
+        )
+
+        self.assertEqual(status, 1)
+        self.assertTrue(record["timed_out"], record)
+        self.assertIsNone(record["child_exit"])
+        self.assertIsNotNone(record["exec_transition"], record)
+        self.assertEqual(
+            record["exec_transition"]["executable"],
+            binding["toolchain"]["tools"]["ibtoold"]["path"],
+        )
+        self.assertIsNone(record["observation_error"])
+        child_pid = record["process"]["pid"]
+        deadline = time.monotonic() + 3
+        while lifecycle.process_identity(child_pid) is not None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertIsNone(lifecycle.process_identity(child_pid), "delayed fake ibtool did not exit naturally")
+
     def test_capability_failure_has_no_pooled_fallback(self):
         lifecycle.record_phase(self.binding_path, "capability-required")
         storyboard = self.root / "SplashScreen.storyboard"
@@ -502,7 +555,7 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         compile_output.parent.mkdir(parents=True)
         app_product = self.root / "DerivedData" / "Build" / "Products" / "NutritionApp.app"
         if alias_paths:
-            alias_root = self.root / "filesystem alias with spaces"
+            alias_root = self.root / "Nutrition App Native alias"
             alias_root.symlink_to(self.root, target_is_directory=True)
 
             def fixture_path(path: Path) -> Path:
@@ -586,11 +639,17 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         logged_link_args = list(link_args)
         if unmatched_link_command:
             logged_link_args[logged_link_args.index("--link") + 2] = str(self.root / "unmatched-link.storyboardc")
+        def xcode_escape(value: str | Path) -> str:
+            return str(value).replace("\\", "\\\\").replace(" ", "\\ ")
+
+        def xcode_command_line(argv: list[str]) -> str:
+            return " ".join(xcode_escape(value) for value in argv)
+
         command_lines = []
         if include_wrapper_commands:
             if not omit_compile_wrapper_command:
-                command_lines.append(shlex.join([str(command_wrapper), *logged_compile_args]))
-            command_lines.append(shlex.join([str(command_wrapper), *logged_link_args]))
+                command_lines.append(xcode_command_line([str(command_wrapper), *logged_compile_args]))
+            command_lines.append(xcode_command_line([str(command_wrapper), *logged_link_args]))
         task_storyboard = task_storyboard_override or storyboard_arg
         build_log = self.evidence / "xcodebuild.log"
         build_log.write_text(
@@ -599,7 +658,7 @@ class NativeProcessLifecycleTests(unittest.TestCase):
             "\n"
             "Build settings from command line:\n"
             f"    IBC_EXEC = {self.wrapper_path}\n"
-            f"CompileStoryboard {task_storyboard} (in target 'NutritionApp')\n"
+            f"CompileStoryboard {xcode_escape(task_storyboard)} (in target 'NutritionApp')\n"
             "LinkStoryboards (in target 'NutritionApp')\n"
             + "\n".join(command_lines)
             + ("\n" if command_lines else ""),
@@ -653,8 +712,10 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         )
         proof = json.loads((self.invocation_dir / "full-build-proof.json").read_text(encoding="utf-8"))
         self.assertEqual(proof["status"], "PASS")
-        self.assertTrue(all("filesystem alias with spaces" in item["line"] for item in proof["wrapper_commands"]))
-        alias_wrapper = str(self.root / "filesystem alias with spaces" / "evidence" / "native-lifecycle" / "ibtool")
+        self.assertTrue(all(r"Nutrition\ App\ Native\ alias" in item["line"] for item in proof["wrapper_commands"]))
+        task_heading = next(line for line in build_log.read_text(encoding="utf-8").splitlines() if line.startswith("CompileStoryboard"))
+        self.assertIn(r"Nutrition\ App\ Native\ alias", task_heading)
+        alias_wrapper = str(self.root / "Nutrition App Native alias" / "evidence" / "native-lifecycle" / "ibtool")
         records = lifecycle._completed_records(self.invocation_dir)
         wrapper_records = [record for record in records if record.get("stage") in {"compile", "link"}]
         aliased_records = [{**record, "wrapper": alias_wrapper} for record in wrapper_records]

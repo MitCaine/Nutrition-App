@@ -13,6 +13,7 @@ from lib.qualification_profiles import (
     QualificationProfileError,
     required_checks_for_profiles,
 )
+from lib.tooling_qualification import selected as tooling_selected
 
 AUTHORIZATION_MARKER_V1 = "<!-- nutrition-task-authorization:v1 -->"
 AUTHORIZATION_MARKER_V2 = "<!-- nutrition-task-authorization:v2 -->"
@@ -74,6 +75,7 @@ IOS_NATIVE_PATH_PATTERNS = (
     "scripts/ios-native-cache-key.sh",
     "scripts/lib/qualification_profiles.py",
     "scripts/lib/task_authorization.py",
+    "scripts/lib/native_process_lifecycle.py",
 )
 
 CORE_FIELDS = {
@@ -813,9 +815,6 @@ def _path_is_within_component_tree(
 ) -> bool:
     """Match profile roots by path component without changing scope globs."""
     return path == root or path.startswith(f"{root}/")
-
-
-from lib.tooling_qualification import selected as tooling_selected
 
 
 def required_profiles_for_paths(

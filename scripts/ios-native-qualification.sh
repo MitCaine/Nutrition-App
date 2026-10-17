@@ -101,6 +101,8 @@ cleanup_reason=""
 cleanup_retained_roots=""
 cleanup_removed_roots=""
 required_proof_failure=0
+application_build_outcome="$evidence_dir/application-build-outcome.json"
+propagation_proof_outcome="$evidence_dir/propagation-proof-outcome.json"
 
 export IOS_NATIVE_COMPILATION_MODE="$compilation_mode"
 
@@ -303,6 +305,12 @@ verify_before_disposal() {
     if test "$verify_status" -eq 2
     then
       required_proof_failure=1
+      record_outcome \
+        "$propagation_proof_outcome" \
+        propagation_proof \
+        FAILURE \
+        "$verify_status" \
+        "${detail:-required lifecycle evidence verification failed}" || true
       if test "$qualifier_exit_status" -eq 0
       then
         qualifier_exit_status=1
@@ -426,6 +434,40 @@ cleanup_stage() {
   return 0
 }
 
+record_outcome() {
+  local path="$1"
+  local name="$2"
+  local status="$3"
+  local exit_code="$4"
+  local reason="$5"
+
+  python3 - "$path" "$name" "$status" "$exit_code" "$reason" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, name, status, exit_code, reason = sys.argv[1:]
+try:
+    parsed_exit = int(exit_code)
+except ValueError:
+    parsed_exit = None
+Path(path).write_text(
+    json.dumps(
+        {"name": name, "status": status, "exit_code": parsed_exit, "reason": reason},
+        sort_keys=True,
+    ) + "\n",
+    encoding="utf-8",
+)
+PY
+  local record_status="$?"
+  if test "$record_status" -ne 0
+  then
+    evidence_retention_failure=1
+    echo "IOS_NATIVE_OUTCOME_RECORD_FAILED:$name" >&2
+    return 1
+  fi
+}
+
 write_manifest() {
   local final_exit="$1"
   local total_end
@@ -454,6 +496,8 @@ write_manifest() {
   IOS_NATIVE_MODULE_EVIDENCE_FILE="$module_evidence" \
   IOS_NATIVE_CANDIDATE_BUILD_EVIDENCE_FILE="$candidate_build_evidence" \
   IOS_NATIVE_APPLICATION_LINK_PROOF_FILE="$application_link_proof" \
+  IOS_NATIVE_APPLICATION_BUILD_OUTCOME_FILE="$application_build_outcome" \
+  IOS_NATIVE_PROPAGATION_PROOF_OUTCOME_FILE="$propagation_proof_outcome" \
   IOS_NATIVE_LIFECYCLE_DIR="$native_lifecycle_dir" \
   IOS_NATIVE_LIFECYCLE_BINDING="$native_lifecycle_binding" \
   IOS_NATIVE_CLEANUP_DISPOSITION="$cleanup_disposition" \
@@ -529,6 +573,18 @@ def document(name, default=None):
         return default
 
 
+def outcome(name, display_name):
+    value = document(name)
+    if not isinstance(value, dict):
+        return {
+            "name": display_name,
+            "status": "SKIPPED",
+            "exit_code": None,
+            "reason": "not attempted",
+        }
+    return value
+
+
 def cache_entry(prefix, path, source):
     outcome = text(f"{prefix}_CACHE_OUTCOME")
     cache_hit = text(f"{prefix}_CACHE_HIT")
@@ -555,6 +611,8 @@ def cache_entry(prefix, path, source):
 
 
 stage_status = {entry["stage"]: entry["status"] for entry in stages}
+application_build = outcome("IOS_NATIVE_APPLICATION_BUILD_OUTCOME_FILE", "application_build")
+propagation_proof = outcome("IOS_NATIVE_PROPAGATION_PROOF_OUTCOME_FILE", "propagation_proof")
 compilation = {
     "mode": text("IOS_NATIVE_COMPILATION_MODE") or "clean",
 }
@@ -688,11 +746,13 @@ manifest = {
     "config_plugins": stage_status["prebuild_plugins"],
     "autolinking": stage_status["autolinking"],
     "pods": stage_status["pods"],
-    "simulator_build": stage_status["xcode_build"],
+    "simulator_build": application_build["status"],
+    "application_build": application_build,
+    "propagation_proof": propagation_proof,
     "nutrition_ocr": {
         "autolinking": stage_status["autolinking"],
         "pod": stage_status["pods"],
-        "application_compilation": stage_status["xcode_build"],
+        "application_compilation": application_build["status"],
     },
     "swift_harnesses": {
         "geometry": stage_status["swift_harnesses"],
@@ -2504,6 +2564,19 @@ NODE
     return 1
   fi
 
+  if test "$xcodebuild_exit" -eq 0 && grep -Fq "BUILD SUCCEEDED" "$evidence_dir/xcodebuild.log"
+  then
+    if ! record_outcome "$application_build_outcome" application_build PASS 0 "xcodebuild exited 0 and emitted BUILD SUCCEEDED"
+    then
+      return 1
+    fi
+  elif test "$xcodebuild_exit" -ne 0
+  then
+    record_outcome "$application_build_outcome" application_build FAILURE "$xcodebuild_exit" "xcodebuild exited nonzero" || true
+  else
+    record_outcome "$application_build_outcome" application_build FAILURE 1 "xcodebuild success marker missing" || true
+  fi
+
   if ! capture_candidate_build_evidence
   then
     return 1
@@ -2531,6 +2604,7 @@ NODE
   )"
   if test -z "$app_binary"
   then
+    record_outcome "$application_build_outcome" application_build FAILURE 1 "application product binary missing" || true
     echo "IOS_NATIVE_APP_PRODUCT_BINARY_MISSING" >&2
     return 1
   fi
@@ -2556,7 +2630,13 @@ lifecycle.write_full_build_proof(
 )
 PY
   then
+    record_outcome "$propagation_proof_outcome" propagation_proof FAILURE 1 "required full-build IBC_EXEC proof failed" || true
     echo "IOS_NATIVE_FULL_BUILD_IBC_EXEC_PROOF_FAILED" >&2
+    return 1
+  fi
+
+  if ! record_outcome "$propagation_proof_outcome" propagation_proof PASS 0 "required full-build IBC_EXEC proof passed"
+  then
     return 1
   fi
 

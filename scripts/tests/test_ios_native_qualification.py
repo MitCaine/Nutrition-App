@@ -59,6 +59,7 @@ class IosNativeQualificationTests(
             "apps/mobile/modules/nutrition-ocr/ios-tests/NutritionOcrGeometryTests.swift",
             "scripts/ios-native-qualification.sh",
             "scripts/ios-native-cache-key.sh",
+            "scripts/lib/native_process_lifecycle.py",
             ".github/workflows/ios-native.yml",
             ".github/workflows/trusted-qualification-execute.yml",
         ]
@@ -71,6 +72,15 @@ class IosNativeQualificationTests(
                     ),
                     ({"mobile", "ios-native"} if path.startswith("apps/mobile/") else {"repository", "ios-native"} if path.startswith("scripts/") or path == ".github/workflows/trusted-qualification-execute.yml" else {"ios-native"}),
                 )
+
+        for helper_path in (
+            "scripts/lib/review_commands.py",
+            "scripts/lib/tooling_qualification.py",
+            "scripts/lib/ri_delta.py",
+            "scripts/lib/native_process_lifecycle_other.py",
+        ):
+            with self.subTest(unrelated_helper=helper_path):
+                self.assertEqual(required_profiles_for_paths([helper_path]), {"repository"})
 
     def test_documentation_does_not_force_native(self):
         self.assertEqual(
@@ -719,6 +729,34 @@ class IosNativeQualificationTests(
         self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
         self.assertIn("CAPABILITY_PROOF_CORRUPT", manifest["cleanup_disposition"]["reason"])
         self.assertEqual(manifest["native_process_lifecycle"]["capability_proof"]["status"], "INVALID_JSON")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_required_process_evidence_corruption_fails_proof_and_preserves_build_status(self):
+        cases = (
+            ("missing-required-output-log", "PROCESS_OUTPUT_MISSING"),
+            ("corrupt-required-output-log", "PROCESS_OUTPUT_HASH_MISMATCH"),
+            ("corrupt-required-call-record", "PROCESS_CALL_RECORD_INVALID"),
+        )
+        for mode, expected_error in cases:
+            with self.subTest(mode=mode):
+                result, evidence = self._run_fixture_qualification(mode)
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertIn(expected_error, result.stderr)
+                mutation = json.loads(
+                    (evidence / "fixture-mutated-required-call-evidence.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(mutation["mode"], mode)
+                manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+                self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+                self.assertEqual(manifest["application_build"]["status"], "PASS")
+                self.assertEqual(manifest["simulator_build"], "PASS")
+                self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
+                self.assertIn(expected_error, manifest["propagation_proof"]["reason"])
+                statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
+                self.assertEqual(statuses["xcode_build"], "FAILURE")
+                self.assertEqual(statuses["swift_harnesses"], "SKIPPED")
+                self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+                self.assertTrue((evidence / "Nutrition App Native").exists())
 
     def test_incremental_compilation_request_is_rejected_without_falling_back_to_clean(self):
         with tempfile.TemporaryDirectory(prefix="ios-native-unsupported-mode-") as temporary:
@@ -1371,16 +1409,59 @@ PY
     done
     test -n "$workspace"
     storyboard="$(dirname "$workspace")/SplashScreen.storyboard"
+    source_alias="${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/Nutrition App Source Alias"
+    ln -s "$(dirname "$storyboard")" "$source_alias"
+    storyboard="$source_alias/SplashScreen.storyboard"
     compile_directory="$derived/Build/Intermediates.noindex/NutritionApp.build"
     compile_output="$compile_directory/SplashScreen.storyboardc"
     link_output="$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app"
     mkdir -p "$link_output"
     "$wrapper" "$storyboard" --compilation-directory "$compile_directory"
     "$wrapper" --link "$link_output" "$compile_output"
-    printf 'CompileStoryboard %s (in target \\047NutritionApp\\047)\\n' "$storyboard"
+    case "${IOS_NATIVE_FIXTURE_MODE-}" in
+      missing-required-output-log|corrupt-required-output-log|corrupt-required-call-record)
+        "$REAL_PYTHON" - "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}" "${IOS_NATIVE_FIXTURE_MODE}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+evidence = Path(sys.argv[1])
+mode = sys.argv[2]
+records = sorted((evidence / "native-lifecycle" / "records").glob("*.record.json"))
+selected = None
+for record_path in records:
+    value = json.loads(record_path.read_text(encoding="utf-8"))
+    if value.get("stage") == "compile":
+        selected = (record_path, value)
+        break
+if selected is None:
+    raise SystemExit("fixture compile call record missing")
+record_path, value = selected
+if mode in {"missing-required-output-log", "corrupt-required-output-log"}:
+    target = Path(value["stdout"]["path"])
+    if mode == "missing-required-output-log":
+        target.unlink()
+    else:
+        target.write_bytes(b"corrupted required process output\\n")
+else:
+    target = record_path
+    target.write_text("{broken required process record\\n", encoding="utf-8")
+(evidence / "fixture-mutated-required-call-evidence.json").write_text(
+    json.dumps({"mode": mode, "path": str(target)}, sort_keys=True) + "\\n",
+    encoding="utf-8",
+)
+PY
+        ;;
+    esac
+    printf -v escaped_storyboard '%q' "$storyboard"
+    printf -v escaped_wrapper '%q' "$wrapper"
+    printf -v escaped_compile_directory '%q' "$compile_directory"
+    printf -v escaped_link_output '%q' "$link_output"
+    printf -v escaped_compile_output '%q' "$compile_output"
+    printf 'CompileStoryboard %s (in target \\047NutritionApp\\047)\\n' "$escaped_storyboard"
     printf 'LinkStoryboards (in target \\047NutritionApp\\047)\\n'
-    printf '"%s" "%s" --compilation-directory "%s"\\n' "$wrapper" "$storyboard" "$compile_directory"
-    printf '"%s" --link "%s" "%s"\\n' "$wrapper" "$link_output" "$compile_output"
+    printf '%s %s --compilation-directory %s\\n' "$escaped_wrapper" "$escaped_storyboard" "$escaped_compile_directory"
+    printf '%s --link %s %s\\n' "$escaped_wrapper" "$escaped_link_output" "$escaped_compile_output"
     case "${IOS_NATIVE_FIXTURE_MODE-}" in
       known-writer|known-writer-detached|known-writer-retained)
         "$REAL_PYTHON" - "${IOS_NATIVE_FIXTURE_REPO_ROOT:?}" "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}" "${IOS_NATIVE_FIXTURE_MODE}" <<'PY'

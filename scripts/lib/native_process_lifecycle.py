@@ -850,11 +850,15 @@ def _run_gated_ibtool(
                 if not same:
                     raise LifecycleError("CHILD_BIRTH_CHANGED_BEFORE_GATE_RELEASE")
                 assert child.stdin is not None
+                execution_deadline = time.monotonic() + timeout
                 child.stdin.write(b"G")
                 child.stdin.flush()
                 child.stdin.close()
                 expected_ibtoold = binding["toolchain"]["tools"]["ibtoold"]["path"]
-                transition_deadline = time.monotonic() + min(timeout, KNOWN_HELPER_WAIT_SECONDS)
+                transition_deadline = min(
+                    execution_deadline,
+                    time.monotonic() + KNOWN_HELPER_WAIT_SECONDS,
+                )
                 while time.monotonic() < transition_deadline:
                     pump_output(0.01)
                     current = process_identity(child.pid)
@@ -871,7 +875,7 @@ def _run_gated_ibtool(
                     time.sleep(0.01)
                 if transition is None:
                     raise LifecycleError("IBTOOLD_EXEC_TRANSITION_UNOBSERVED")
-                wait_deadline = time.monotonic() + timeout
+                wait_deadline = execution_deadline
                 while child.poll() is None and time.monotonic() < wait_deadline:
                     pump_output(min(0.05, max(0.0, wait_deadline - time.monotonic())))
                 if child.poll() is None:
@@ -1020,7 +1024,10 @@ def _completed_records(invocation_root: Path, supplied: Sequence[str | Path] = (
         _inside(path, invocation_root, "RECORD")
     if supplied_paths and set(supplied_paths) != set(paths):
         raise LifecycleError("SUPPLIED_RECORD_SET_MISMATCH")
-    completed = [_read_json(path) for path in paths]
+    try:
+        completed = [_read_json(path) for path in paths]
+    except LifecycleError as error:
+        raise LifecycleError(f"PROCESS_CALL_RECORD_INVALID:{error}") from error
     completed_call_ids = [value.get("call_id") for value in completed]
     if any(not isinstance(value, str) or not value for value in completed_call_ids):
         raise LifecycleError("PROCESS_CALL_ID_INVALID")
@@ -1527,12 +1534,21 @@ def _directory_sha256(directory: Path) -> str:
 
 def _task_storyboard_paths(lines: Sequence[str], suffix: str, task: str) -> list[str]:
     results = []
-    pattern = re.compile(rf"{task}\s+(.+?{re.escape(suffix)})(?:\s|$)")
     for line in lines:
-        match = pattern.search(line)
-        if match:
-            value = match.group(1).strip().strip("'\"")
-            results.append(os.path.realpath(value))
+        try:
+            tokens = shlex.split(line)
+        except ValueError:
+            continue
+        task_indexes = [index for index, token in enumerate(tokens) if token == task]
+        if len(task_indexes) != 1:
+            continue
+        operands = [
+            token
+            for token in tokens[task_indexes[0] + 1 :]
+            if token.lower().endswith(suffix.lower())
+        ]
+        if len(operands) == 1:
+            results.append(os.path.realpath(operands[0]))
     return results
 
 
@@ -2235,7 +2251,19 @@ def verify_command(binding_path: str | Path, records: Sequence[str | Path]) -> i
     except LifecycleError as error:
         print(str(error), file=sys.stderr)
         message = str(error)
-        if message.startswith(("CAPABILITY_PROOF", "FULL_BUILD_PROOF", "FULL_BUILD_", "BUILD_")):
+        if message.startswith(
+            (
+                "CAPABILITY_PROOF",
+                "FULL_BUILD_PROOF",
+                "FULL_BUILD_",
+                "BUILD_",
+                "PROCESS_",
+                "STARTED_CALL_WITHOUT_FINAL_RECORD",
+                "RECORD_BINDING_MISMATCH",
+                "RECORD_TYPE_INVALID",
+                "SUPPLIED_RECORD_SET_MISMATCH",
+            )
+        ):
             return 2
         return 1
     print(json.dumps(result, sort_keys=True))
