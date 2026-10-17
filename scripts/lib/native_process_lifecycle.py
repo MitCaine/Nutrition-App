@@ -578,6 +578,11 @@ def _stage_kind(stage: str, argv: Sequence[str]) -> str:
     lowered = [value.lower() for value in argv]
     if "--compile" in lowered:
         return "compile"
+    if (
+        "--compilation-directory" in lowered
+        and sum(value.endswith(".storyboard") for value in lowered) == 1
+    ):
+        return "compile"
     if "--link" in lowered:
         return "link"
     if "--version" in lowered or "-version" in lowered:
@@ -1310,6 +1315,90 @@ def _classify_build_log(log_path: Path) -> dict[str, list[str]]:
     return {"compile": compile_lines, "link": link_lines}
 
 
+def _ib_command_stage(argv: Sequence[str]) -> str | None:
+    lowered = [value.lower() for value in argv]
+    if "--compile" in lowered:
+        return "compile"
+    if (
+        "--compilation-directory" in lowered
+        and sum(value.endswith(".storyboard") for value in lowered) == 1
+    ):
+        return "compile"
+    if "--link" in lowered:
+        return "link"
+    return None
+
+
+def _ib_command_details(argv: Sequence[str]) -> dict[str, str]:
+    """Return normalized source/output paths for the observed IB command forms."""
+    lowered = [value.lower() for value in argv]
+    compile_indexes = [index for index, value in enumerate(lowered) if value == "--compile"]
+    compilation_directory_indexes = [
+        index for index, value in enumerate(lowered) if value == "--compilation-directory"
+    ]
+    link_indexes = [index for index, value in enumerate(lowered) if value == "--link"]
+    if compile_indexes:
+        if len(compile_indexes) != 1 or compilation_directory_indexes or link_indexes:
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_OPERATION_AMBIGUOUS")
+        index = compile_indexes[0]
+        if index + 2 >= len(argv):
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_ARGUMENTS_MISSING")
+        output_arg, source_arg = argv[index + 1 : index + 3]
+        if not source_arg.lower().endswith((".storyboard", ".xib")):
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_INPUT_MISSING_OR_AMBIGUOUS")
+        output = os.path.realpath(output_arg)
+        return {
+            "stage": "compile",
+            "operation": "--compile",
+            "source": os.path.realpath(source_arg),
+            "compilation_directory": os.path.realpath(os.path.dirname(output)),
+            "output": output,
+        }
+    if compilation_directory_indexes:
+        if len(compilation_directory_indexes) != 1 or link_indexes:
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_OPERATION_AMBIGUOUS")
+        index = compilation_directory_indexes[0]
+        if index + 1 >= len(argv):
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_ARGUMENTS_MISSING")
+        sources = [value for value in argv if value.lower().endswith(".storyboard")]
+        if len(sources) != 1:
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_INPUT_MISSING_OR_AMBIGUOUS")
+        source = sources[0]
+        compilation_directory = os.path.realpath(argv[index + 1])
+        output = os.path.realpath(
+            str(Path(compilation_directory) / f"{Path(source).stem}.storyboardc")
+        )
+        return {
+            "stage": "compile",
+            "operation": "--compilation-directory",
+            "source": os.path.realpath(source),
+            "compilation_directory": compilation_directory,
+            "output": output,
+        }
+    if link_indexes:
+        if len(link_indexes) != 1:
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_OPERATION_AMBIGUOUS")
+        index = link_indexes[0]
+        if index + 2 >= len(argv):
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_ARGUMENTS_MISSING")
+        output = argv[index + 1]
+        sources = [value for value in argv[index + 2 :] if value.lower().endswith(".storyboardc")]
+        if len(sources) != 1:
+            raise LifecycleError("BUILD_WRAPPER_COMMAND_INPUT_MISSING_OR_AMBIGUOUS")
+        return {
+            "stage": "link",
+            "operation": "--link",
+            "source": os.path.realpath(sources[0]),
+            "compilation_directory": "",
+            "output": os.path.realpath(output),
+        }
+    raise LifecycleError("BUILD_WRAPPER_COMMAND_OPERATION_MISSING")
+
+
+def _normalized_command_argv(argv: Sequence[str]) -> list[str]:
+    return [os.path.realpath(value) if os.path.isabs(value) else value for value in argv]
+
+
 def _build_interval(phases: Sequence[dict[str, Any]], build_invocation_path: Path) -> tuple[int, int]:
     started = [phase for phase in phases if phase.get("phase") == "xcode-build-started"]
     finished = [phase for phase in phases if phase.get("phase") == "xcode-build-finished"]
@@ -1334,8 +1423,6 @@ def _logged_wrapper_commands(lines: Sequence[str], wrapper: str) -> list[dict[st
     bound_wrapper = os.path.realpath(wrapper)
     commands = []
     for line in lines:
-        if not ("--compile" in line or "--link" in line):
-            continue
         try:
             tokens = shlex.split(line)
         except ValueError:
@@ -1344,10 +1431,10 @@ def _logged_wrapper_commands(lines: Sequence[str], wrapper: str) -> list[dict[st
             if os.path.realpath(token) != bound_wrapper:
                 continue
             argv = tokens[index + 1 :]
-            operation = "--compile" if "--compile" in argv else "--link" if "--link" in argv else None
-            if operation is None:
+            stage = _ib_command_stage(argv)
+            if stage is None:
                 continue
-            commands.append({"wrapper": wrapper, "operation": operation, "argv": argv, "line": line})
+            commands.append({"wrapper": wrapper, "stage": stage, "argv": argv, "line": line})
             break
     return commands
 
@@ -1362,16 +1449,9 @@ def _correlate_wrapper_commands(
         raise LifecycleError("BUILD_WRAPPER_COMMAND_RECORD_COUNT_MISMATCH")
     unmatched = list(relevant_records)
     for command in commands:
-        stage = "compile" if command["operation"] == "--compile" else "link"
         args = command["argv"]
-        operation_index = args.index(command["operation"])
-        if operation_index + 2 >= len(args):
-            raise LifecycleError("BUILD_WRAPPER_COMMAND_ARGUMENTS_MISSING")
-        output_arg = os.path.realpath(args[operation_index + 1])
-        input_suffix = ".storyboard" if stage == "compile" else ".storyboardc"
-        command_inputs = [os.path.realpath(value) for value in args[operation_index + 2 :] if value.endswith(input_suffix)]
-        if len(command_inputs) != 1:
-            raise LifecycleError("BUILD_WRAPPER_COMMAND_INPUT_MISSING_OR_AMBIGUOUS")
+        command_details = _ib_command_details(args)
+        stage = command_details["stage"]
         matches = []
         for record in unmatched:
             record_wrapper = record.get("wrapper")
@@ -1382,20 +1462,7 @@ def _correlate_wrapper_commands(
             ):
                 continue
             record_args = record.get("argv", [])[1:]
-            try:
-                record_index = record_args.index(command["operation"])
-            except ValueError:
-                continue
-            if record_index + 2 >= len(record_args):
-                continue
-            if (
-                os.path.realpath(record_args[record_index + 1]) == output_arg
-                and [
-                    os.path.realpath(value)
-                    for value in record_args[record_index + 2 :]
-                    if value.endswith(input_suffix)
-                ] == command_inputs
-            ):
+            if _normalized_command_argv(record_args) == _normalized_command_argv(args):
                 matches.append(record)
         if len(matches) != 1:
             raise LifecycleError("BUILD_WRAPPER_COMMAND_RECORD_UNMATCHED")
@@ -1408,19 +1475,53 @@ def _correlate_wrapper_commands(
 def _storyboard_sources(records: Sequence[dict[str, Any]]) -> list[str]:
     sources = []
     for record in records:
-        candidates = [arg for arg in record.get("argv", []) if arg.endswith(".storyboard")]
-        if candidates:
-            sources.append(os.path.realpath(candidates[-1]))
+        if any(arg.lower().endswith(".storyboard") for arg in record.get("argv", [])):
+            details = _ib_command_details(record.get("argv", []))
+            if details["stage"] != "compile":
+                raise LifecycleError("BUILD_STORYBOARD_COMPILE_RECORD_INVALID")
+            sources.append(details["source"])
     return sources
 
 
 def _storyboardc_inputs(records: Sequence[dict[str, Any]]) -> list[str]:
     inputs = []
     for record in records:
-        candidates = [arg for arg in record.get("argv", []) if arg.endswith(".storyboardc")]
-        if candidates:
-            inputs.append(os.path.realpath(candidates[-1]))
+        if any(arg.lower().endswith(".storyboardc") for arg in record.get("argv", [])):
+            details = _ib_command_details(record.get("argv", []))
+            if details["stage"] != "link":
+                raise LifecycleError("BUILD_STORYBOARD_LINK_RECORD_INVALID")
+            inputs.append(details["source"])
     return inputs
+
+
+def _storyboard_compile_outputs(records: Sequence[dict[str, Any]]) -> list[dict[str, str]]:
+    outputs = []
+    for record in records:
+        if not any(arg.lower().endswith(".storyboard") for arg in record.get("argv", [])):
+            continue
+        details = _ib_command_details(record.get("argv", []))
+        if details["stage"] != "compile":
+            raise LifecycleError("BUILD_STORYBOARD_COMPILE_RECORD_INVALID")
+        outputs.append({
+            "call_id": str(record.get("call_id", "")),
+            "source": details["source"],
+            "compilation_directory": details["compilation_directory"],
+            "output": details["output"],
+        })
+    return outputs
+
+
+def _directory_sha256(directory: Path) -> str:
+    if not directory.is_dir():
+        raise LifecycleError(f"STORYBOARD_OUTPUT_NOT_DIRECTORY:{directory}")
+    files = sorted(path for path in directory.rglob("*") if path.is_file())
+    if not files:
+        raise LifecycleError(f"STORYBOARD_OUTPUT_EMPTY:{directory}")
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.relative_to(directory).as_posix().encode())
+        digest.update(bytes.fromhex(_sha256_file(path)))
+    return digest.hexdigest()
 
 
 def _task_storyboard_paths(lines: Sequence[str], suffix: str, task: str) -> list[str]:
@@ -1506,8 +1607,14 @@ def write_full_build_proof(
     all_calls = [record for record in records if record.get("record_type") == "native_process_call"]
     compiled = [record for record in all_calls if record.get("stage") == "compile"]
     linked = [record for record in all_calls if record.get("stage") == "link"]
-    storyboard_compiled = [record for record in compiled if any(arg.endswith(".storyboard") for arg in record.get("argv", []))]
-    storyboard_linked = [record for record in linked if any(arg.endswith(".storyboardc") for arg in record.get("argv", []))]
+    storyboard_compiled = [
+        record for record in compiled
+        if any(arg.lower().endswith(".storyboard") for arg in record.get("argv", []))
+    ]
+    storyboard_linked = [
+        record for record in linked
+        if any(arg.lower().endswith(".storyboardc") for arg in record.get("argv", []))
+    ]
     for record in compiled + linked:
         if (
             type(record.get("started_monotonic_ns")) is not int
@@ -1524,12 +1631,36 @@ def write_full_build_proof(
     if (
         len(storyboard_compiled) != len(log["compile"])
         or len(storyboard_linked) != len(log["link"])
-        or (compile_task_paths and sorted(compile_task_paths) != sorted(compile_record_paths))
+        or len(compile_task_paths) != len(log["compile"])
+        or sorted(compile_task_paths) != sorted(compile_record_paths)
         or (link_task_paths and sorted(link_task_paths) != sorted(link_record_paths))
     ):
         raise LifecycleError("BUILD_IB_RECORD_COUNT_MISMATCH")
-    if not any(expected_storyboard in path for path in compile_record_paths):
+    if not any(Path(path).name == expected_storyboard for path in compile_record_paths):
         raise LifecycleError("BUILD_REQUIRED_STORYBOARD_COMPILE_MISSING")
+    if len(set(compile_record_paths)) != len(compile_record_paths):
+        raise LifecycleError("BUILD_STORYBOARD_COMPILE_SOURCE_DUPLICATE")
+    storyboard_compile_outputs = _storyboard_compile_outputs(storyboard_compiled)
+    if (
+        len(storyboard_compile_outputs) != len(storyboard_compiled)
+        or len({item["output"] for item in storyboard_compile_outputs}) != len(storyboard_compile_outputs)
+    ):
+        raise LifecycleError("BUILD_STORYBOARD_COMPILE_OUTPUT_AMBIGUOUS")
+    derived_data_root = Path(binding["roots"]["derived_data"]).resolve(strict=True)
+    recorded_compile_outputs = []
+    for item in storyboard_compile_outputs:
+        compilation_directory = _inside(
+            Path(item["compilation_directory"]), derived_data_root, "BUILD_STORYBOARD_COMPILATION_DIRECTORY"
+        )
+        compile_output = _inside(Path(item["output"]), derived_data_root, "BUILD_STORYBOARD_COMPILE_OUTPUT")
+        if compile_output.parent != compilation_directory or not compilation_directory.is_dir():
+            raise LifecycleError("BUILD_STORYBOARD_COMPILE_DIRECTORY_MISMATCH")
+        if not compile_output.is_dir():
+            raise LifecycleError("BUILD_STORYBOARD_COMPILE_OUTPUT_MISSING")
+        output_digest = _directory_sha256(compile_output)
+        recorded_compile_outputs.append({**item, "sha256": output_digest})
+    if sorted(link_record_paths) != sorted(item["output"] for item in recorded_compile_outputs):
+        raise LifecycleError("BUILD_STORYBOARD_COMPILE_LINK_PATH_MISMATCH")
     xib_tasks = [line for line in log_lines if "CompileXIB" in line]
     xib_task_paths = _task_storyboard_paths(xib_tasks, ".xib", "CompileXIB")
     xib_records = [record for record in compiled if any(arg.endswith(".xib") for arg in record.get("argv", []))]
@@ -1576,9 +1707,8 @@ def write_full_build_proof(
     if len(outputs) != 1:
         raise LifecycleError("BUILD_REQUIRED_STORYBOARD_OUTPUT_MISSING_OR_AMBIGUOUS")
     link_output_args = [
-        record["argv"][record["argv"].index("--link") + 1]
+        _ib_command_details(record.get("argv", []))["output"]
         for record in storyboard_linked
-        if "--link" in record.get("argv", []) and record["argv"].index("--link") + 1 < len(record["argv"])
     ]
     if len(link_output_args) != len(storyboard_linked):
         raise LifecycleError("BUILD_STORYBOARD_LINK_OUTPUT_MISSING")
@@ -1608,6 +1738,7 @@ def write_full_build_proof(
         "link_record_ids": [record["call_id"] for record in linked],
         "storyboard_compile_record_ids": [record["call_id"] for record in storyboard_compiled],
         "storyboard_link_record_ids": [record["call_id"] for record in storyboard_linked],
+        "storyboard_compile_outputs": recorded_compile_outputs,
         "xib_tasks": xib_tasks,
         "xib_record_ids": [record["call_id"] for record in xib_records],
         "unwrapped_version_commands": version_tool_lines,
@@ -1755,8 +1886,14 @@ def _verify_full_build_proof(
     wrapper_commands = _correlate_wrapper_commands(log_lines, binding["wrapper"]["path"], compiled + linked)
     if proof.get("wrapper_commands") != wrapper_commands:
         raise LifecycleError("FULL_BUILD_WRAPPER_COMMAND_INVENTORY_MISMATCH")
-    storyboard_compiled = [record for record in compiled if any(arg.endswith(".storyboard") for arg in record.get("argv", []))]
-    storyboard_linked = [record for record in linked if any(arg.endswith(".storyboardc") for arg in record.get("argv", []))]
+    storyboard_compiled = [
+        record for record in compiled
+        if any(arg.lower().endswith(".storyboard") for arg in record.get("argv", []))
+    ]
+    storyboard_linked = [
+        record for record in linked
+        if any(arg.lower().endswith(".storyboardc") for arg in record.get("argv", []))
+    ]
     if (
         proof.get("compile_record_ids") != [record.get("call_id") for record in compiled]
         or proof.get("link_record_ids") != [record.get("call_id") for record in linked]
@@ -1804,11 +1941,48 @@ def _verify_full_build_proof(
     if (
         len(storyboard_compiled) != len(log["compile"])
         or len(storyboard_linked) != len(log["link"])
-        or (task_paths and sorted(task_paths) != sorted(compile_paths))
-        or not any(proof.get("required_storyboard", "") in path for path in compile_paths)
-        or not any("SplashScreen.storyboardc" in path for path in link_paths)
+        or len(task_paths) != len(log["compile"])
+        or sorted(task_paths) != sorted(compile_paths)
+        or not any(Path(path).name == proof.get("required_storyboard", "") for path in compile_paths)
+        or sorted(link_paths) != sorted(
+            item.get("output") for item in proof.get("storyboard_compile_outputs", [])
+            if isinstance(item, dict)
+        )
     ):
         raise LifecycleError("FULL_BUILD_STORYBOARD_CORRELATION_MISMATCH")
+    compile_output_records = _storyboard_compile_outputs(storyboard_compiled)
+    proof_compile_outputs = proof.get("storyboard_compile_outputs")
+    if not isinstance(proof_compile_outputs, list) or len(proof_compile_outputs) != len(compile_output_records):
+        raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISMATCH")
+    derived_root = Path(os.path.abspath(binding["roots"]["derived_data"]))
+    removed_phase = next(
+        (phase for phase in phases if phase.get("phase") == "derived-data-removed"),
+        None,
+    )
+    for expected, observed in zip(compile_output_records, proof_compile_outputs):
+        if not isinstance(observed, dict) or any(
+            observed.get(key) != expected[key]
+            for key in ("call_id", "source", "compilation_directory", "output")
+        ):
+            raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISMATCH")
+        compilation_directory = Path(os.path.abspath(expected["compilation_directory"]))
+        output_path = Path(os.path.abspath(expected["output"]))
+        _no_symlink_components(compilation_directory)
+        _no_symlink_components(output_path)
+        try:
+            compilation_directory.relative_to(derived_root)
+            output_path.relative_to(derived_root)
+        except ValueError as error:
+            raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_OUTSIDE_DERIVED_DATA") from error
+        if output_path.parent != compilation_directory:
+            raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_DIRECTORY_MISMATCH")
+        if removed_phase is None:
+            compilation_directory = _inside(
+                compilation_directory, derived_root, "FULL_BUILD_STORYBOARD_COMPILATION_DIRECTORY"
+            )
+            output_path = _inside(output_path, derived_root, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT")
+            if _directory_sha256(output_path) != observed.get("sha256"):
+                raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_HASH_MISMATCH")
     output = proof.get("output")
     if not isinstance(output, dict):
         raise LifecycleError("FULL_BUILD_OUTPUT_BINDING_MISSING")
@@ -1821,10 +1995,6 @@ def _verify_full_build_proof(
         raise LifecycleError("FULL_BUILD_OUTPUT_OUTSIDE_DERIVED_DATA") from error
     if not relative_output.parts:
         raise LifecycleError("FULL_BUILD_OUTPUT_PATH_INVALID")
-    removed_phase = next(
-        (phase for phase in phases if phase.get("phase") == "derived-data-removed"),
-        None,
-    )
     if removed_phase is not None:
         if removed_phase.get("root") != str(derived_root) or derived_root.exists():
             raise LifecycleError("DERIVED_DATA_REMOVAL_PHASE_MISMATCH")

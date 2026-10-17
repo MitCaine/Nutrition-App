@@ -1153,22 +1153,45 @@ int main(int argc, char **argv) {
     }
     const char *mode = NULL, *output = NULL, *source = NULL;
     for (int index = 1; index < argc; index++) {
-        if (!strcmp(argv[index], "--compile") || !strcmp(argv[index], "--link")) {
-            mode = argv[index];
+        if (!strcmp(argv[index], "--compile")) {
+            mode = "legacy-compile";
+            if (index + 2 < argc) { output = argv[++index]; source = argv[++index]; }
+        } else if (!strcmp(argv[index], "--compilation-directory")) {
+            mode = "compile-directory";
             if (index + 1 < argc) output = argv[++index];
-        } else {
+        } else if (!strcmp(argv[index], "--link")) {
+            mode = "link";
+            if (index + 1 < argc) output = argv[++index];
+        } else if (strstr(argv[index], ".storyboard") || strstr(argv[index], ".storyboardc")) {
             source = argv[index];
+        } else {
+            continue;
         }
     }
     if (!mode || !output || !source) return 2;
-    if (!strcmp(mode, "--compile")) {
-        if (mkdir(output, 0700) != 0) return 3;
+    if (!strcmp(mode, "legacy-compile") || !strcmp(mode, "compile-directory")) {
+        char generated_output[4096];
+        const char *compile_output = output;
+        if (!strcmp(mode, "compile-directory")) {
+            const char *base = strrchr(source, '/');
+            base = base ? base + 1 : source;
+            char name[4096];
+            snprintf(name, sizeof(name), "%s", base);
+            char *suffix = strrchr(name, '.');
+            if (suffix) *suffix = '\0';
+            snprintf(generated_output, sizeof(generated_output), "%s/%s.storyboardc", output, name);
+            compile_output = generated_output;
+        }
+        if (mkdir(compile_output, 0700) != 0) return 3;
         char destination[4096];
-        snprintf(destination, sizeof(destination), "%s/source.storyboard", output);
+        const char *base = strrchr(source, '/');
+        base = base ? base + 1 : source;
+        snprintf(destination, sizeof(destination), "%s/%s", compile_output, base);
         int result = copy_file(source, destination) ? 4 : 0;
         usleep(100000);
         return result;
     }
+    if (strcmp(mode, "link")) return 2;
     const char *base = strrchr(source, '/');
     base = base ? base + 1 : source;
     char destination[4096];
@@ -1348,14 +1371,15 @@ PY
     done
     test -n "$workspace"
     storyboard="$(dirname "$workspace")/SplashScreen.storyboard"
-    compile_output="$derived/Build/Intermediates.noindex/NutritionApp.build/SplashScreen.storyboardc"
-    link_output="$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app/Resources"
+    compile_directory="$derived/Build/Intermediates.noindex/NutritionApp.build"
+    compile_output="$compile_directory/SplashScreen.storyboardc"
+    link_output="$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app"
     mkdir -p "$link_output"
-    "$wrapper" --compile "$compile_output" "$storyboard"
+    "$wrapper" "$storyboard" --compilation-directory "$compile_directory"
     "$wrapper" --link "$link_output" "$compile_output"
     printf 'CompileStoryboard %s (in target \\047NutritionApp\\047)\\n' "$storyboard"
-    printf 'LinkStoryboards %s (in target \\047NutritionApp\\047)\\n' "$link_output"
-    printf '"%s" --compile "%s" "%s"\\n' "$wrapper" "$compile_output" "$storyboard"
+    printf 'LinkStoryboards (in target \\047NutritionApp\\047)\\n'
+    printf '"%s" "%s" --compilation-directory "%s"\\n' "$wrapper" "$storyboard" "$compile_directory"
     printf '"%s" --link "%s" "%s"\\n' "$wrapper" "$link_output" "$compile_output"
     case "${IOS_NATIVE_FIXTURE_MODE-}" in
       known-writer|known-writer-detached|known-writer-retained)

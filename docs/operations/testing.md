@@ -522,7 +522,11 @@ literal argv, emits verbose build commands, and uses `ENABLE_DEBUG_DYLIB=NO` wit
 actual `SplashScreen.storyboard` compile and `SplashScreen.storyboardc` link tasks in Xcode's log to
 the wrapper's per-call records. It matches the selected executable by filesystem identity and
 normalizes equivalent wrapper, input, and output path aliases within the recorded build interval,
-then verifies the generated output. Task headings alone do not establish a wrapper call. The
+then verifies the generated output. The observed full-build compile form places the unique
+`SOURCE.storyboard` operand before `--compilation-directory DIRECTORY`; the proof binds the derived
+`DIRECTORY/<basename>.storyboardc` output to its compile record and subsequent link input. The
+explicit `--compile OUTPUT SOURCE` form remains the copied-storyboard capability route. Task
+headings alone do not establish a wrapper call. The
 capability and full-build proof documents and hashes are retained
 in success and failure manifests. This establishes the observed
 `IBC_EXEC` route for the required storyboard work; it does not establish universal process or

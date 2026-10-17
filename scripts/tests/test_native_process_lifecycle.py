@@ -59,21 +59,28 @@ class NativeProcessLifecycleTests(unittest.TestCase):
             "  printf '%s\\n' '<?xml version=\"1.0\" encoding=\"UTF-8\"?>' '<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">' '<plist version=\"1.0\"><dict><key>com.apple.ibtool.version</key><string>27.1</string></dict></plist>'\n"
             "  exit 0\n"
             "fi\n"
-            "operation=\nnext=\noutput=\nlast=\n"
-            "for arg in \"$@\"; do\n"
-            "  if [ -n \"$next\" ]; then output=$arg; next=; fi\n"
-            "  case \"$arg\" in --compile) operation=compile; next=1 ;; --link) operation=link; next=1 ;; esac\n"
-            "  last=$arg\n"
+            "operation=\noutput=\nsource=\ncompilation_directory=\n"
+            "while [ \"$#\" -gt 0 ]; do\n"
+            "  arg=$1; shift\n"
+            "  case \"$arg\" in\n"
+            "    --compile) operation=compile; output=$1; source=$2; shift 2 ;;\n"
+            "    --compilation-directory) operation=compile; compilation_directory=$1; shift ;;\n"
+            "    --link) operation=link; output=$1; source=$2; shift 2 ;;\n"
+            "    *.storyboard|*.storyboardc) source=$arg ;;\n"
+            "  esac\n"
             "done\n"
             "if [ \"$operation\" = compile ] && [ \"${NATIVE_TEST_FAIL_COMPILE:-0}\" = 1 ]; then exit 17; fi\n"
             "if [ \"$operation\" = compile ]; then\n"
+            "  if [ -n \"$compilation_directory\" ]; then\n"
+            "    base=${source##*/}; base=${base%.storyboard}; output=$compilation_directory/$base.storyboardc\n"
+            "  fi\n"
             "  mkdir -p \"$output\"\n"
             "  printf 'compiled storyboard\\n' > \"$output/compiled.txt\"\n"
             "elif [ \"$operation\" = link ]; then\n"
             "  mkdir -p \"$output\"\n"
-            "  destination=\"$output/${last##*/}\"\n"
+            "  destination=\"$output/${source##*/}\"\n"
             "  rm -rf \"$destination\"\n"
-            "  cp -R \"$last\" \"$destination\"\n"
+            "  cp -R \"$source\" \"$destination\"\n"
             "fi\n"
             "printf 'vendor stdout\\000\\n'\n"
             "printf 'vendor stderr\\377\\n' >&2\n",
@@ -422,6 +429,12 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         unmatched_link_command: bool = False,
         alias_paths: bool = False,
         wrong_wrapper_executable: bool = False,
+        legacy_compile: bool = False,
+        logged_compilation_directory: Path | None = None,
+        task_storyboard_override: Path | None = None,
+        mutate_compile_record: bool = False,
+        remove_compile_output: bool = False,
+        omit_compile_wrapper_command: bool = False,
     ):
         lifecycle.record_phase(self.binding_path, "capability-required")
         storyboard = self.root / "generated" / "SplashScreen.storyboard"
@@ -436,8 +449,6 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         compile_output = self.root / "DerivedData" / "Build" / "Intermediates" / "SplashScreen.storyboardc"
         compile_output.parent.mkdir(parents=True)
         app_product = self.root / "DerivedData" / "Build" / "Products" / "NutritionApp.app"
-        build_output = app_product / "Resources"
-        build_output.mkdir(parents=True)
         if alias_paths:
             alias_root = self.root / "filesystem alias with spaces"
             alias_root.symlink_to(self.root, target_is_directory=True)
@@ -458,14 +469,20 @@ class NativeProcessLifecycleTests(unittest.TestCase):
             command_wrapper = wrong_wrapper
         storyboard_arg = fixture_path(storyboard)
         compile_output_arg = fixture_path(compile_output)
-        build_output_arg = fixture_path(build_output)
-        compile_args = [
-            "--errors", "--warnings", "--notices", "--output-format", "human-readable-text",
-            "--compile", str(compile_output_arg), str(storyboard_arg),
-        ]
+        compilation_directory_arg = fixture_path(compile_output.parent)
+        if legacy_compile:
+            compile_args = [
+                "--errors", "--warnings", "--notices", "--output-format", "human-readable-text",
+                "--compile", str(compile_output_arg), str(storyboard_arg),
+            ]
+        else:
+            compile_args = [
+                "--errors", "--warnings", "--notices", "--output-format", "human-readable-text",
+                str(storyboard_arg), "--compilation-directory", str(compilation_directory_arg),
+            ]
         link_args = [
             "--errors", "--warnings", "--notices", "--output-format", "human-readable-text",
-            "--link", str(build_output_arg), str(compile_output_arg),
+            "--link", str(fixture_path(app_product)), str(compile_output_arg),
         ]
         if prebuild_compile:
             compiled = self._run_wrapper(compile_args, wrapper_path=fixture_path(self.wrapper_path))
@@ -492,25 +509,41 @@ class NativeProcessLifecycleTests(unittest.TestCase):
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
         linked = self._run_wrapper(link_args, wrapper_path=fixture_path(self.wrapper_path))
         self.assertEqual(linked.returncode, 0, linked.stderr)
+        if mutate_compile_record:
+            for record_path in sorted((self.invocation_dir / "records").glob("*.record.json")):
+                document = json.loads(record_path.read_text(encoding="utf-8"))
+                if document.get("stage") == "compile":
+                    document["argv"][-1] = str(self.root / "different-record-source.storyboard")
+                    record_path.write_text(json.dumps(document, sort_keys=True) + "\n", encoding="utf-8")
+                    break
+            else:
+                self.fail("compile record was not written")
+        if remove_compile_output:
+            shutil.rmtree(compile_output)
         lifecycle.record_phase(
             self.binding_path,
             "xcode-build-finished",
             build_invocation=str(build_invocation),
             xcodebuild_exit=0,
         )
+        logged_compile_args = list(compile_args)
+        if logged_compilation_directory is not None and not legacy_compile:
+            logged_compile_args[logged_compile_args.index("--compilation-directory") + 1] = str(
+                fixture_path(logged_compilation_directory)
+            )
         logged_link_args = list(link_args)
         if unmatched_link_command:
-            logged_link_args[logged_link_args.index("--link") + 1] = str(self.root / "unmatched-link-output")
+            logged_link_args[logged_link_args.index("--link") + 2] = str(self.root / "unmatched-link.storyboardc")
         command_lines = []
         if include_wrapper_commands:
-            command_lines = [
-                shlex.join([str(command_wrapper), *compile_args]),
-                shlex.join([str(command_wrapper), *logged_link_args]),
-            ]
+            if not omit_compile_wrapper_command:
+                command_lines.append(shlex.join([str(command_wrapper), *logged_compile_args]))
+            command_lines.append(shlex.join([str(command_wrapper), *logged_link_args]))
+        task_storyboard = task_storyboard_override or storyboard_arg
         build_log = self.evidence / "xcodebuild.log"
         build_log.write_text(
-            f"CompileStoryboard {storyboard_arg} (in target 'NutritionApp')\n"
-            f"LinkStoryboards {compile_output_arg} (in target 'NutritionApp')\n"
+            f"CompileStoryboard {task_storyboard} (in target 'NutritionApp')\n"
+            "LinkStoryboards (in target 'NutritionApp')\n"
             + "\n".join(command_lines)
             + ("\n" if command_lines else ""),
             encoding="utf-8",
@@ -531,7 +564,27 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         self.assertEqual(proof["xcode_tasks"]["compile_count"], 1)
         self.assertEqual(proof["xcode_tasks"]["link_count"], 1)
         self.assertEqual(len(proof["wrapper_commands"]), 2)
+        self.assertEqual(proof["storyboard_compile_outputs"][0]["source"], str(self.root / "generated" / "SplashScreen.storyboard"))
+        self.assertEqual(
+            proof["storyboard_compile_outputs"][0]["output"],
+            str(self.root / "DerivedData" / "Build" / "Intermediates" / "SplashScreen.storyboardc"),
+        )
         self.assertGreater(proof["build_interval"]["finished_monotonic_ns"], proof["build_interval"]["started_monotonic_ns"])
+
+    def test_fullbuild_legacy_compile_form_remains_supported(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(legacy_compile=True)
+        lifecycle.write_full_build_proof(
+            self.binding_path,
+            build_invocation_path=build_invocation,
+            build_log_path=build_log,
+            app_product_path=app_product,
+        )
+        proof = json.loads((self.invocation_dir / "full-build-proof.json").read_text(encoding="utf-8"))
+        self.assertEqual(proof["status"], "PASS")
+        self.assertEqual(
+            proof["storyboard_compile_outputs"][0]["output"],
+            str(self.root / "DerivedData" / "Build" / "Intermediates" / "SplashScreen.storyboardc"),
+        )
 
     def test_fullbuild_correlates_spaces_and_filesystem_aliases(self):
         build_invocation, build_log, app_product = self._prepare_full_build_fixture(alias_paths=True)
@@ -578,6 +631,66 @@ class NativeProcessLifecycleTests(unittest.TestCase):
     def test_fullbuild_rejects_missing_logged_wrapper_command(self):
         build_invocation, build_log, app_product = self._prepare_full_build_fixture(include_wrapper_commands=False)
         with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_WRAPPER_COMMAND_RECORD_COUNT_MISMATCH"):
+            lifecycle.write_full_build_proof(
+                self.binding_path,
+                build_invocation_path=build_invocation,
+                build_log_path=build_log,
+                app_product_path=app_product,
+            )
+
+    def test_fullbuild_rejects_missing_compile_wrapper_command(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(
+            omit_compile_wrapper_command=True,
+        )
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_WRAPPER_COMMAND_RECORD_COUNT_MISMATCH"):
+            lifecycle.write_full_build_proof(
+                self.binding_path,
+                build_invocation_path=build_invocation,
+                build_log_path=build_log,
+                app_product_path=app_product,
+            )
+
+    def test_fullbuild_rejects_compilation_directory_mismatch(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(
+            logged_compilation_directory=self.root / "different compilation directory",
+        )
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_WRAPPER_COMMAND_RECORD_UNMATCHED"):
+            lifecycle.write_full_build_proof(
+                self.binding_path,
+                build_invocation_path=build_invocation,
+                build_log_path=build_log,
+                app_product_path=app_product,
+            )
+
+    def test_fullbuild_rejects_task_source_mismatch(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(
+            task_storyboard_override=self.root / "different-task-source.storyboard",
+        )
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_IB_RECORD_COUNT_MISMATCH"):
+            lifecycle.write_full_build_proof(
+                self.binding_path,
+                build_invocation_path=build_invocation,
+                build_log_path=build_log,
+                app_product_path=app_product,
+            )
+
+    def test_fullbuild_rejects_record_source_mismatch(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(
+            mutate_compile_record=True,
+        )
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_WRAPPER_COMMAND_RECORD_UNMATCHED"):
+            lifecycle.write_full_build_proof(
+                self.binding_path,
+                build_invocation_path=build_invocation,
+                build_log_path=build_log,
+                app_product_path=app_product,
+            )
+
+    def test_fullbuild_rejects_missing_generated_compile_output(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(
+            remove_compile_output=True,
+        )
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_STORYBOARD_COMPILE_OUTPUT_MISSING"):
             lifecycle.write_full_build_proof(
                 self.binding_path,
                 build_invocation_path=build_invocation,
