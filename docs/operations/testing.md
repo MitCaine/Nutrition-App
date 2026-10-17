@@ -505,9 +505,31 @@ The qualifier requires the repository Node pin and Xcode 26.4 or newer, creates 
 Git worktree whose path contains spaces, runs `npm ci`, regenerates iOS through clean Expo CNG,
 validates `NutritionOcr` autolinking, installs CocoaPods, compiles the generated application for a
 generic iOS Simulator without distribution signing, and runs the three retained standalone Swift
-regression programs. Generated `ios/`, Pods, DerivedData, harness binaries, and the disposable
-worktree are removed before PASS in clean mode. The simulator build records its literal argv and
-uses `ENABLE_DEBUG_DYLIB=NO` with `LD_GENERATE_MAP_FILE=YES` so Xcode emits application link maps.
+regression programs. Before building, it binds one fresh lifecycle record directory to the exact
+source, qualifier PID and birth, selected developer directory, Xcode build, `ibtool` and sibling
+`ibtoold` paths and hashes, and the installed Interface Builder specs. A copied generated
+`SplashScreen.storyboard` must compile and link through that invocation's wrapper before the full
+build starts. The wrapper is passed as `IBC_EXEC`; it removes inherited `IBTOOLD-*` variables and
+sets `IBTOOLNEVERDEQUE=1` for the admitted child call. The record requires the same PID and native
+birth to transition to the selected `ibtoold`, then observes and records its exit. A missed
+transition, exit, or required call is a failed proof; no pooled or shared-service fallback is used.
+The simulator build records its literal argv and uses `ENABLE_DEBUG_DYLIB=NO` with
+`LD_GENERATE_MAP_FILE=YES` so Xcode emits application link maps. Full-build evidence matches the
+actual `SplashScreen.storyboard` compile and `SplashScreen.storyboardc` link tasks in Xcode's log to
+the wrapper's per-call records and verifies the generated output. This establishes the observed
+`IBC_EXEC` route for the required storyboard work; it does not establish universal process or
+descendant tracking, and unrelated native entrypoints remain synchronous observations.
+
+After all required checks, generated `ios/`, Pods, DerivedData, harness binaries, and the
+disposable worktree may be removed only after the qualifier revalidates its source, invocation,
+terminal proof, known-child outcomes, and evidence immediately before each removal or worktree
+operation. If verification or removal is uncertain, the dependent cleanup stops, relevant roots
+remain, and the manifest records cleanup as `INCOMPLETE` with its reason and retained roots.
+Product, build, and test results stay separate: retained disposable outputs alone do not turn a
+passing qualification into a failure, while a failed build or required lifecycle proof still
+fails its gate. The manifest, `native-lifecycle/` records, Xcode and Swift logs, and stage timings
+are retained as evidence. Ordinary and trusted workflows publish the cleanup disposition beside
+the qualification result; trusted App aggregation continues to use the native job's actual result.
 Because universal simulator builds may map architecture-specific linker outputs before `lipo`
 creates the final app executable, the qualifier authenticates those thin maps against the final
 application slices before accepting module linkage. Detailed logs and a compact `manifest.json`

@@ -635,6 +635,46 @@ jobs:
           --runner macos-26
           --compilation-mode clean
 
+      - name: Summarize qualification and cleanup separately
+        if: always()
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/ios-native-evidence
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ["EVIDENCE_DIR"])
+          manifest = evidence / "manifest.json"
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          if not manifest.is_file():
+              lines = [
+                  "## Trusted iOS native qualification",
+                  "Qualification manifest: unavailable",
+                  "Cleanup disposition: unavailable",
+              ]
+          else:
+              document = json.loads(manifest.read_text(encoding="utf-8"))
+              cleanup = document.get("cleanup_disposition", {})
+              product_result = document.get("result")
+              if product_result not in {"PASS", "PARTIAL_FAILURE", "SIGNAL"}:
+                  product_result = "UNRECORDED"
+              cleanup_status = cleanup.get("status") if isinstance(cleanup, dict) else None
+              if cleanup_status not in {"PASS", "INCOMPLETE", "NOT_STARTED"}:
+                  cleanup_status = "UNRECORDED"
+              lines = [
+                  "## Trusted iOS native qualification",
+                  f"Product and required checks: {product_result}",
+                  f"Cleanup disposition: {cleanup_status}",
+              ]
+              retained = cleanup.get("retained_roots", []) if isinstance(cleanup, dict) else []
+              if isinstance(retained, list) and retained:
+                  lines.append(f"Retained roots recorded in the artifact: {len(retained)}")
+          with summary.open("a", encoding="utf-8") as handle:
+              handle.write("\n" + "\n".join(lines) + "\n")
+          PY
+
       - name: Retain trusted cache operation outcomes
         if: always()
         env:

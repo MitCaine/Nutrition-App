@@ -114,6 +114,10 @@ class IosNativeQualificationTests(
             "SKIPPED",
             "CocoaPods download cache",
             "DerivedData",
+            "IBC_EXEC=",
+            "IBTOOLNEVERDEQUE",
+            "native_process_lifecycle.py",
+            "cleanup_disposition",
         ]
 
         for token in required:
@@ -141,12 +145,16 @@ class IosNativeQualificationTests(
             "apps/mobile/plugins/**",
             "apps/mobile/modules/**/ios/**",
             "scripts/ios-native-cache-key.sh",
+            "scripts/lib/native_process_lifecycle.py",
+            "scripts/tests/test_native_process_lifecycle.py",
+            "scripts/tests/test_ios_native_qualification.py",
             "actions/cache/restore@v6",
             "actions/cache/save@v6",
             "NPM_CONFIG_CACHE",
             "CP_CACHE_DIR",
             "cache-matched-key",
             "actions/upload-artifact@v7",
+            "Summarize qualification and cleanup separately",
         ]
 
         for token in required:
@@ -185,6 +193,7 @@ class IosNativeQualificationTests(
             'index("ios-native")',
             "needs.plan.outputs.ios_native",
             "Trusted iOS native qualification",
+            "Cleanup disposition:",
             "runs-on: macos-26",
             "scripts/ios-native-qualification.sh",
             "scripts/ios-native-cache-key.sh",
@@ -213,6 +222,9 @@ class IosNativeQualificationTests(
             text.index("Run repository-owned native qualifier"),
         )
         self.assertIn("cache-operations.json", text)
+        ios_job = text.split("  ios_native:\n", 1)[1].split("\n  finalize:", 1)[0]
+        self.assertIn("Summarize qualification and cleanup separately", ios_job)
+        self.assertIn('"ios-native": os.environ["IOS_NATIVE_RESULT"]', text.split("  finalize:", 1)[1])
 
     def test_runner_context_is_not_used_in_job_level_env(self):
         for relative_path in (
@@ -491,6 +503,28 @@ class IosNativeQualificationTests(
         self.assertFalse((evidence / "Nutrition App Native").exists())
         self.assertFalse((evidence / "DerivedData").exists())
 
+    def test_cleanup_only_failure_keeps_product_pass_and_roots(self):
+        result, evidence = self._run_fixture_qualification("cleanup-failure")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("Nutrition App Native", manifest["cleanup_disposition"]["retained_roots"][0])
+        self.assertTrue((evidence / "Nutrition App Native").exists())
+        statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
+        self.assertEqual(statuses["xcode_build"], "PASS")
+        self.assertEqual(statuses["cleanup"], "INCOMPLETE")
+
+    def test_missing_full_build_ibrouting_blocks_qualification(self):
+        result, evidence = self._run_fixture_qualification("ibc-bypass")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn("IOS_NATIVE_FULL_BUILD_IBC_EXEC_PROOF_FAILED", result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertEqual(manifest["stages"][4]["status"], "FAILURE")
+        self.assertTrue((evidence / "Nutrition App Native").exists())
+
     def test_incremental_compilation_request_is_rejected_without_falling_back_to_clean(self):
         with tempfile.TemporaryDirectory(prefix="ios-native-unsupported-mode-") as temporary:
             evidence = Path(temporary) / "evidence"
@@ -662,6 +696,7 @@ class IosNativeQualificationTests(
         self.assertEqual(result.returncode, 17, result.stderr)
         manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["stages"][4]["status"], "FAILURE")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
         self._assert_build_invocation(evidence, manifest)
         candidate = json.loads(
             (evidence / "candidate-build-evidence.json").read_text(
@@ -675,7 +710,8 @@ class IosNativeQualificationTests(
         self.assertTrue(
             (evidence / "nutrition-ocr-source-evidence" / "Pods.xcodeproj-project.pbxproj").is_file()
         )
-        self.assertFalse((evidence / "Nutrition App Native").exists())
+        self.assertTrue((evidence / "Nutrition App Native").exists())
+        self.assertTrue((evidence / "DerivedData").exists())
 
     def test_missing_provider_registration_fails_native_evidence(self):
         result, evidence = self._run_fixture_qualification("missing-provider")
@@ -728,6 +764,14 @@ class IosNativeQualificationTests(
         self.assertIn("CODE_SIGNING_REQUIRED=NO", actual_argv)
         self.assertIn("ENABLE_DEBUG_DYLIB=NO", actual_argv)
         self.assertIn("LD_GENERATE_MAP_FILE=YES", actual_argv)
+        self.assertIn(
+            "IBC_EXEC=" + manifest["native_process_lifecycle"]["invocation_binding"]["wrapper"]["path"],
+            actual_argv,
+        )
+        self.assertEqual(
+            invocation["interface_builder"]["IBC_EXEC"],
+            manifest["native_process_lifecycle"]["invocation_binding"]["wrapper"]["path"],
+        )
         self.assertEqual(
             invocation["environment"]["NODE_BINARY"],
             manifest["node_binary"],
@@ -807,7 +851,117 @@ class IosNativeQualificationTests(
             path.write_text("#!/bin/sh\nset -eu\n" + body, encoding="utf-8")
             path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
+        developer_dir = fake_bin / "Developer"
+        developer_dir.mkdir()
+        spec_root = (
+            developer_dir.parent
+            / "SharedFrameworks"
+            / "SwiftBuild.framework"
+            / "Versions"
+            / "A"
+            / "PlugIns"
+            / "SWBBuildService.bundle"
+            / "Contents"
+            / "PlugIns"
+            / "SWBApplePlatformPlugin.bundle"
+            / "Contents"
+            / "Frameworks"
+            / "SWBApplePlatform.framework"
+            / "Versions"
+            / "A"
+            / "Resources"
+        )
+        spec_root.mkdir(parents=True)
+        for name, content in (
+            ("IBCompiler.xcspec", 'CommandLine = "$(IBC_EXEC)";\n'),
+            ("IBStoryboardCompiler.xcspec", 'CommandLine = "$(IBC_EXEC) --compile";\n'),
+            ("IBStoryboardLinker.xcspec", 'CommandLine = "$(IBC_EXEC) --link";\n'),
+            ("IBPostprocessor.xcspec", 'CommandLine = "ibtool [options]";\n'),
+        ):
+            (spec_root / name).write_text(content, encoding="utf-8")
+        ibtoold = fake_bin / "ibtoold"
+        ibtoold_source = fake_bin / "ibtoold.c"
+        ibtoold_source.write_text(r"""
+#include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static int copy_file(const char *source, const char *destination) {
+    FILE *input = fopen(source, "rb");
+    if (!input) return 1;
+    FILE *output = fopen(destination, "wb");
+    if (!output) { fclose(input); return 1; }
+    char buffer[8192];
+    size_t count;
+    while ((count = fread(buffer, 1, sizeof(buffer), input)) > 0) {
+        if (fwrite(buffer, 1, count, output) != count) {
+            fclose(input); fclose(output); return 1;
+        }
+    }
+    int failed = ferror(input);
+    fclose(input); fclose(output);
+    return failed;
+}
+
+static int copy_directory(const char *source, const char *destination) {
+    DIR *directory = opendir(source);
+    if (!directory) return 1;
+    if (mkdir(destination, 0700) != 0) { closedir(directory); return 1; }
+    struct dirent *entry;
+    int failed = 0;
+    while ((entry = readdir(directory)) != NULL) {
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+        char source_path[4096], destination_path[4096];
+        snprintf(source_path, sizeof(source_path), "%s/%s", source, entry->d_name);
+        snprintf(destination_path, sizeof(destination_path), "%s/%s", destination, entry->d_name);
+        struct stat info;
+        if (stat(source_path, &info) != 0 || !S_ISREG(info.st_mode) || copy_file(source_path, destination_path)) {
+            failed = 1; break;
+        }
+    }
+    closedir(directory);
+    return failed;
+}
+
+int main(int argc, char **argv) {
+    const char *override = getenv("IBTOOLNEVERDEQUE");
+    if (!override || strcmp(override, "1")) return 70;
+    const char *mode = NULL, *output = NULL, *source = NULL;
+    for (int index = 1; index < argc; index++) {
+        if (!strcmp(argv[index], "--compile") || !strcmp(argv[index], "--link")) {
+            mode = argv[index];
+            if (index + 1 < argc) output = argv[++index];
+        } else {
+            source = argv[index];
+        }
+    }
+    if (!mode || !output || !source) return 2;
+    if (!strcmp(mode, "--compile")) {
+        if (mkdir(output, 0700) != 0) return 3;
+        char destination[4096];
+        snprintf(destination, sizeof(destination), "%s/source.storyboard", output);
+        int result = copy_file(source, destination) ? 4 : 0;
+        usleep(100000);
+        return result;
+    }
+    const char *base = strrchr(source, '/');
+    base = base ? base + 1 : source;
+    char destination[4096];
+    snprintf(destination, sizeof(destination), "%s/%s", output, base);
+    int result = copy_directory(source, destination) ? 5 : 0;
+    usleep(100000);
+    return result;
+}
+""", encoding="utf-8")
+        subprocess.run(["/usr/bin/clang", "-Wall", "-Wextra", "-Werror", str(ibtoold_source), "-o", str(ibtoold)], check=True)
+        ibtoold.chmod(ibtoold.stat().st_mode | stat.S_IXUSR)
+        write("ibtool", f'exec "{ibtoold}" "$@"\n')
+
         write("uname", 'if [ "$1" = "-s" ]; then echo Darwin; else echo x86_64; fi\n')
+        write("xcode-select", 'echo "${IOS_NATIVE_FIXTURE_DEVELOPER_DIR:?}"\n')
         write("sw_vers", 'echo 26.0\n')
         write("node", 'case "${1-}" in --version) echo v26.2.0 ;; -p) case "${2-}" in *expo*) echo 57.0.27 ;; *) echo 0.86.3 ;; esac ;; esac\n')
         write("npm", """
@@ -835,7 +989,7 @@ EOF
         ;;
     esac
     ;;
-  exec) mkdir -p "$(pwd)/ios/Nutrition App.xcodeproj"; printf '%s\n' 'Expo Constants generates a CocoaPods script phase through' 'Nutrition App iOS path portability: React Native Info.plist discovery' 'Nutrition App iOS path portability: CocoaPods XCFramework diagnostics' 'Find.find(project_folder_path)' '::NewArchitectureHelper.define_singleton_method' 'basename "$basepath"' > "$(pwd)/ios/Podfile"; echo 'REACT_NATIVE_XCODE_SCRIPT=' > "$(pwd)/ios/Nutrition App.xcodeproj/project.pbxproj"; case "${IOS_NATIVE_FIXTURE_MODE-}" in failure) exit 17 ;; signal) kill -TERM $$ ;; esac ;;
+  exec) mkdir -p "$(pwd)/ios/Nutrition App.xcodeproj"; printf '%s\n' 'Expo Constants generates a CocoaPods script phase through' 'Nutrition App iOS path portability: React Native Info.plist discovery' 'Nutrition App iOS path portability: CocoaPods XCFramework diagnostics' 'Find.find(project_folder_path)' '::NewArchitectureHelper.define_singleton_method' 'basename "$basepath"' > "$(pwd)/ios/Podfile"; printf '%s\n' '<document type="storyboard"/>' > "$(pwd)/ios/SplashScreen.storyboard"; echo 'REACT_NATIVE_XCODE_SCRIPT=' > "$(pwd)/ios/Nutrition App.xcodeproj/project.pbxproj"; case "${IOS_NATIVE_FIXTURE_MODE-}" in failure) exit 17 ;; signal) kill -TERM $$ ;; esac ;;
 esac
 """)
         write("ruby", 'echo ruby 3.4.0\n')
@@ -935,6 +1089,31 @@ else
     "$derived/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/NutritionOcr.build/Objects-normal/arm64" \
     "$derived/Build/Intermediates.noindex/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build" \
     "$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app"
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" != "ibc-bypass" ]; then
+    wrapper=""
+    for argument in "$@"; do
+      case "$argument" in IBC_EXEC=*) wrapper="${argument#IBC_EXEC=}" ;; esac
+    done
+    test -n "$wrapper"
+    workspace=""
+    previous=""
+    for argument in "$@"; do
+      if [ "$previous" = "-workspace" ]; then workspace="$argument"; fi
+      previous="$argument"
+    done
+    test -n "$workspace"
+    storyboard="$(dirname "$workspace")/SplashScreen.storyboard"
+    compile_output="$derived/Build/Intermediates.noindex/NutritionApp.build/SplashScreen.storyboardc"
+    link_output="$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app/Resources"
+    mkdir -p "$link_output"
+    "$wrapper" --compile "$compile_output" "$storyboard"
+    "$wrapper" --link "$link_output" "$compile_output"
+    printf 'CompileStoryboard %s (in target \\047NutritionApp\\047)\\n' "$storyboard"
+    printf 'LinkStoryboards %s (in target \\047NutritionApp\\047)\\n' "$link_output"
+  else
+    printf 'CompileStoryboard /bypassed/SplashScreen.storyboard (in target \\047NutritionApp\\047)\\n'
+    printf 'LinkStoryboards /bypassed/NutritionApp.app (in target \\047NutritionApp\\047)\\n'
+  fi
   : > "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr/libNutritionOcr.a"
   : > "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr/NutritionOcr.swiftmodule"
   : > "$derived/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/NutritionOcr.build/Objects-normal/arm64/NutritionOcrModule.o"
@@ -1001,7 +1180,13 @@ else
 fi
 """)
         write("xcrun", """
-if [ "${1-}" = "--sdk" ]; then
+if [ "${1-}" = "--find" ]; then
+  case "${2-}" in
+    xcodebuild) echo "${IOS_NATIVE_FIXTURE_BIN:?}/xcodebuild" ;;
+    ibtool) echo "${IOS_NATIVE_FIXTURE_BIN:?}/ibtool" ;;
+    *) exit 2 ;;
+  esac
+elif [ "${1-}" = "--sdk" ]; then
   echo 18.0
 elif [ "${1-}" = "-f" ] && [ "${2-}" = "lipo" ]; then
   echo "${IOS_NATIVE_FIXTURE_LIPO:?}"
@@ -1068,6 +1253,9 @@ fi
         self._write_fake_tools(fake_bin)
         environment = os.environ.copy()
         environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+        environment["IOS_NATIVE_FIXTURE_BIN"] = str(fake_bin)
+        environment["IOS_NATIVE_FIXTURE_DEVELOPER_DIR"] = str(fake_bin / "Developer")
+        environment["DEVELOPER_DIR"] = str(fake_bin / "Developer")
         environment["REAL_PYTHON"] = str(Path(sys.executable).resolve())
         environment["REAL_GIT"] = shutil.which("git") or "/usr/bin/git"
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
@@ -1131,7 +1319,11 @@ fi
         ready = evidence_parent / "parent-signal-ready"
         environment = os.environ.copy()
         environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+        environment["IOS_NATIVE_FIXTURE_BIN"] = str(fake_bin)
+        environment["IOS_NATIVE_FIXTURE_DEVELOPER_DIR"] = str(fake_bin / "Developer")
+        environment["DEVELOPER_DIR"] = str(fake_bin / "Developer")
         environment["REAL_PYTHON"] = str(Path(sys.executable).resolve())
+        environment["REAL_GIT"] = shutil.which("git") or "/usr/bin/git"
         environment["IOS_NATIVE_FIXTURE_MODE"] = "parent-signal"
         environment["IOS_NATIVE_FIXTURE_PARENT_SIGNAL_READY"] = str(ready)
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)

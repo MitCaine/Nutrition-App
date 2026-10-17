@@ -83,12 +83,34 @@ build_invocation_file="$evidence_dir/build-invocation.json"
 module_evidence="$evidence_dir/module-evidence.json"
 candidate_build_evidence="$evidence_dir/candidate-build-evidence.json"
 application_link_proof="$evidence_dir/application-link-proof.json"
+native_lifecycle_dir="$evidence_dir/native-lifecycle"
+native_lifecycle_helper="$repo_root/scripts/lib/native_process_lifecycle.py"
+native_lifecycle_binding="$native_lifecycle_dir/invocation.json"
+native_lifecycle_wrapper="$native_lifecycle_dir/ibtool-ibc-exec"
+native_lifecycle_python=""
+native_lifecycle_ibtool=""
+native_lifecycle_ibtoold=""
+native_lifecycle_xcodebuild=""
+native_lifecycle_developer_dir=""
+native_lifecycle_xcode_spec_compiler=""
+native_lifecycle_xcode_spec_storyboard=""
+native_lifecycle_xcode_spec_linker=""
+native_lifecycle_xcode_spec_postprocessor=""
+cleanup_disposition="NOT_STARTED"
+cleanup_reason=""
+cleanup_retained_roots=""
 
 export IOS_NATIVE_COMPILATION_MODE="$compilation_mode"
 
 if test -e "$probe_root"
 then
   echo "IOS_NATIVE_PROBE_ALREADY_EXISTS" >&2
+  exit 1
+fi
+if test -e "$derived_data" || test -L "$derived_data" ||
+  test -e "$harness_bin" || test -L "$harness_bin"
+then
+  echo "IOS_NATIVE_GENERATED_ROOT_ALREADY_EXISTS" >&2
   exit 1
 fi
 
@@ -163,11 +185,17 @@ run_stage() {
     return "$signal_status"
   fi
 
-  (
-    set -e
+  if test "$name" = cleanup
+  then
     "$function_name"
-  )
-  exit_code="$?"
+    exit_code="$?"
+  else
+    (
+      set -e
+      "$function_name"
+    )
+    exit_code="$?"
+  fi
 
   if test "$signal_status" -ne 0 &&
     test "$run_when_signaled" -ne 1
@@ -192,7 +220,11 @@ run_stage() {
     fi
   fi
 
-  if test "$exit_code" -eq 0
+  if test "$name" = cleanup &&
+    test "$cleanup_disposition" = INCOMPLETE
+  then
+    status="INCOMPLETE"
+  elif test "$exit_code" -eq 0
   then
     status="PASS"
   elif test "$exit_code" -ge 128
@@ -209,54 +241,162 @@ run_stage() {
       exit_code=1
     fi
   fi
+  if test "$name" = cleanup &&
+    test "$cleanup_disposition" = INCOMPLETE
+  then
+    return 0
+  fi
   return "$exit_code"
 }
 
+mark_cleanup_incomplete() {
+  local reason="$1"
+  cleanup_disposition="INCOMPLETE"
+  if test -z "$cleanup_reason"
+  then
+    cleanup_reason="$reason"
+  fi
+  cleanup_retained_roots=""
+  for root in "$probe_root" "$derived_data" "$harness_bin"
+  do
+    if test -e "$root" || test -L "$root"
+    then
+      cleanup_retained_roots="${cleanup_retained_roots}${root}
+"
+    fi
+  done
+  echo "IOS_NATIVE_CLEANUP_INCOMPLETE:$reason" >&2
+}
+
+verify_before_disposal() {
+  local operation="$1"
+  local stdout_path="$native_lifecycle_dir/cleanup-verify-$operation.stdout.log"
+  local stderr_path="$native_lifecycle_dir/cleanup-verify-$operation.stderr.log"
+
+  if test -z "$native_lifecycle_binding" ||
+    ! test -f "$native_lifecycle_binding"
+  then
+    mark_cleanup_incomplete "invocation binding unavailable before $operation"
+    return 1
+  fi
+
+  if ! "$native_lifecycle_python" \
+      "$native_lifecycle_helper" \
+      verify \
+      --invocation-record "$native_lifecycle_binding" \
+      > "$stdout_path" \
+      2> "$stderr_path"
+  then
+    local detail
+    detail="$(tail -n 1 "$stderr_path" 2>/dev/null || true)"
+    mark_cleanup_incomplete "verification refused before $operation: ${detail:-no verifier detail}"
+    return 1
+  fi
+}
+
 cleanup_stage() {
-  local cleanup_exit=0
+  local worktree_listed=0
+
+  cleanup_disposition="PASS"
+  cleanup_reason="all generated outputs removed after fresh source and invocation verification"
 
   if test "$worktree_created" -eq 1 &&
     git -C "$repo_root" worktree list --porcelain |
       grep -Fqx "worktree $probe_root"
   then
+    worktree_listed=1
+  fi
+
+  if test "$worktree_listed" -eq 1
+  then
+    if ! verify_before_disposal worktree-remove
+    then
+      return 1
+    fi
     if ! git -C "$repo_root" worktree remove \
       --force \
       "$probe_root" \
       > /dev/null \
       2> "$evidence_dir/worktree-cleanup.stderr"
     then
-      cleanup_exit=1
+      mark_cleanup_incomplete "git worktree remove failed; retained $probe_root"
+      return 1
+    fi
+    if ! record_native_phase worktree-removed "{\"root\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$probe_root")}"
+    then
+      mark_cleanup_incomplete "worktree removal phase evidence failed after removing $probe_root"
+      return 1
     fi
   fi
 
   if test "$worktree_created" -eq 1
   then
+    if ! verify_before_disposal worktree-prune
+    then
+      return 1
+    fi
     if ! git -C "$repo_root" worktree prune \
       > /dev/null \
       2> "$evidence_dir/worktree-prune.stderr"
     then
-      cleanup_exit=1
+      mark_cleanup_incomplete "git worktree prune failed"
+      return 1
+    fi
+    worktree_created=0
+    if ! record_native_phase worktree-pruned "{}"
+    then
+      mark_cleanup_incomplete "worktree prune phase evidence failed"
+      return 1
     fi
   fi
 
-  if ! rm -rf "$derived_data"
+  if test -e "$derived_data" || test -L "$derived_data"
   then
-    cleanup_exit=1
+    if ! verify_before_disposal derived-data-remove
+    then
+      return 1
+    fi
+    if ! rm -rf "$derived_data"
+    then
+      mark_cleanup_incomplete "removal failed; retained $derived_data"
+      return 1
+    fi
+    if ! record_native_phase derived-data-removed "{\"root\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$derived_data")}"
+    then
+      mark_cleanup_incomplete "DerivedData removal phase evidence failed"
+      return 1
+    fi
   fi
 
-  if ! rm -rf "$harness_bin"
+  if test -e "$harness_bin" || test -L "$harness_bin"
   then
-    cleanup_exit=1
+    if ! verify_before_disposal harness-remove
+    then
+      return 1
+    fi
+    if ! rm -rf "$harness_bin"
+    then
+      mark_cleanup_incomplete "removal failed; retained $harness_bin"
+      return 1
+    fi
+    if ! record_native_phase harness-bin-removed "{\"root\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$harness_bin")}"
+    then
+      mark_cleanup_incomplete "harness binary removal phase evidence failed"
+      return 1
+    fi
   fi
 
-  if test -e "$probe_root"
+  if test -e "$probe_root" || test -L "$probe_root"
   then
     printf '%s\n' "probe root remains after cleanup" \
       > "$evidence_dir/generated-cleanup-failure.txt"
-    cleanup_exit=1
+    mark_cleanup_incomplete "probe root remains after cleanup: $probe_root"
+    return 1
   fi
 
-  return "$cleanup_exit"
+  cleanup_disposition="PASS"
+  cleanup_retained_roots=""
+  return 0
 }
 
 write_manifest() {
@@ -287,6 +427,11 @@ write_manifest() {
   IOS_NATIVE_MODULE_EVIDENCE_FILE="$module_evidence" \
   IOS_NATIVE_CANDIDATE_BUILD_EVIDENCE_FILE="$candidate_build_evidence" \
   IOS_NATIVE_APPLICATION_LINK_PROOF_FILE="$application_link_proof" \
+  IOS_NATIVE_LIFECYCLE_DIR="$native_lifecycle_dir" \
+  IOS_NATIVE_LIFECYCLE_BINDING="$native_lifecycle_binding" \
+  IOS_NATIVE_CLEANUP_DISPOSITION="$cleanup_disposition" \
+  IOS_NATIVE_CLEANUP_REASON="$cleanup_reason" \
+  IOS_NATIVE_CLEANUP_RETAINED_ROOTS="$cleanup_retained_roots" \
   python3 - "$timings_file" "$manifest" <<'PY'
 import json
 import os
@@ -408,6 +553,56 @@ application_link_document = document(
     "IOS_NATIVE_APPLICATION_LINK_PROOF_FILE",
     {},
 )
+
+
+def file_digest(path):
+    item = Path(path)
+    if not item.is_file():
+        return None
+    digest = __import__("hashlib").sha256()
+    with item.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def lifecycle_inventory():
+    root_value = text("IOS_NATIVE_LIFECYCLE_DIR")
+    if not root_value:
+        return {"invocation_binding": None, "capability_proof": None, "full_build_proof": None, "records": [], "phases": []}
+    root = Path(root_value)
+    if not root.is_dir():
+        return {"invocation_binding": None, "capability_proof": None, "full_build_proof": None, "records": [], "phases": []}
+    records_dir = root / "records"
+    phases_dir = root / "phases"
+    return {
+        "invocation_binding": document("IOS_NATIVE_LIFECYCLE_BINDING"),
+        "capability_proof": document(str(root / "capability-proof.json")),
+        "full_build_proof": document(str(root / "full-build-proof.json")),
+        "records": [
+            {"path": str(path), "sha256": file_digest(path)}
+            for path in sorted(records_dir.glob("*.json"))
+            if path.is_file()
+        ] if records_dir.is_dir() else [],
+        "phases": [
+            {"path": str(path), "sha256": file_digest(path)}
+            for path in sorted(phases_dir.glob("*.json"))
+            if path.is_file()
+        ] if phases_dir.is_dir() else [],
+        "coverage_limit": "known process identities and the admitted IBC_EXEC producer only; no universal descendant tracking; IBPostprocessor literal ibtool is not covered by IBC_EXEC",
+    }
+
+
+cleanup_roots = [
+    value
+    for value in (text("IOS_NATIVE_CLEANUP_RETAINED_ROOTS") or "").splitlines()
+    if value
+]
+cleanup = {
+    "status": text("IOS_NATIVE_CLEANUP_DISPOSITION") or "NOT_STARTED",
+    "reason": text("IOS_NATIVE_CLEANUP_REASON"),
+    "retained_roots": cleanup_roots,
+}
 manifest = {
     "schema_version": 1,
     "profile": "ios-native",
@@ -455,7 +650,10 @@ manifest = {
         "vision_runtime": stage_status["swift_harnesses"],
     },
     "space_path_regression": stage_status["prebuild_plugins"],
-    "generated_cleanup": stage_status["cleanup"],
+    "generated_cleanup": cleanup["status"],
+    "cleanup_disposition": cleanup,
+    "native_process_lifecycle": lifecycle_inventory(),
+    "native_process_lifecycle_control": "IBC_EXEC wrapper sets IBTOOLNEVERDEQUE=1 for admitted calls",
     "compilation": compilation,
     "module_evidence": module_document,
     "candidate_build_evidence": candidate_build_document,
@@ -549,12 +747,6 @@ on_exit() {
     cleanup_done=1
   fi
 
-  if test "$qualifier_exit_status" -eq 0 &&
-    test "$cleanup_exit" -ne 0
-  then
-    qualifier_exit_status="$cleanup_exit"
-  fi
-
   if test -n "$(
     git -C "$repo_root" status \
       --porcelain=v1 \
@@ -573,6 +765,19 @@ on_exit() {
     test "$qualifier_exit_status" -eq 0
   then
     qualifier_exit_status=1
+  fi
+
+  if test -f "$native_lifecycle_binding"
+  then
+    if ! record_native_phase qualifier-finished "{\"cleanup_disposition\":\"$cleanup_disposition\"}"
+    then
+      evidence_retention_failure=1
+      echo "IOS_NATIVE_QUALIFIER_TERMINAL_RECORD_FAILED" >&2
+      if test "$qualifier_exit_status" -eq 0
+      then
+        qualifier_exit_status=1
+      fi
+    fi
   fi
 
   write_manifest "$qualifier_exit_status"
@@ -615,6 +820,7 @@ on_exit() {
   else
     echo "IOS_NATIVE_QUALIFICATION=FAILURE" >&2
   fi
+  echo "IOS_NATIVE_CLEANUP=$cleanup_disposition"
 
   exit "$qualifier_exit_status"
 }
@@ -627,7 +833,7 @@ capture_toolchain() {
   local tool
   local xcode_info
   local swift_info
-  for tool in node npm python3 pod xcodebuild xcrun ruby
+  for tool in node npm python3 pod xcrun xcode-select ruby
   do
     if ! command -v "$tool" >/dev/null 2>&1
     then
@@ -650,10 +856,80 @@ capture_toolchain() {
     return 1
   fi
 
-  if ! xcodebuild_binary="$(command -v xcodebuild)" ||
+  if ! native_lifecycle_python="$(command -v python3)" ||
+    test -z "$native_lifecycle_python"
+  then
+    echo "IOS_NATIVE_PYTHON_BINARY_UNAVAILABLE" >&2
+    return 1
+  fi
+
+  if ! native_lifecycle_developer_dir="${DEVELOPER_DIR:-$(xcode-select -p)}" ||
+    test -z "$native_lifecycle_developer_dir"
+  then
+    echo "IOS_NATIVE_DEVELOPER_DIRECTORY_UNAVAILABLE" >&2
+    return 1
+  fi
+  if ! native_lifecycle_developer_dir="$(cd "$native_lifecycle_developer_dir" && pwd -P)"
+  then
+    echo "IOS_NATIVE_DEVELOPER_DIRECTORY_INVALID" >&2
+    return 1
+  fi
+  export DEVELOPER_DIR="$native_lifecycle_developer_dir"
+
+  if ! xcodebuild_binary="$(xcrun --find xcodebuild)" ||
     test -z "$xcodebuild_binary"
   then
     echo "IOS_NATIVE_XCODEBUILD_BINARY_UNAVAILABLE" >&2
+    return 1
+  fi
+  if ! native_lifecycle_ibtool="$(xcrun --find ibtool)" ||
+    test -z "$native_lifecycle_ibtool"
+  then
+    echo "IOS_NATIVE_IBTOOL_BINARY_UNAVAILABLE" >&2
+    return 1
+  fi
+  if ! native_lifecycle_ibtool="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$native_lifecycle_ibtool")"
+  then
+    echo "IOS_NATIVE_IBTOOL_PATH_RESOLUTION_FAILED" >&2
+    return 1
+  fi
+  native_lifecycle_ibtoold="$(dirname "$native_lifecycle_ibtool")/ibtoold"
+  if ! test -x "$native_lifecycle_ibtoold"
+  then
+    echo "IOS_NATIVE_IBTOOLD_BINARY_UNAVAILABLE:$native_lifecycle_ibtoold" >&2
+    return 1
+  fi
+  if ! native_lifecycle_ibtoold="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$native_lifecycle_ibtoold")"
+  then
+    echo "IOS_NATIVE_IBTOOLD_PATH_RESOLUTION_FAILED" >&2
+    return 1
+  fi
+  native_lifecycle_xcodebuild="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$xcodebuild_binary")"
+  xcodebuild_binary="$native_lifecycle_xcodebuild"
+
+  local spec_root
+  spec_root="$(dirname "$native_lifecycle_developer_dir")/SharedFrameworks/SwiftBuild.framework/Versions/A/PlugIns/SWBBuildService.bundle/Contents/PlugIns/SWBApplePlatformPlugin.bundle/Contents/Frameworks/SWBApplePlatform.framework/Versions/A/Resources"
+  native_lifecycle_xcode_spec_compiler="$spec_root/IBCompiler.xcspec"
+  native_lifecycle_xcode_spec_storyboard="$spec_root/IBStoryboardCompiler.xcspec"
+  native_lifecycle_xcode_spec_linker="$spec_root/IBStoryboardLinker.xcspec"
+  native_lifecycle_xcode_spec_postprocessor="$spec_root/IBPostprocessor.xcspec"
+  for spec in \
+    "$native_lifecycle_xcode_spec_compiler" \
+    "$native_lifecycle_xcode_spec_storyboard" \
+    "$native_lifecycle_xcode_spec_linker" \
+    "$native_lifecycle_xcode_spec_postprocessor"
+  do
+    if ! test -f "$spec"
+    then
+      echo "IOS_NATIVE_TOOLCHAIN_SPEC_UNAVAILABLE:$spec" >&2
+      return 1
+    fi
+  done
+
+  if ! xcode_info="$("$xcodebuild_binary" -version)" ||
+    test -z "$xcode_info"
+  then
+    echo "IOS_NATIVE_XCODE_VERSION_UNAVAILABLE" >&2
     return 1
   fi
 
@@ -692,12 +968,6 @@ capture_toolchain() {
     return 1
   fi
 
-  if ! xcode_info="$("$xcodebuild_binary" -version)" ||
-    test -z "$xcode_info"
-  then
-    echo "IOS_NATIVE_XCODE_VERSION_UNAVAILABLE" >&2
-    return 1
-  fi
   xcode_version="$(printf '%s\n' "$xcode_info" | awk 'NR == 1 {print $2}')"
   xcode_build="$(printf '%s\n' "$xcode_info" | awk 'NR == 2 {print $3}')"
 
@@ -804,6 +1074,132 @@ capture_toolchain() {
   export IOS_NATIVE_NPM_CACHE_PATH_SOURCE="$npm_cache_path_source"
   export IOS_NATIVE_COCOAPODS_CACHE_PATH="$cocoapods_cache_path"
   export IOS_NATIVE_COCOAPODS_CACHE_PATH_SOURCE="$cocoapods_cache_path_source"
+}
+
+setup_native_lifecycle() {
+  local setup_log="$evidence_dir/native-lifecycle-setup.log"
+  if ! IOS_NATIVE_QUALIFIER_PID="$$" \
+    IOS_NATIVE_SPEC_COMPILER="$native_lifecycle_xcode_spec_compiler" \
+    IOS_NATIVE_SPEC_STORYBOARD_COMPILER="$native_lifecycle_xcode_spec_storyboard" \
+    IOS_NATIVE_SPEC_LINKER="$native_lifecycle_xcode_spec_linker" \
+    IOS_NATIVE_SPEC_POSTPROCESSOR="$native_lifecycle_xcode_spec_postprocessor" \
+    "$native_lifecycle_python" - \
+      "$evidence_dir" \
+      "$repo_root" \
+      "$probe_root" \
+      "$derived_data" \
+      "$harness_bin" \
+      "$native_lifecycle_ibtool" \
+      "$native_lifecycle_ibtoold" \
+      "$native_lifecycle_xcodebuild" \
+      "$native_lifecycle_developer_dir" \
+      "$xcode_version" \
+      "$xcode_build" \
+      "$native_lifecycle_helper" \
+      "$repo_root/scripts/ios-native-qualification.sh" \
+      "$native_lifecycle_binding" \
+      "$native_lifecycle_wrapper" \
+      "$native_lifecycle_python" \
+      > "$setup_log" 2>&1 <<'PY'
+import os
+import sys
+from pathlib import Path
+
+helper = Path(sys.argv[12]).resolve(strict=True)
+sys.path.insert(0, str(helper.parent))
+import native_process_lifecycle as lifecycle
+
+evidence, source, worktree, derived, harness, ibtool, ibtoold, xcodebuild, developer, version, build, _, qualifier_script, binding, wrapper, python = sys.argv[1:]
+invocation_dir, created_binding, created_wrapper = lifecycle.create_invocation(
+    evidence_dir=evidence,
+    source_root=source,
+    qualifier_pid=int(os.environ["IOS_NATIVE_QUALIFIER_PID"]),
+    worktree_root=worktree,
+    derived_data_root=derived,
+    harness_root=harness,
+    ibtool_path=ibtool,
+    ibtoold_path=ibtoold,
+    xcodebuild_path=xcodebuild,
+    developer_dir=developer,
+    xcode_version=version,
+    xcode_build=build,
+    spec_paths={
+        "compiler": os.environ["IOS_NATIVE_SPEC_COMPILER"],
+        "storyboard_compiler": os.environ["IOS_NATIVE_SPEC_STORYBOARD_COMPILER"],
+        "linker": os.environ["IOS_NATIVE_SPEC_LINKER"],
+        "postprocessor": os.environ["IOS_NATIVE_SPEC_POSTPROCESSOR"],
+    },
+    helper_path=helper,
+    qualifier_script_path=qualifier_script,
+)
+if created_binding != Path(binding) or created_wrapper != Path(wrapper):
+    raise SystemExit("NATIVE_LIFECYCLE_PATH_BINDING_MISMATCH")
+lifecycle.write_wrapper(created_binding, created_wrapper, python)
+PY
+  then
+    echo "IOS_NATIVE_LIFECYCLE_SETUP_FAILED" >&2
+    return 1
+  fi
+}
+
+record_native_phase() {
+  local phase="$1"
+  local details_json="${2:-}"
+  if test -z "$details_json"
+  then
+    details_json="{}"
+  fi
+  "$native_lifecycle_python" - \
+    "$native_lifecycle_helper" \
+    "$native_lifecycle_binding" \
+    "$phase" \
+    "$details_json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+helper = Path(sys.argv[1]).resolve(strict=True)
+sys.path.insert(0, str(helper.parent))
+import native_process_lifecycle as lifecycle
+
+details = json.loads(sys.argv[4])
+lifecycle.record_phase(sys.argv[2], sys.argv[3], **details)
+PY
+}
+
+ibtool_capability_stage() {
+  local -a storyboards
+  local storyboard
+  storyboards=()
+  while IFS= read -r -d '' storyboard
+  do
+    storyboards+=("$storyboard")
+  done < <(
+    find "$mobile/ios" \
+      -type f \
+      -name 'SplashScreen.storyboard' \
+      -print0
+  )
+  if test "${#storyboards[@]}" -ne 1
+  then
+    echo "IOS_NATIVE_SPLASH_STORYBOARD_AMBIGUOUS:${#storyboards[@]}" >&2
+    return 1
+  fi
+  if ! record_native_phase capability-required "{\"storyboard\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${storyboards[0]}")}"
+  then
+    echo "IOS_NATIVE_CAPABILITY_PHASE_RECORD_FAILED" >&2
+    return 1
+  fi
+  if ! "$native_lifecycle_python" \
+    "$native_lifecycle_helper" \
+    capability \
+    --binding "$native_lifecycle_binding" \
+    --storyboard "${storyboards[0]}" \
+    --output-dir "$native_lifecycle_dir/capability"
+  then
+    echo "IOS_NATIVE_IBTOOL_CAPABILITY_FAILED" >&2
+    return 1
+  fi
 }
 
 npm_install_stage() {
@@ -1009,6 +1405,7 @@ capture_build_invocation() {
     IOS_NATIVE_BUILD_WORKSPACE="$workspace" \
     IOS_NATIVE_BUILD_DERIVED_DATA="$derived_data" \
     IOS_NATIVE_BUILD_NODE_BINARY="$node_binary" \
+    IOS_NATIVE_IBTOOL_WRAPPER="$native_lifecycle_wrapper" \
     python3 - "$executable" "$workspace" "$scheme" "$derived_data" "$node_binary" "$@" <<'PY'
 import json
 import os
@@ -1067,6 +1464,9 @@ document = {
     "link_map": {
         "LD_GENERATE_MAP_FILE": assignment_value("LD_GENERATE_MAP_FILE"),
     },
+    "interface_builder": {
+        "IBC_EXEC": assignment_value("IBC_EXEC"),
+    },
 }
 if option_value("-workspace") != workspace:
     raise SystemExit("IOS_NATIVE_BUILD_WORKSPACE_MISMATCH")
@@ -1083,6 +1483,8 @@ if document["debug"]["ENABLE_DEBUG_DYLIB"] != "NO":
     raise SystemExit("IOS_NATIVE_BUILD_DEBUG_DYLIB_MUST_BE_DISABLED")
 if document["link_map"]["LD_GENERATE_MAP_FILE"] != "YES":
     raise SystemExit("IOS_NATIVE_BUILD_LINK_MAP_MUST_BE_ENABLED")
+if document["interface_builder"]["IBC_EXEC"] != os.environ.get("IOS_NATIVE_IBTOOL_WRAPPER"):
+    raise SystemExit("IOS_NATIVE_BUILD_IBC_EXEC_SETTING_INVALID")
 if not argv or argv[-1] != "build":
     raise SystemExit("IOS_NATIVE_BUILD_ACTION_INVALID")
 
@@ -1171,7 +1573,7 @@ capture_candidate_build_evidence() {
     "$pod_project" \
     "$target_support" \
     "$app_support" \
-    "${candidate_link_maps[@]}" <<'PY'
+    "${candidate_link_maps[@]-}" <<'PY'
 import hashlib
 import json
 import shutil
@@ -1964,6 +2366,8 @@ xcode_build_stage() {
   local scheme
   local project
   local xcodebuild_exit
+  local app_binary
+  local app_bundle
   local -a build_args
 
   project="$(sed -n 's/^PROJECT=//p' "$prebuild_paths")"
@@ -1980,6 +2384,7 @@ xcode_build_stage() {
     CODE_SIGNING_REQUIRED=NO
     ENABLE_DEBUG_DYLIB=NO
     LD_GENERATE_MAP_FILE=YES
+    "IBC_EXEC=$native_lifecycle_wrapper"
     build
   )
 
@@ -2020,6 +2425,17 @@ if (!schemes.includes(scheme)) {
 }
 NODE
 
+  if ! ibtool_capability_stage
+  then
+    return 1
+  fi
+
+  if ! record_native_phase xcode-build-started "{\"build_invocation\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$build_invocation_file")}"
+  then
+    echo "IOS_NATIVE_XCODE_BUILD_PHASE_RECORD_FAILED" >&2
+    return 1
+  fi
+
   xcodebuild_exit=0
   NODE_BINARY="$node_binary" \
   NODE_ENV=development \
@@ -2046,6 +2462,44 @@ NODE
     "$evidence_dir/xcodebuild.log"
   then
     echo "IOS_NATIVE_XCODE_BUILD_SUCCEEDED_MARKER_MISSING" >&2
+    return 1
+  fi
+
+  app_binary="$(
+    find "$derived_data/Build/Products/Debug-iphonesimulator" \
+      -type f \
+      -path "*${scheme// /}.app/${scheme// /}" \
+      -print |
+      sed -n '1p'
+  )"
+  if test -z "$app_binary"
+  then
+    echo "IOS_NATIVE_APP_PRODUCT_BINARY_MISSING" >&2
+    return 1
+  fi
+  app_bundle="$(dirname "$app_binary")"
+  if ! "$native_lifecycle_python" - \
+    "$native_lifecycle_helper" \
+    "$native_lifecycle_binding" \
+    "$build_invocation_file" \
+    "$evidence_dir/xcodebuild.log" \
+    "$app_bundle" <<'PY'
+import sys
+from pathlib import Path
+
+helper = Path(sys.argv[1]).resolve(strict=True)
+sys.path.insert(0, str(helper.parent))
+import native_process_lifecycle as lifecycle
+
+lifecycle.write_full_build_proof(
+    sys.argv[2],
+    build_invocation_path=sys.argv[3],
+    build_log_path=sys.argv[4],
+    app_product_path=sys.argv[5],
+)
+PY
+  then
+    echo "IOS_NATIVE_FULL_BUILD_IBC_EXEC_PROOF_FAILED" >&2
     return 1
   fi
 
@@ -2132,6 +2586,12 @@ fi
 commit="$(git -C "$repo_root" rev-parse HEAD)"
 export IOS_NATIVE_COMMIT="$commit"
 export IOS_NATIVE_RUNNER="$runner"
+
+if ! setup_native_lifecycle
+then
+  qualifier_exit_status=1
+  exit 1
+fi
 
 git -C "$repo_root" worktree add \
   --detach \
