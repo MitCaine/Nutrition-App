@@ -355,7 +355,7 @@ def create_invocation(
     developer = Path(developer_dir).resolve(strict=True)
     nonce = uuid.uuid4().hex
     binding_path = invocation_dir / "invocation.json"
-    wrapper_path = invocation_dir / "ibtool-ibc-exec"
+    wrapper_path = invocation_dir / "ibtool"
     document = {
         "schema_version": SCHEMA_VERSION,
         "source": {
@@ -1331,36 +1331,24 @@ def _build_interval(phases: Sequence[dict[str, Any]], build_invocation_path: Pat
 
 
 def _logged_wrapper_commands(lines: Sequence[str], wrapper: str) -> list[dict[str, Any]]:
+    bound_wrapper = os.path.realpath(wrapper)
     commands = []
     for line in lines:
-        if wrapper not in line or not ("--compile" in line or "--link" in line):
+        if not ("--compile" in line or "--link" in line):
             continue
-        candidates = [line]
         try:
-            candidates.extend(
-                token for token in shlex.split(line)
-                if wrapper in token and ("--compile" in token or "--link" in token)
-            )
+            tokens = shlex.split(line)
         except ValueError:
             continue
-        parsed = None
-        for candidate in candidates:
-            try:
-                tokens = shlex.split(candidate)
-            except ValueError:
-                continue
-            try:
-                index = tokens.index(wrapper)
-            except ValueError:
+        for index, token in enumerate(tokens):
+            if os.path.realpath(token) != bound_wrapper:
                 continue
             argv = tokens[index + 1 :]
             operation = "--compile" if "--compile" in argv else "--link" if "--link" in argv else None
             if operation is None:
                 continue
-            parsed = {"wrapper": wrapper, "operation": operation, "argv": argv, "line": line}
+            commands.append({"wrapper": wrapper, "operation": operation, "argv": argv, "line": line})
             break
-        if parsed is not None:
-            commands.append(parsed)
     return commands
 
 
@@ -1368,6 +1356,7 @@ def _correlate_wrapper_commands(
     lines: Sequence[str], wrapper: str, records: Sequence[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     commands = _logged_wrapper_commands(lines, wrapper)
+    bound_wrapper = os.path.realpath(wrapper)
     relevant_records = [record for record in records if record.get("stage") in {"compile", "link"}]
     if len(commands) != len(relevant_records):
         raise LifecycleError("BUILD_WRAPPER_COMMAND_RECORD_COUNT_MISMATCH")
@@ -1385,7 +1374,12 @@ def _correlate_wrapper_commands(
             raise LifecycleError("BUILD_WRAPPER_COMMAND_INPUT_MISSING_OR_AMBIGUOUS")
         matches = []
         for record in unmatched:
-            if record.get("stage") != stage or record.get("wrapper") != wrapper:
+            record_wrapper = record.get("wrapper")
+            if (
+                record.get("stage") != stage
+                or not isinstance(record_wrapper, str)
+                or os.path.realpath(record_wrapper) != bound_wrapper
+            ):
                 continue
             record_args = record.get("argv", [])[1:]
             try:
@@ -1444,11 +1438,25 @@ def _unwrapped_tool_lines(lines: Sequence[str], wrapper: str, selected_ibtool: s
     direct = []
     version = []
     token = re.compile(r"(?:^|[\s'\"])(?:[^\s'\"]*/)?ibtool(?:[\s'\"]|$)", re.IGNORECASE)
+    wrapper_identity = os.path.realpath(wrapper)
+    selected_identity = os.path.realpath(selected_ibtool)
     for line in lines:
-        if not token.search(line) or wrapper in line:
+        if not token.search(line):
             continue
-        if "--version" in line or re.search(r"(?:^|\s)-version(?:\s|$)", line):
-            if selected_ibtool in line:
+        try:
+            tokens = shlex.split(line)
+        except ValueError:
+            direct.append(line)
+            continue
+        executable_tokens = [value for value in tokens if Path(value).name.lower() == "ibtool"]
+        if not executable_tokens:
+            direct.append(line)
+            continue
+        executable_identities = [os.path.realpath(value) for value in executable_tokens]
+        if wrapper_identity in executable_identities:
+            continue
+        if "--version" in tokens or "-version" in tokens:
+            if selected_identity in executable_identities:
                 version.append(line)
             else:
                 direct.append(line)

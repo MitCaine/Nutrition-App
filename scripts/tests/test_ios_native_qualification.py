@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import signal
 import shutil
 import stat
@@ -528,6 +529,28 @@ class IosNativeQualificationTests(
         statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
         self.assertEqual(statuses["xcode_build"], "PASS")
         self.assertEqual(statuses["cleanup"], "INCOMPLETE")
+        wrapper = manifest["native_process_lifecycle"]["invocation_binding"]["wrapper"]["path"]
+        self.assertEqual(Path(wrapper).name, "ibtool")
+        version_xml = (evidence / "ibtool-version.xml").read_bytes()
+        version = plistlib.loads(version_xml)
+        self.assertEqual(version, {f"com.apple.{Path(wrapper).name}.version": "27.0"})
+        version_records = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in (evidence / "native-lifecycle" / "records").glob("*.record.json")
+        ]
+        self.assertTrue(any(record.get("stage") == "version" and record.get("child_exit") == 0 for record in version_records))
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_fake_xcode_version_discovery_rejects_old_wrapper_basename(self):
+        result, evidence = self._run_fixture_qualification("ibtool-version-old-wrapper")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        build_log = (evidence / "xcodebuild.log").read_text(encoding="utf-8")
+        self.assertIn("com.apple.ibtool-ibc-exec.version", build_log)
+        self.assertIn("missing basename-derived key", build_log)
+        self.assertNotIn("CompileStoryboard", build_log)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+        self.assertEqual(manifest["native_process_lifecycle"]["full_build_proof"]["status"], "MISSING")
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_cleanup_reason_records_partial_removal(self):
@@ -1121,6 +1144,13 @@ static int copy_directory(const char *source, const char *destination) {
 int main(int argc, char **argv) {
     const char *override = getenv("IBToolNeverDeque");
     if (!override || strcmp(override, "1")) return 70;
+    if (argc == 4 && !strcmp(argv[1], "--version") && !strcmp(argv[2], "--output-format") && !strcmp(argv[3], "xml1")) {
+        fputs("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n", stdout);
+        fputs("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n", stdout);
+        fputs("<plist version=\"1.0\"><dict><key>com.apple.ibtool.version</key><string>27.0</string></dict></plist>\n", stdout);
+        usleep(100000);
+        return 0;
+    }
     const char *mode = NULL, *output = NULL, *source = NULL;
     for (int index = 1; index < argc; index++) {
         if (!strcmp(argv[index], "--compile") || !strcmp(argv[index], "--link")) {
@@ -1287,6 +1317,29 @@ else
       case "$argument" in IBC_EXEC=*) wrapper="${argument#IBC_EXEC=}" ;; esac
     done
     test -n "$wrapper"
+    version_wrapper="$wrapper"
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "ibtool-version-old-wrapper" ]; then
+      version_wrapper="$(dirname "$wrapper")/ibtool-ibc-exec"
+      ln -s "$wrapper" "$version_wrapper"
+    fi
+    version_xml="${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/ibtool-version.xml"
+    printf 'ExecuteExternalTool "%s" --version --output-format xml1\\n' "$version_wrapper"
+    "$version_wrapper" --version --output-format xml1 > "$version_xml" || exit 95
+    if ! "$REAL_PYTHON" - "$version_wrapper" "$version_xml" <<'PY'
+import plistlib
+import sys
+from pathlib import Path
+
+executable = Path(sys.argv[1])
+version = plistlib.loads(Path(sys.argv[2]).read_bytes())
+expected = f"com.apple.{executable.name}.version"
+if expected not in version:
+    print(f"fake Xcode version discovery missing basename-derived key: {expected}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+    then
+      exit 96
+    fi
     workspace=""
     previous=""
     for argument in "$@"; do

@@ -509,8 +509,10 @@ regression programs. Before building, it binds one fresh lifecycle record direct
 source, qualifier PID and birth, selected developer directory, Xcode build, `ibtool` and sibling
 `ibtoold` paths and hashes, and the installed Interface Builder specs. A copied generated
 `SplashScreen.storyboard` must compile and link through that invocation's wrapper before the full
-build starts. The wrapper is passed as `IBC_EXEC`; it removes inherited `IBTOOLD-*` variables and
-sets `IBToolNeverDeque=1` for the admitted child call. The record requires the same PID and native
+build starts. The invocation-private wrapper is named `ibtool` so Xcode's basename-derived
+version key matches the vendor XML without rewriting it. The wrapper is passed as `IBC_EXEC`;
+it removes inherited `IBTOOLD-*` variables and sets `IBToolNeverDeque=1` for the admitted child
+call. The record requires the same PID and native
 birth to transition to the selected `ibtoold`, then observes and records its exit. A missed
 transition, exit, or required call is a failed proof; no pooled or shared-service fallback is used.
 The wrapper preserves the vendor's stdout and stderr bytes at the caller while retaining separate
@@ -518,9 +520,10 @@ logs; lifecycle records and diagnostics do not enter vendor stdout. The simulato
 literal argv, emits verbose build commands, and uses `ENABLE_DEBUG_DYLIB=NO` with
 `LD_GENERATE_MAP_FILE=YES` so Xcode emits application link maps. Full-build evidence matches the
 actual `SplashScreen.storyboard` compile and `SplashScreen.storyboardc` link tasks in Xcode's log to
-the wrapper's per-call records, including matching command wrapper, input and output paths inside
-the recorded build start/end interval, and verifies the generated output. Task headings alone do
-not establish a wrapper call. The capability and full-build proof documents and hashes are retained
+the wrapper's per-call records. It matches the selected executable by filesystem identity and
+normalizes equivalent wrapper, input, and output path aliases within the recorded build interval,
+then verifies the generated output. Task headings alone do not establish a wrapper call. The
+capability and full-build proof documents and hashes are retained
 in success and failure manifests. This establishes the observed
 `IBC_EXEC` route for the required storyboard work; it does not establish universal process or
 descendant tracking, and unrelated native entrypoints remain synchronous observations.

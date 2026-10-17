@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import shutil
 import shlex
 import subprocess
@@ -53,6 +54,10 @@ class NativeProcessLifecycleTests(unittest.TestCase):
             "  secret=null\n"
             "  if env | grep -q '^IBTOOLD-SECRET='; then secret='\\\"present\\\"'; fi\n"
             "  printf '{\"IBToolNeverDeque\":\"%s\",\"IBTOOLD-SECRET\":%s}\\n' \"${IBToolNeverDeque:-}\" \"$secret\" > \"$NATIVE_TEST_ENVIRONMENT\"\n"
+            "fi\n"
+            "if [ \"${1-}\" = --version ] && [ \"${2-}\" = --output-format ] && [ \"${3-}\" = xml1 ]; then\n"
+            "  printf '%s\\n' '<?xml version=\"1.0\" encoding=\"UTF-8\"?>' '<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">' '<plist version=\"1.0\"><dict><key>com.apple.ibtool.version</key><string>27.1</string></dict></plist>'\n"
+            "  exit 0\n"
             "fi\n"
             "operation=\nnext=\noutput=\nlast=\n"
             "for arg in \"$@\"; do\n"
@@ -163,13 +168,19 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         self.assertTrue(record_path.is_file(), result.stderr)
         return result, json.loads(record_path.read_text(encoding="utf-8")), stdout_path, stderr_path
 
-    def _run_wrapper(self, argv: list[str], *, environment: dict[str, str] | None = None):
+    def _run_wrapper(
+        self,
+        argv: list[str],
+        *,
+        environment: dict[str, str] | None = None,
+        wrapper_path: Path | None = None,
+    ):
         env = os.environ.copy()
         env.update(NATIVE_TEST_CALLS=str(self.calls_file), NATIVE_TEST_ENVIRONMENT=str(self.environment_file))
         if environment:
             env.update(environment)
         return subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "lib" / "native_process_lifecycle.py"), "ibtool-wrapper", "--binding", str(self.binding_path), "--", *argv],
+            [str(wrapper_path or self.wrapper_path), *argv],
             cwd=self.source_root,
             env=env,
             capture_output=True,
@@ -322,6 +333,17 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         observed = json.loads(self.environment_file.read_text(encoding="utf-8"))
         self.assertEqual(observed, {"IBToolNeverDeque": "1", "IBTOOLD-SECRET": None})
 
+    def test_wrapper_preserves_basename_derived_vendor_version_xml(self):
+        result = self._run_wrapper(["--version", "--output-format", "xml1"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        version = plistlib.loads(result.stdout)
+        expected_key = f"com.apple.{self.wrapper_path.name}.version"
+        self.assertEqual(version, {expected_key: "27.1"})
+        record = json.loads(
+            sorted((self.invocation_dir / "records").glob("*.record.json"))[-1].read_text(encoding="utf-8")
+        )
+        self.assertEqual(Path(record["stdout"]["path"]).read_bytes(), result.stdout)
+
     def test_child_exit_remains_distinct_when_note_exit_observation_fails(self):
         binding, _ = lifecycle._binding(self.binding_path)
         environment = os.environ.copy()
@@ -398,6 +420,8 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         prebuild_compile: bool = False,
         include_wrapper_commands: bool = True,
         unmatched_link_command: bool = False,
+        alias_paths: bool = False,
+        wrong_wrapper_executable: bool = False,
     ):
         lifecycle.record_phase(self.binding_path, "capability-required")
         storyboard = self.root / "generated" / "SplashScreen.storyboard"
@@ -414,16 +438,37 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         app_product = self.root / "DerivedData" / "Build" / "Products" / "NutritionApp.app"
         build_output = app_product / "Resources"
         build_output.mkdir(parents=True)
+        if alias_paths:
+            alias_root = self.root / "filesystem alias with spaces"
+            alias_root.symlink_to(self.root, target_is_directory=True)
+
+            def fixture_path(path: Path) -> Path:
+                return alias_root / path.relative_to(self.root)
+
+        else:
+
+            def fixture_path(path: Path) -> Path:
+                return path
+
+        command_wrapper = fixture_path(self.wrapper_path)
+        if wrong_wrapper_executable:
+            wrong_wrapper = self.root / "wrong executable with spaces" / "ibtool"
+            wrong_wrapper.parent.mkdir(parents=True)
+            wrong_wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            command_wrapper = wrong_wrapper
+        storyboard_arg = fixture_path(storyboard)
+        compile_output_arg = fixture_path(compile_output)
+        build_output_arg = fixture_path(build_output)
         compile_args = [
             "--errors", "--warnings", "--notices", "--output-format", "human-readable-text",
-            "--compile", str(compile_output), str(storyboard),
+            "--compile", str(compile_output_arg), str(storyboard_arg),
         ]
         link_args = [
             "--errors", "--warnings", "--notices", "--output-format", "human-readable-text",
-            "--link", str(build_output), str(compile_output),
+            "--link", str(build_output_arg), str(compile_output_arg),
         ]
         if prebuild_compile:
-            compiled = self._run_wrapper(compile_args)
+            compiled = self._run_wrapper(compile_args, wrapper_path=fixture_path(self.wrapper_path))
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
         build_invocation = self.evidence / "build-invocation.json"
         build_invocation.write_text(
@@ -443,9 +488,9 @@ class NativeProcessLifecycleTests(unittest.TestCase):
             build_invocation=str(build_invocation),
         )
         if not prebuild_compile:
-            compiled = self._run_wrapper(compile_args)
+            compiled = self._run_wrapper(compile_args, wrapper_path=fixture_path(self.wrapper_path))
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
-        linked = self._run_wrapper(link_args)
+        linked = self._run_wrapper(link_args, wrapper_path=fixture_path(self.wrapper_path))
         self.assertEqual(linked.returncode, 0, linked.stderr)
         lifecycle.record_phase(
             self.binding_path,
@@ -459,13 +504,13 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         command_lines = []
         if include_wrapper_commands:
             command_lines = [
-                shlex.join([str(self.wrapper_path), *compile_args]),
-                shlex.join([str(self.wrapper_path), *logged_link_args]),
+                shlex.join([str(command_wrapper), *compile_args]),
+                shlex.join([str(command_wrapper), *logged_link_args]),
             ]
         build_log = self.evidence / "xcodebuild.log"
         build_log.write_text(
-            f"CompileStoryboard {storyboard} (in target 'NutritionApp')\n"
-            f"LinkStoryboards {compile_output} (in target 'NutritionApp')\n"
+            f"CompileStoryboard {storyboard_arg} (in target 'NutritionApp')\n"
+            f"LinkStoryboards {compile_output_arg} (in target 'NutritionApp')\n"
             + "\n".join(command_lines)
             + ("\n" if command_lines else ""),
             encoding="utf-8",
@@ -487,6 +532,28 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         self.assertEqual(proof["xcode_tasks"]["link_count"], 1)
         self.assertEqual(len(proof["wrapper_commands"]), 2)
         self.assertGreater(proof["build_interval"]["finished_monotonic_ns"], proof["build_interval"]["started_monotonic_ns"])
+
+    def test_fullbuild_correlates_spaces_and_filesystem_aliases(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(alias_paths=True)
+        lifecycle.write_full_build_proof(
+            self.binding_path,
+            build_invocation_path=build_invocation,
+            build_log_path=build_log,
+            app_product_path=app_product,
+        )
+        proof = json.loads((self.invocation_dir / "full-build-proof.json").read_text(encoding="utf-8"))
+        self.assertEqual(proof["status"], "PASS")
+        self.assertTrue(all("filesystem alias with spaces" in item["line"] for item in proof["wrapper_commands"]))
+        alias_wrapper = str(self.root / "filesystem alias with spaces" / "evidence" / "native-lifecycle" / "ibtool")
+        records = lifecycle._completed_records(self.invocation_dir)
+        wrapper_records = [record for record in records if record.get("stage") in {"compile", "link"}]
+        aliased_records = [{**record, "wrapper": alias_wrapper} for record in wrapper_records]
+        commands = lifecycle._correlate_wrapper_commands(
+            build_log.read_text(encoding="utf-8").splitlines(),
+            str(self.wrapper_path),
+            aliased_records,
+        )
+        self.assertEqual(len(commands), 2)
 
     def test_fullbuild_rejects_prebuild_compile_record(self):
         build_invocation, build_log, app_product = self._prepare_full_build_fixture(prebuild_compile=True)
@@ -510,6 +577,18 @@ class NativeProcessLifecycleTests(unittest.TestCase):
 
     def test_fullbuild_rejects_missing_logged_wrapper_command(self):
         build_invocation, build_log, app_product = self._prepare_full_build_fixture(include_wrapper_commands=False)
+        with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_WRAPPER_COMMAND_RECORD_COUNT_MISMATCH"):
+            lifecycle.write_full_build_proof(
+                self.binding_path,
+                build_invocation_path=build_invocation,
+                build_log_path=build_log,
+                app_product_path=app_product,
+            )
+
+    def test_fullbuild_rejects_different_executable_with_same_basename(self):
+        build_invocation, build_log, app_product = self._prepare_full_build_fixture(
+            wrong_wrapper_executable=True,
+        )
         with self.assertRaisesRegex(lifecycle.LifecycleError, "BUILD_WRAPPER_COMMAND_RECORD_COUNT_MISMATCH"):
             lifecycle.write_full_build_proof(
                 self.binding_path,
