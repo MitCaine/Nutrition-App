@@ -210,6 +210,65 @@ def _required_evidence_error(kind: str, detail: str) -> LifecycleError:
     return LifecycleError(f"REQUIRED_EVIDENCE_INVALID:{kind}:{detail}")
 
 
+def _required_path(
+    value: Any,
+    root: Path,
+    kind: str,
+    label: str,
+    *,
+    expected: str = "file",
+    must_exist: bool = True,
+) -> Path:
+    if not isinstance(value, str) or not value or not Path(value).is_absolute():
+        raise _required_evidence_error(kind, f"{label}_PATH_SHAPE_INVALID")
+    if must_exist:
+        try:
+            path = _inside(Path(value), root, label)
+        except (LifecycleError, OSError, ValueError) as error:
+            raise _required_evidence_error(kind, f"{label}_PATH_INVALID:{error}") from error
+    else:
+        path = Path(os.path.abspath(value))
+        root_path = Path(os.path.abspath(root))
+        try:
+            _no_symlink_components(path)
+            path.relative_to(root_path)
+        except (LifecycleError, OSError, ValueError) as error:
+            raise _required_evidence_error(kind, f"{label}_PATH_INVALID:{error}") from error
+    try:
+        info = path.lstat()
+    except FileNotFoundError as error:
+        if must_exist:
+            missing_label = "PROCESS_OUTPUT_MISSING" if kind == "PROCESS_OUTPUT" else f"{label}_MISSING"
+            raise _required_evidence_error(kind, f"{missing_label}:{path}") from error
+        return path
+    except (OSError, ValueError) as error:
+        raise _required_evidence_error(kind, f"{label}_UNREADABLE:{path}:{error}") from error
+    if must_exist:
+        valid_type = stat.S_ISREG(info.st_mode) if expected == "file" else stat.S_ISDIR(info.st_mode)
+        if not valid_type:
+            raise _required_evidence_error(kind, f"{label}_TYPE_INVALID:{path}")
+    return path
+
+
+def _required_sha256(value: Any, kind: str, label: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise _required_evidence_error(kind, f"{label}_SHA256_INVALID")
+    return value
+
+
+def _verify_required_file_hash(path: Path, value: Any, kind: str, label: str) -> None:
+    expected = _required_sha256(value, kind, label)
+    try:
+        observed = _sha256_file(path)
+    except OSError as error:
+        raise _required_evidence_error(kind, f"{label}_UNREADABLE:{path}:{error}") from error
+    if observed != expected:
+        mismatch_label = (
+            "PROCESS_OUTPUT_HASH_MISMATCH" if kind == "PROCESS_OUTPUT" else f"{label}_HASH_MISMATCH"
+        )
+        raise _required_evidence_error(kind, f"{mismatch_label}:{path}")
+
+
 def _read_required_json(path: Path, kind: str) -> dict[str, Any]:
     try:
         return _read_json(path)
@@ -1166,6 +1225,8 @@ def _completed_records(
         raise _required_evidence_error("PROCESS_BIRTH", "BOUND_RECORD_WITHOUT_START_RECORD")
     for record in completed:
         call_id = record.get("call_id")
+        if type(record.get("outputs_complete")) is not bool:
+            raise _required_evidence_error("PROCESS_OUTPUT", f"OUTPUT_COMPLETION_SHAPE_INVALID:{call_id}")
         if record.get("status") == "PASS":
             process = record.get("process")
             bound_record = bound.get(call_id)
@@ -1181,15 +1242,25 @@ def _completed_records(
                 raise _required_evidence_error("PROCESS_BIRTH", f"PROCESS_IDENTITY_SHAPE_INVALID:{call_id}")
             if process.get("pid") != bound_record.get("pid") or process.get("birth") != bound_record.get("birth"):
                 raise _required_evidence_error("PROCESS_BIRTH", f"BIRTH_BINDING_MISMATCH:{call_id}")
-        for output in (record.get("stdout"), record.get("stderr")):
+        for stream_name in ("stdout", "stderr"):
+            output = record.get(stream_name)
             if not isinstance(output, dict):
-                raise LifecycleError("PROCESS_OUTPUT_RECORD_MISSING")
-            output_path = Path(output.get("path", ""))
-            _inside(output_path, invocation_root, "PROCESS_OUTPUT")
-            if not output_path.is_file():
-                raise LifecycleError("PROCESS_OUTPUT_MISSING")
-            if record.get("outputs_complete") and _sha256_file(output_path) != output.get("sha256"):
-                raise LifecycleError("PROCESS_OUTPUT_HASH_MISMATCH")
+                raise _required_evidence_error(
+                    "PROCESS_OUTPUT", f"PROCESS_OUTPUT_RECORD_MISSING:{call_id}:{stream_name}"
+                )
+            output_path = _required_path(
+                output.get("path"),
+                invocation_root,
+                "PROCESS_OUTPUT",
+                f"PROCESS_OUTPUT_{stream_name.upper()}",
+            )
+            if record["outputs_complete"]:
+                _verify_required_file_hash(
+                    output_path,
+                    output.get("sha256"),
+                    "PROCESS_OUTPUT",
+                    f"PROCESS_OUTPUT_{stream_name.upper()}",
+                )
     return completed
 
 
@@ -1290,6 +1361,32 @@ def _record_known_child_exit(
     return path
 
 
+def _is_admitted_ib_child(record: dict[str, Any], binding: dict[str, Any]) -> bool:
+    if record.get("stage") not in {
+        "compile",
+        "link",
+        "capability-compile",
+        "capability-link",
+    }:
+        return False
+    process = record.get("process")
+    transition = record.get("exec_transition")
+    allowlist = record.get("environment_allowlist")
+    if not isinstance(process, dict) or not isinstance(transition, dict) or not isinstance(allowlist, dict):
+        return False
+    expected_ibtool = binding["toolchain"]["tools"]["ibtool"]
+    expected_ibtoold = binding["toolchain"]["tools"]["ibtoold"]
+    return (
+        transition.get("pid") == process.get("pid")
+        and transition.get("birth") == process.get("birth")
+        and transition.get("executable") == expected_ibtoold.get("path")
+        and transition.get("sha256") == expected_ibtoold.get("sha256")
+        and record.get("selected_executable") == expected_ibtool
+        and record.get("selected_ibtoold") == expected_ibtoold
+        and allowlist.get("IBToolNeverDeque") == "1"
+    )
+
+
 def verify_invocation(binding_path: str | Path, supplied_records: Sequence[str | Path] = ()) -> dict[str, Any]:
     binding, invocation_root = _binding(binding_path)
     invocation = binding["invocation"]
@@ -1371,7 +1468,14 @@ def verify_invocation(binding_path: str | Path, supplied_records: Sequence[str |
             birth = child.get("birth")
             pid = child.get("pid")
             if birth is not None and pid is not None:
-                same, current = _identity_matches(int(pid), str(birth))
+                try:
+                    same, current = _identity_matches(int(pid), str(birth))
+                except LifecycleError as error:
+                    if _is_admitted_ib_child(record, binding):
+                        raise LifecycleError(
+                            f"KNOWN_CHILD_OBSERVATION_UNAVAILABLE:{pid}:{error}"
+                        ) from error
+                    raise
                 if same:
                     raise LifecycleError(f"KNOWN_CHILD_STILL_LIVE:{pid}")
                 if current is not None:
@@ -1932,14 +2036,29 @@ def _verify_capability_proof(
     proof: dict[str, Any],
     records: Sequence[dict[str, Any]],
 ) -> None:
+    kind = "CAPABILITY_PROOF"
+    if proof.get("record_type") != "native_capability_proof":
+        raise _required_evidence_error(kind, "RECORD_TYPE_INVALID")
     if proof.get("fallback") != "none" or proof.get("IBToolNeverDeque") != "1":
-        raise LifecycleError("CAPABILITY_PROOF_CONTROL_INVALID")
+        raise _required_evidence_error(kind, "CAPABILITY_PROOF_CONTROL_INVALID")
+    for field, tool_name in (("ibtool", "ibtool"), ("ibtoold", "ibtoold")):
+        selected_tool = binding["toolchain"]["tools"][tool_name]
+        observed_tool = proof.get(field)
+        if (
+            not isinstance(observed_tool, dict)
+            or observed_tool.get("path") != selected_tool.get("path")
+            or observed_tool.get("sha256") != selected_tool.get("sha256")
+        ):
+            raise _required_evidence_error(kind, f"{field.upper()}_BINDING_INVALID")
     calls = proof.get("calls")
-    if not isinstance(calls, list) or [call.get("stage") for call in calls if isinstance(call, dict)] != [
-        "capability-compile",
-        "capability-link",
-    ]:
-        raise LifecycleError("CAPABILITY_PROOF_CALLS_INVALID")
+    expected_stages = ["capability-compile", "capability-link"]
+    if (
+        not isinstance(calls, list)
+        or len(calls) != len(expected_stages)
+        or any(not isinstance(call, dict) for call in calls)
+        or [call.get("stage") for call in calls] != expected_stages
+    ):
+        raise _required_evidence_error(kind, "CAPABILITY_PROOF_CALLS_INVALID")
     call_by_stage = {
         record.get("stage"): record
         for record in records
@@ -1947,19 +2066,23 @@ def _verify_capability_proof(
         and record.get("stage") in {"capability-compile", "capability-link"}
     }
     if len(call_by_stage) != 2:
-        raise LifecycleError("CAPABILITY_PROOF_RECORDS_MISSING")
+        raise _required_evidence_error(kind, "CAPABILITY_PROOF_RECORDS_MISSING")
     for call in calls:
-        stage = call["stage"]
+        stage = call.get("stage")
         record = call_by_stage[stage]
         transition = record.get("exec_transition")
         process = record.get("process")
+        environment_allowlist = record.get("environment_allowlist")
         if (
-            call.get("call_id") != record.get("call_id")
+            type(call.get("exit_code")) is not int
+            or call.get("call_id") != record.get("call_id")
             or call.get("status") != "PASS"
             or call.get("exit_code") != 0
             or record.get("status") != "PASS"
+            or type(record.get("child_exit")) is not int
             or record.get("child_exit") != 0
-            or record.get("environment_allowlist", {}).get("IBToolNeverDeque") != "1"
+            or not isinstance(environment_allowlist, dict)
+            or environment_allowlist.get("IBToolNeverDeque") != "1"
             or not isinstance(transition, dict)
             or not isinstance(process, dict)
             or transition.get("pid") != process.get("pid")
@@ -1969,27 +2092,43 @@ def _verify_capability_proof(
             or record.get("selected_executable") != binding["toolchain"]["tools"]["ibtool"]
             or record.get("selected_ibtoold") != binding["toolchain"]["tools"]["ibtoold"]
         ):
-            raise LifecycleError("CAPABILITY_PROOF_CALL_RECORD_MISMATCH")
+            raise _required_evidence_error(kind, "CAPABILITY_PROOF_CALL_RECORD_MISMATCH")
         for output_name in ("stdout", "stderr"):
             output = call.get(output_name)
             if not isinstance(output, dict):
-                raise LifecycleError("CAPABILITY_PROOF_LOG_MISSING")
-            path = _inside(Path(output.get("path", "")), invocation_root, "CAPABILITY_LOG")
-            if not path.is_file() or _sha256_file(path) != output.get("sha256"):
-                raise LifecycleError("CAPABILITY_PROOF_LOG_HASH_MISMATCH")
+                raise _required_evidence_error(kind, f"CAPABILITY_PROOF_LOG_MISSING:{output_name}")
+            path = _required_path(
+                output.get("path"),
+                invocation_root,
+                kind,
+                f"CAPABILITY_PROOF_LOG_{output_name.upper()}",
+            )
+            _verify_required_file_hash(
+                path,
+                output.get("sha256"),
+                kind,
+                f"CAPABILITY_PROOF_LOG_{output_name.upper()}",
+            )
     storyboard = proof.get("storyboard")
     if not isinstance(storyboard, dict):
-        raise LifecycleError("CAPABILITY_PROOF_STORYBOARD_MISSING")
-    storyboard_path = _inside(Path(storyboard.get("path", "")), invocation_root, "CAPABILITY_STORYBOARD")
-    if not storyboard_path.is_file() or _sha256_file(storyboard_path) != storyboard.get("sha256"):
-        raise LifecycleError("CAPABILITY_PROOF_STORYBOARD_HASH_MISMATCH")
+        raise _required_evidence_error(kind, "CAPABILITY_PROOF_STORYBOARD_MISSING")
+    storyboard_path = _required_path(
+        storyboard.get("path"), invocation_root, kind, "CAPABILITY_PROOF_STORYBOARD"
+    )
+    _verify_required_file_hash(
+        storyboard_path, storyboard.get("sha256"), kind, "CAPABILITY_PROOF_STORYBOARD"
+    )
     for field in ("compile_output", "link_output"):
         output = proof.get(field)
         if not isinstance(output, dict) or output.get("exists") is not True:
-            raise LifecycleError("CAPABILITY_PROOF_OUTPUT_MISSING")
-        path = _inside(Path(output.get("path", "")), invocation_root, "CAPABILITY_OUTPUT")
-        if not path.exists():
-            raise LifecycleError("CAPABILITY_PROOF_OUTPUT_MISSING")
+            raise _required_evidence_error(kind, f"CAPABILITY_PROOF_OUTPUT_MISSING:{field}")
+        _required_path(
+            output.get("path"),
+            invocation_root,
+            kind,
+            f"CAPABILITY_PROOF_{field.upper()}",
+            expected="directory",
+        )
 
 
 def _verify_full_build_proof(
@@ -1999,38 +2138,62 @@ def _verify_full_build_proof(
     records: Sequence[dict[str, Any]],
     phases: Sequence[dict[str, Any]],
 ) -> None:
+    kind = "FULL_BUILD_PROOF"
+    if proof.get("record_type") != "native_full_build_proof":
+        raise _required_evidence_error(kind, "RECORD_TYPE_INVALID")
     evidence_root = invocation_root.parent.resolve(strict=True)
     build_invocation_record = proof.get("build_invocation")
     build_log_record = proof.get("build_log")
     if not isinstance(build_invocation_record, dict) or not isinstance(build_log_record, dict):
-        raise LifecycleError("FULL_BUILD_EVIDENCE_BINDING_MISSING")
-    invocation_path = _inside(Path(build_invocation_record.get("path", "")), evidence_root, "BUILD_INVOCATION")
-    log_path = _inside(Path(build_log_record.get("path", "")), evidence_root, "BUILD_LOG")
-    if (
-        not invocation_path.is_file()
-        or _sha256_file(invocation_path) != build_invocation_record.get("sha256")
-        or not log_path.is_file()
-        or _sha256_file(log_path) != build_log_record.get("sha256")
-    ):
-        raise LifecycleError("FULL_BUILD_EVIDENCE_HASH_MISMATCH")
-    invocation = _read_json(invocation_path)
+        raise _required_evidence_error(kind, "FULL_BUILD_EVIDENCE_BINDING_MISSING")
+    invocation_path = _required_path(
+        build_invocation_record.get("path"),
+        evidence_root,
+        kind,
+        "BUILD_INVOCATION",
+    )
+    log_path = _required_path(build_log_record.get("path"), evidence_root, kind, "BUILD_LOG")
+    _verify_required_file_hash(
+        invocation_path, build_invocation_record.get("sha256"), kind, "BUILD_INVOCATION"
+    )
+    _verify_required_file_hash(log_path, build_log_record.get("sha256"), kind, "BUILD_LOG")
+    try:
+        invocation = _read_json(invocation_path)
+    except LifecycleError as error:
+        raise _required_evidence_error(kind, f"BUILD_INVOCATION_INVALID:{error}") from error
     selected_xcodebuild = binding["toolchain"]["tools"]["xcodebuild"]
+    invocation_argv = invocation.get("argv")
+    interface_builder = invocation.get("interface_builder")
+    if (
+        not isinstance(invocation.get("executable"), str)
+        or not Path(invocation["executable"]).is_absolute()
+        or not isinstance(invocation_argv, list)
+        or any(not isinstance(value, str) for value in invocation_argv)
+        or not isinstance(interface_builder, dict)
+    ):
+        raise _required_evidence_error(kind, "BUILD_INVOCATION_SHAPE_INVALID")
     if (
         invocation.get("executable") != selected_xcodebuild["path"]
-        or invocation.get("interface_builder", {}).get("IBC_EXEC") != binding["wrapper"]["path"]
-        or [value for value in invocation.get("argv", []) if value.startswith("IBC_EXEC=")]
+        or interface_builder.get("IBC_EXEC") != binding["wrapper"]["path"]
+        or [value for value in invocation_argv if value.startswith("IBC_EXEC=")]
         != [f"IBC_EXEC={binding['wrapper']['path']}"]
     ):
-        raise LifecycleError("FULL_BUILD_INVOCATION_BINDING_MISMATCH")
-    if proof.get("wrapper") != binding["wrapper"]["path"]:
-        raise LifecycleError("FULL_BUILD_WRAPPER_BINDING_MISMATCH")
+        raise _required_evidence_error(kind, "FULL_BUILD_INVOCATION_BINDING_MISMATCH")
+    if (
+        not isinstance(proof.get("wrapper"), str)
+        or proof.get("wrapper") != binding["wrapper"]["path"]
+    ):
+        raise _required_evidence_error(kind, "FULL_BUILD_WRAPPER_BINDING_MISMATCH")
     build_started_ns, build_finished_ns = _build_interval(phases, invocation_path)
     if proof.get("build_interval") != {
         "started_monotonic_ns": build_started_ns,
         "finished_monotonic_ns": build_finished_ns,
     }:
-        raise LifecycleError("FULL_BUILD_INTERVAL_BINDING_MISMATCH")
-    log = _classify_build_log(log_path)
+        raise _required_evidence_error(kind, "FULL_BUILD_INTERVAL_BINDING_MISMATCH")
+    try:
+        log = _classify_build_log(log_path)
+    except OSError as error:
+        raise _required_evidence_error(kind, f"BUILD_LOG_UNREADABLE:{error}") from error
     tasks = proof.get("xcode_tasks")
     if (
         not isinstance(tasks, dict)
@@ -2039,7 +2202,7 @@ def _verify_full_build_proof(
         or tasks.get("compile_count") != len(log["compile"])
         or tasks.get("link_count") != len(log["link"])
     ):
-        raise LifecycleError("FULL_BUILD_TASK_LOG_MISMATCH")
+        raise _required_evidence_error(kind, "FULL_BUILD_TASK_LOG_MISMATCH")
     call_records = [record for record in records if record.get("record_type") == "native_process_call"]
     compiled = [record for record in call_records if record.get("stage") == "compile"]
     linked = [record for record in call_records if record.get("stage") == "link"]
@@ -2053,7 +2216,7 @@ def _verify_full_build_proof(
     log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
     wrapper_commands = _correlate_wrapper_commands(log_lines, binding["wrapper"]["path"], compiled + linked)
     if proof.get("wrapper_commands") != wrapper_commands:
-        raise LifecycleError("FULL_BUILD_WRAPPER_COMMAND_INVENTORY_MISMATCH")
+        raise _required_evidence_error(kind, "FULL_BUILD_WRAPPER_COMMAND_INVENTORY_MISMATCH")
     storyboard_compiled = [
         record for record in compiled
         if any(arg.lower().endswith(".storyboard") for arg in record.get("argv", []))
@@ -2068,26 +2231,29 @@ def _verify_full_build_proof(
         or proof.get("storyboard_compile_record_ids") != [record.get("call_id") for record in storyboard_compiled]
         or proof.get("storyboard_link_record_ids") != [record.get("call_id") for record in storyboard_linked]
     ):
-        raise LifecycleError("FULL_BUILD_RECORD_SET_MISMATCH")
+        raise _required_evidence_error(kind, "FULL_BUILD_RECORD_SET_MISMATCH")
     expected_tool = binding["toolchain"]["tools"]["ibtoold"]
     expected_ibtool = binding["toolchain"]["tools"]["ibtool"]
     for record in compiled + linked:
         transition = record.get("exec_transition")
         process = record.get("process")
+        environment_allowlist = record.get("environment_allowlist")
         if (
             not isinstance(transition, dict)
             or not isinstance(process, dict)
+            or not isinstance(environment_allowlist, dict)
             or transition.get("pid") != process.get("pid")
             or transition.get("birth") != process.get("birth")
             or transition.get("executable") != expected_tool["path"]
             or transition.get("sha256") != expected_tool["sha256"]
             or record.get("selected_executable") != expected_ibtool
             or record.get("selected_ibtoold") != expected_tool
-            or record.get("environment_allowlist", {}).get("IBToolNeverDeque") != "1"
+            or environment_allowlist.get("IBToolNeverDeque") != "1"
+            or type(record.get("child_exit")) is not int
             or record.get("child_exit") != 0
             or record.get("status") != "PASS"
         ):
-            raise LifecycleError("FULL_BUILD_IB_RECORD_INVALID")
+            raise _required_evidence_error(kind, "FULL_BUILD_IB_RECORD_INVALID")
     postprocessor_lines = [
         line for line in log_lines
         if "IBPostprocessor" in line or "PostprocessInterfaceBuilder" in line
@@ -2102,7 +2268,7 @@ def _verify_full_build_proof(
     if direct_tool_lines:
         raise LifecycleError(f"BUILD_UNINSTRUMENTED_IBTOOL_COMMAND:{direct_tool_lines[0]}")
     if proof.get("unwrapped_version_commands") != version_tool_lines:
-        raise LifecycleError("FULL_BUILD_VERSION_COMMAND_INVENTORY_MISMATCH")
+        raise _required_evidence_error(kind, "FULL_BUILD_VERSION_COMMAND_INVENTORY_MISMATCH")
     compile_paths = _storyboard_sources(storyboard_compiled)
     link_paths = _storyboardc_inputs(storyboard_linked)
     task_paths = _task_storyboard_paths(log["compile"], ".storyboard", "CompileStoryboard")
@@ -2121,48 +2287,82 @@ def _verify_full_build_proof(
     compile_output_records = _storyboard_compile_outputs(storyboard_compiled)
     proof_compile_outputs = proof.get("storyboard_compile_outputs")
     if not isinstance(proof_compile_outputs, list) or len(proof_compile_outputs) != len(compile_output_records):
-        raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISMATCH")
+        raise _required_evidence_error(
+            kind, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISMATCH"
+        )
     derived_root = Path(os.path.abspath(binding["roots"]["derived_data"]))
     removed_phase = next(
         (phase for phase in phases if phase.get("phase") == "derived-data-removed"),
         None,
     )
     for expected, observed in zip(compile_output_records, proof_compile_outputs):
-        if not isinstance(observed, dict) or any(
+        if not isinstance(observed, dict):
+            raise _required_evidence_error(
+                kind, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISSING"
+            )
+        for field in ("source", "compilation_directory", "output"):
+            value = observed.get(field)
+            if not isinstance(value, str) or not value or not Path(value).is_absolute():
+                raise _required_evidence_error(
+                    kind, f"FULL_BUILD_STORYBOARD_{field.upper()}_PATH_INVALID"
+                )
+        _required_sha256(
+            observed.get("sha256"),
+            kind,
+            "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT",
+        )
+        if any(
             observed.get(key) != expected[key]
             for key in ("call_id", "source", "compilation_directory", "output")
         ):
-            raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISMATCH")
-        compilation_directory = Path(os.path.abspath(expected["compilation_directory"]))
-        output_path = Path(os.path.abspath(expected["output"]))
-        _no_symlink_components(compilation_directory)
-        _no_symlink_components(output_path)
-        try:
-            compilation_directory.relative_to(derived_root)
-            output_path.relative_to(derived_root)
-        except ValueError as error:
-            raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_OUTSIDE_DERIVED_DATA") from error
-        if output_path.parent != compilation_directory:
-            raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_DIRECTORY_MISMATCH")
-        if removed_phase is None:
-            compilation_directory = _inside(
-                compilation_directory, derived_root, "FULL_BUILD_STORYBOARD_COMPILATION_DIRECTORY"
+            raise _required_evidence_error(
+                kind, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISMATCH"
             )
-            output_path = _inside(output_path, derived_root, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT")
-            if _directory_sha256(output_path) != observed.get("sha256"):
-                raise LifecycleError("FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_HASH_MISMATCH")
+        compilation_directory = _required_path(
+            expected["compilation_directory"],
+            derived_root,
+            kind,
+            "FULL_BUILD_STORYBOARD_COMPILATION_DIRECTORY",
+            expected="directory",
+            must_exist=removed_phase is None,
+        )
+        output_path = _required_path(
+            expected["output"],
+            derived_root,
+            kind,
+            "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT",
+            expected="directory",
+            must_exist=removed_phase is None,
+        )
+        if output_path.parent != compilation_directory:
+            raise _required_evidence_error(kind, "FULL_BUILD_STORYBOARD_COMPILE_DIRECTORY_MISMATCH")
+        if removed_phase is None:
+            try:
+                output_digest = _directory_sha256(output_path)
+            except OSError as error:
+                raise _required_evidence_error(
+                    kind, f"FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_UNREADABLE:{error}"
+                ) from error
+            if output_digest != observed["sha256"]:
+                raise _required_evidence_error(
+                    kind, "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_HASH_MISMATCH"
+                )
     output = proof.get("output")
     if not isinstance(output, dict):
-        raise LifecycleError("FULL_BUILD_OUTPUT_BINDING_MISSING")
+        raise _required_evidence_error(kind, "FULL_BUILD_OUTPUT_BINDING_MISSING")
     derived_root = Path(os.path.abspath(binding["roots"]["derived_data"]))
-    output_candidate = Path(os.path.abspath(output.get("path", "")))
-    _no_symlink_components(output_candidate)
-    try:
-        relative_output = output_candidate.relative_to(derived_root)
-    except ValueError as error:
-        raise LifecycleError("FULL_BUILD_OUTPUT_OUTSIDE_DERIVED_DATA") from error
+    _required_sha256(output.get("sha256"), kind, "FULL_BUILD_OUTPUT")
+    output_candidate = _required_path(
+        output.get("path"),
+        derived_root,
+        kind,
+        "FULL_BUILD_OUTPUT",
+        expected="directory",
+        must_exist=removed_phase is None,
+    )
+    relative_output = output_candidate.relative_to(derived_root)
     if not relative_output.parts:
-        raise LifecycleError("FULL_BUILD_OUTPUT_PATH_INVALID")
+        raise _required_evidence_error(kind, "FULL_BUILD_OUTPUT_PATH_INVALID")
     if removed_phase is not None:
         if removed_phase.get("root") != str(derived_root) or derived_root.exists():
             raise LifecycleError("DERIVED_DATA_REMOVAL_PHASE_MISMATCH")
@@ -2178,9 +2378,9 @@ def _verify_full_build_proof(
                 digest.update(path.relative_to(output_path).as_posix().encode())
                 digest.update(bytes.fromhex(_sha256_file(path)))
         if digest.hexdigest() != output.get("sha256"):
-            raise LifecycleError("FULL_BUILD_OUTPUT_HASH_MISMATCH")
+            raise _required_evidence_error(kind, "FULL_BUILD_OUTPUT_HASH_MISMATCH")
     elif removed_phase is None:
-        raise LifecycleError("FULL_BUILD_OUTPUT_MISSING_BEFORE_CLEANUP")
+        raise _required_evidence_error(kind, "FULL_BUILD_OUTPUT_MISSING_BEFORE_CLEANUP")
 
 
 def run_capability(binding_path: str | Path, storyboard_path: str | Path, output_dir: str | Path) -> tuple[int, dict[str, Any]]:
