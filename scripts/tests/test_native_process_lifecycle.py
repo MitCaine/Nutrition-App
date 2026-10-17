@@ -20,6 +20,58 @@ sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 import native_process_lifecycle as lifecycle  # noqa: E402
 
 
+class UnwrappedToolInventoryTests(unittest.TestCase):
+    def test_actual_xcodebuild_ibc_exec_forms_are_settings_not_processes(self):
+        wrapper = "/private/tmp/gh421-minimal-positive-be748c91/native-lifecycle/ibtool"
+        selected_ibtool = "/Applications/Xcode.app/Contents/Developer/usr/bin/ibtool"
+        actual_invocation = (
+            "    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project "
+            "/private/tmp/gh421-minimal-positive-be748c91/worktree/apps/mobile/ios/Probe.xcodeproj "
+            "-scheme Probe -configuration Debug -sdk iphonesimulator -destination "
+            '"generic/platform=iOS Simulator" -derivedDataPath '
+            "/private/tmp/gh421-minimal-positive-be748c91/DerivedData CODE_SIGNING_ALLOWED=NO "
+            f"IBC_EXEC={wrapper} build"
+        )
+        displayed_settings = [
+            "Build settings from command line:",
+            "    CODE_SIGNING_ALLOWED = NO",
+            f"    IBC_EXEC = {wrapper}",
+            "    SDKROOT = iphonesimulator27.1",
+        ]
+
+        direct, version = lifecycle._unwrapped_tool_lines(
+            [actual_invocation, *displayed_settings], wrapper, selected_ibtool
+        )
+
+        self.assertEqual(direct, [])
+        self.assertEqual(version, [])
+
+    def test_direct_vendor_calls_and_wrong_executable_remain_visible(self):
+        wrapper = "/private/tmp/native-lifecycle/ibtool"
+        selected_ibtool = "/Applications/Xcode.app/Contents/Developer/usr/bin/ibtool"
+        wrong_ibtool = "/tmp/unselected-xcode/usr/bin/ibtool"
+        direct_vendor_call = f"ExecuteExternalTool {selected_ibtool} --compile input.storyboard"
+        wrong_version_call = f"ExecuteExternalTool {wrong_ibtool} --version --output-format xml1"
+        setting_beside_direct_call = f"IBC_EXEC={wrapper} {selected_ibtool} --compile input.storyboard"
+        selected_version_call = f"ExecuteExternalTool {selected_ibtool} --version --output-format xml1"
+        wrapper_version_call = f"ExecuteExternalTool {wrapper} --version --output-format xml1"
+
+        direct, version = lifecycle._unwrapped_tool_lines(
+            [
+                direct_vendor_call,
+                wrong_version_call,
+                setting_beside_direct_call,
+                selected_version_call,
+                wrapper_version_call,
+            ],
+            wrapper,
+            selected_ibtool,
+        )
+
+        self.assertEqual(direct, [direct_vendor_call, wrong_version_call, setting_beside_direct_call])
+        self.assertEqual(version, [selected_version_call])
+
+
 @unittest.skipUnless(
     sys.platform == "darwin",
     "macOS proc identity and NOTE_EXIT fixtures run in iOS native qualification",
@@ -542,6 +594,11 @@ class NativeProcessLifecycleTests(unittest.TestCase):
         task_storyboard = task_storyboard_override or storyboard_arg
         build_log = self.evidence / "xcodebuild.log"
         build_log.write_text(
+            "Command line invocation:\n"
+            f"{shlex.join([str(Path(sys.executable).resolve()), '-project', str(self.root / 'Probe.xcodeproj'), f'IBC_EXEC={self.wrapper_path}', 'build'])}\n"
+            "\n"
+            "Build settings from command line:\n"
+            f"    IBC_EXEC = {self.wrapper_path}\n"
             f"CompileStoryboard {task_storyboard} (in target 'NutritionApp')\n"
             "LinkStoryboards (in target 'NutritionApp')\n"
             + "\n".join(command_lines)

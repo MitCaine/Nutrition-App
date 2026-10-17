@@ -44,6 +44,7 @@ _SAFE_ENVIRONMENT_KEYS = (
     "IBC_EXEC",
 )
 _STAGE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
+_SHELL_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
 class LifecycleError(ValueError):
@@ -1549,15 +1550,29 @@ def _unwrapped_tool_lines(lines: Sequence[str], wrapper: str, selected_ibtool: s
         except ValueError:
             direct.append(line)
             continue
-        executable_tokens = [value for value in tokens if Path(value).name.lower() == "ibtool"]
-        if not executable_tokens:
-            direct.append(line)
+        if not tokens:
             continue
-        executable_identities = [os.path.realpath(value) for value in executable_tokens]
-        if wrapper_identity in executable_identities:
+
+        # Xcode prefixes one form with `ExecuteExternalTool`; normal command
+        # records start with argv[0]. Skip only leading shell assignments so an
+        # IBC_EXEC value later in xcodebuild's argv is never mistaken for a
+        # process invocation, while an assignment followed by a real direct
+        # ibtool command remains visible.
+        executable_index = 1 if tokens[0].rstrip(":") == "ExecuteExternalTool" else 0
+        while executable_index < len(tokens) and _SHELL_ASSIGNMENT_RE.match(tokens[executable_index]):
+            executable_index += 1
+        if executable_index >= len(tokens):
             continue
-        if "--version" in tokens or "-version" in tokens:
-            if selected_identity in executable_identities:
+
+        executable = tokens[executable_index]
+        if Path(executable).name.lower() != "ibtool":
+            continue
+        executable_identity = os.path.realpath(executable)
+        command_args = tokens[executable_index + 1 :]
+        if executable_identity == wrapper_identity:
+            continue
+        if "--version" in command_args or "-version" in command_args:
+            if executable_identity == selected_identity:
                 version.append(line)
             else:
                 direct.append(line)
