@@ -6183,24 +6183,136 @@ def _output_helper_selection(repo: Path) -> tuple[Path, str]:
 
 def _shared_output_assess(root: Path, revision: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Authenticate and run the selected helper in an isolated interpreter."""
-    program = r'''import hashlib, importlib, json, os, pathlib, subprocess, sys
+    program = r'''import hashlib, importlib, importlib.abc, importlib.machinery, json, os, pathlib, stat, subprocess, sys
 root = pathlib.Path(sys.argv[1]).resolve(strict=True)
 revision = sys.argv[2]
-sys.path.insert(0, str(root / "src"))
-module = importlib.import_module("repository_intelligence.output_cleanup")
-loaded = []
-for name, item in sorted(tuple(sys.modules.items())):
-    if not name.startswith("repository_intelligence") or not getattr(item, "__file__", None):
-        continue
-    path = pathlib.Path(item.__file__).resolve(strict=True)
-    if not path.is_relative_to(root / "src"):
+
+def git(*args):
+    environment = os.environ.copy()
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+                "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"):
+        environment.pop(key, None)
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    result = subprocess.run(["git", "--no-replace-objects", "-C", str(root), *args],
+                            capture_output=True, timeout=30, env=environment)
+    if result.returncode:
+        raise SystemExit("OUTPUT_SHARED_HELPER_SOURCE_MISMATCH")
+    return result.stdout
+
+if git("rev-parse", "--verify", "HEAD").decode().strip() != revision:
+    raise SystemExit("OUTPUT_SHARED_HELPER_SOURCE_MISMATCH")
+if git("status", "--porcelain=v1", "-uall"):
+    raise SystemExit("OUTPUT_SHARED_HELPER_SOURCE_MISMATCH")
+
+package = "repository_intelligence"
+selected = {
+    "repository_intelligence": ("src/repository_intelligence/__init__.py", True),
+    "repository_intelligence.output_cleanup": ("src/repository_intelligence/output_cleanup.py", False),
+    "repository_intelligence.worker_execution": ("src/repository_intelligence/worker_execution.py", False),
+    "repository_intelligence.adapter_conformance": ("src/repository_intelligence/adapter_conformance.py", False),
+    "repository_intelligence.adoption": ("src/repository_intelligence/adoption.py", False),
+}
+max_file_bytes = 8000000
+max_total_bytes = 32000000
+total_bytes = 0
+authenticated = {}
+
+def file_bytes(path, expected_size, name):
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        descriptor = os.open(str(path), flags)
+    except OSError:
         raise SystemExit("OUTPUT_SHARED_IMPORT_PATH_MISMATCH:" + name)
-    relative = path.relative_to(root).as_posix()
-    committed = subprocess.check_output(["git", "--no-replace-objects", "-C", str(root), "show", revision + ":" + relative])
-    raw = path.read_bytes()
-    if raw != committed:
-        raise SystemExit("OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:" + name)
-    loaded.append({"module": name, "path": str(path), "sha256": hashlib.sha256(raw).hexdigest()})
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_size != expected_size:
+            raise SystemExit("OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:" + name)
+        chunks = []
+        count = 0
+        while count <= expected_size:
+            chunk = os.read(descriptor, min(65536, expected_size + 1 - count))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            count += len(chunk)
+        after = os.fstat(descriptor)
+        current = path.stat(follow_symlinks=False)
+        def signature(item):
+            return (item.st_dev, item.st_ino, item.st_mode, item.st_size,
+                    item.st_mtime_ns, item.st_ctime_ns)
+        if (count != expected_size or signature(before) != signature(after)
+                or signature(after) != signature(current)):
+            raise SystemExit("OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:" + name)
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+for name, (relative, is_package) in selected.items():
+    path = root / relative
+    try:
+        resolved = path.resolve(strict=True)
+        if resolved != path or not resolved.is_relative_to(root / "src"):
+            raise SystemExit("OUTPUT_SHARED_IMPORT_PATH_MISMATCH:" + name)
+        size = int(git("cat-file", "-s", revision + ":" + relative).decode().strip())
+        if size > max_file_bytes or total_bytes + size > max_total_bytes:
+            raise SystemExit("OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:" + name)
+        committed = git("show", revision + ":" + relative)
+        if len(committed) != size:
+            raise SystemExit("OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:" + name)
+        raw = file_bytes(path, size, name)
+        if raw != committed:
+            raise SystemExit("OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:" + name)
+        code = compile(raw, str(path), "exec", dont_inherit=True)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise SystemExit("OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:" + name) from error
+    total_bytes += size
+    authenticated[name] = {"path": str(path), "raw": raw, "code": code,
+                           "is_package": is_package}
+
+class SelectedSourceLoader(importlib.abc.Loader):
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        name = module.__spec__.name
+        source = authenticated.get(name)
+        if source is None:
+            raise ImportError("OUTPUT_SHARED_IMPORT_SET_INVALID:" + name)
+        exec(source["code"], module.__dict__)
+
+loader = SelectedSourceLoader()
+
+class SelectedSourceFinder(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname != package and not fullname.startswith(package + "."):
+            return None
+        source = authenticated.get(fullname)
+        if source is None:
+            raise ImportError("OUTPUT_SHARED_IMPORT_SET_INVALID:" + fullname)
+        spec = importlib.machinery.ModuleSpec(
+            fullname, loader, origin=source["path"], is_package=source["is_package"])
+        spec.has_location = True
+        if source["is_package"]:
+            spec.submodule_search_locations = [str(pathlib.Path(source["path"]).parent)]
+        return spec
+
+if any(name == package or name.startswith(package + ".") for name in sys.modules):
+    raise SystemExit("OUTPUT_SHARED_IMPORT_SET_INVALID:preloaded-module")
+sys.meta_path.insert(0, SelectedSourceFinder())
+module = importlib.import_module(package + ".output_cleanup")
+loaded = []
+loaded_names = {name for name in sys.modules if name == package or name.startswith(package + ".")}
+if loaded_names != set(authenticated):
+    raise SystemExit("OUTPUT_SHARED_IMPORT_SET_INVALID:transitive-modules")
+for name in sorted(authenticated):
+    item = sys.modules[name]
+    source = authenticated[name]
+    if (getattr(item, "__file__", None) != source["path"]
+            or getattr(getattr(item, "__spec__", None), "origin", None) != source["path"]
+            or getattr(item, "__loader__", None) is not loader):
+        raise SystemExit("OUTPUT_SHARED_IMPORT_PATH_MISMATCH:" + name)
+    loaded.append({"module": name, "path": source["path"],
+                   "sha256": hashlib.sha256(source["raw"]).hexdigest()})
 request = json.load(sys.stdin)
 operation = request.get("operation", "assess")
 if operation not in {"authenticate", "assess", "dispose"}:

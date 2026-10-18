@@ -746,6 +746,196 @@ def _verify_gh420_a11_selected_helper_bytes_refuse_before_departed_owner_recover
             "current_reference_absent": True, "selected_tree_unchanged": True}
 
 
+def _verify_gh420_a13_selected_import_fault(
+    tmp_path: Path, *, selected_root: Path, revision: str, fault: str, execute: bool,
+) -> dict:
+    assert fault in {"hidden-module", "hidden-package-init"}
+    helper_root = tmp_path / "pinned-synthetic-helper"
+    subprocess.run(["git", "clone", "--no-hardlinks", str(selected_root), str(helper_root)],
+                   capture_output=True, text=True, check=True, timeout=60)
+    assert git(helper_root, "rev-parse", "HEAD") == revision
+    relative = ("src/repository_intelligence/output_cleanup.py" if fault == "hidden-module"
+                else "src/repository_intelligence/__init__.py")
+    module_name = ("repository_intelligence.output_cleanup" if fault == "hidden-module"
+                   else "repository_intelligence")
+    module_path = helper_root / relative
+    sentinel = tmp_path / "selected-code-executed-sentinel"
+    injection = (
+        "\nfrom pathlib import Path as _gh420_a13_Path\n"
+        f"_gh420_a13_Path({str(sentinel)!r}).write_text('executed', encoding='utf-8')\n"
+    ).encode("utf-8")
+    original_source = module_path.read_bytes()
+    substituted_source = original_source + injection
+    module_path.write_bytes(substituted_source)
+    subprocess.run(["git", "-C", str(helper_root), "update-index", "--skip-worktree", relative],
+                   capture_output=True, text=True, check=True)
+    assert git(helper_root, "rev-parse", "HEAD") == revision
+    assert git(helper_root, "status", "--porcelain=v1", "-uall") == ""
+    selected_tree = git(helper_root, "write-tree")
+
+    map_repository = tmp_path / "selected-map-repository"
+    init_repo(map_repository)
+    (map_repository / "docs").mkdir()
+    (map_repository / "docs/local_project_map.md").write_text(
+        "### Optional task-output cleanup helper\n"
+        f"Optional task-output cleanup helper revision: `{revision}`\n"
+        f"The source is authenticated RI checkout `{helper_root}`.\n",
+        encoding="utf-8",
+    )
+    consumer_root = tmp_path / "consumer-fixture"
+    consumer_root.mkdir()
+    case = terminal_authored_fixture(consumer_root, attempt=f"GH-420-a13-{fault}-{execute}")
+    state_path = controller.state_path(case["state_dir"], 420)
+    owner_before = case["owner"].read_bytes()
+    state_before = state_path.read_bytes()
+    receipt_rows = lifecycle._json(case["owner"])["owned_outputs"]
+    snapshots = {
+        Path(receipt["path"]): (
+            lifecycle._node(Path(receipt["path"]).lstat()),
+            lifecycle._walk_native_tree(Path(receipt["path"]),
+                                        Path(receipt["path"]).stat().st_dev)[1],
+        )
+        for receipt in receipt_rows
+    }
+    current_reference = case["durable"] / "current-reference.json"
+    assert not current_reference.exists()
+    original_entries = {str(path): entries for path, (_, entries) in snapshots.items()}
+    args = ["--repo-root", str(map_repository), "--state-dir", str(case["state_dir"]),
+            "output-closeout", "420", "--execution-record", str(case["owner"]),
+            "--durable-evidence", str(case["durable"]), "--shared-helper"]
+    if execute:
+        args.extend(["--execute", "--human-owner-authorized"])
+    result = task_cli(*args)
+    assert result.returncode == 1, result.stdout + result.stderr
+    refusal = json.loads(result.stdout)["error"]
+    assert refusal.startswith("OUTPUT_SHARED_HELPER_REFUSED:"), refusal
+    assert f"OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:{module_name}" in refusal, refusal
+    sentinel_created = sentinel.exists()
+    assert case["owner"].read_bytes() == owner_before
+    assert state_path.read_bytes() == state_before
+    assert not current_reference.exists()
+    assert module_path.read_bytes() == substituted_source
+    assert git(helper_root, "write-tree") == selected_tree
+    assert git(helper_root, "rev-parse", "HEAD") == revision
+    assert git(helper_root, "status", "--porcelain=v1", "-uall") == ""
+    for path, (node, entries) in snapshots.items():
+        assert path.is_dir() and lifecycle._node(path.lstat()) == node
+        assert lifecycle._walk_native_tree(path, path.stat().st_dev)[1] == entries
+    return {"fault": fault, "execution": "authorized" if execute else "dry-run",
+            "module": module_name, "refusal": refusal, "sentinel_created": sentinel_created,
+            "owner_unchanged": True, "controller_unchanged": True,
+            "receipt_nodes_unchanged": True,
+            "receipt_content_unchanged": True,
+            "receipt_count": len(receipt_rows),
+            "receipt_entry_count": sum(len(entries) for entries in original_entries.values()),
+            "current_reference_absent": True, "selected_tree_unchanged": True}
+
+
+def _verify_gh420_a13_cached_bytecode_is_not_executed(
+    tmp_path: Path, *, selected_root: Path, revision: str,
+) -> dict:
+    import importlib.util
+    import marshal
+    import struct
+
+    helper_root = tmp_path / "pinned-bytecode-helper"
+    subprocess.run(["git", "clone", "--no-hardlinks", str(selected_root), str(helper_root)],
+                   capture_output=True, text=True, check=True, timeout=60)
+    assert git(helper_root, "rev-parse", "HEAD") == revision
+    relative = "src/repository_intelligence/output_cleanup.py"
+    module_path = helper_root / relative
+    pinned_source = module_path.read_bytes()
+    source_stat = module_path.stat()
+    sentinel = tmp_path / "cached-bytecode-executed-sentinel"
+    malicious_code = compile(
+        "from pathlib import Path as _gh420_a13_Path\n"
+        f"_gh420_a13_Path({str(sentinel)!r}).write_text('executed', encoding='utf-8')\n",
+        str(module_path), "exec",
+    )
+    timestamp_header = (
+        importlib.util.MAGIC_NUMBER + struct.pack("<I", 0)
+        + struct.pack("<II", int(source_stat.st_mtime), len(pinned_source))
+    )
+    bytecode_path = Path(importlib.util.cache_from_source(str(module_path)))
+    bytecode_path.parent.mkdir(parents=True, exist_ok=True)
+    bytecode_path.write_bytes(timestamp_header + marshal.dumps(malicious_code))
+    os.utime(module_path, ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
+    ignored = subprocess.run(["git", "-C", str(helper_root), "check-ignore", "-q",
+                              str(bytecode_path.relative_to(helper_root))], check=False)
+    if ignored.returncode:
+        exclude = helper_root / ".git/info/exclude"
+        with exclude.open("a", encoding="utf-8") as stream:
+            stream.write("/" + bytecode_path.relative_to(helper_root).as_posix() + "\n")
+    assert module_path.read_bytes() == pinned_source
+    assert git(helper_root, "status", "--porcelain=v1", "-uall") == ""
+
+    control = subprocess.run(
+        [sys.executable, "-I", "-c",
+         "import sys; sys.path.insert(0, sys.argv[1]); "
+         "import repository_intelligence.output_cleanup", str(helper_root / "src")],
+        cwd=helper_root, env={"PATH": os.environ.get("PATH", ""), "HOME": str(Path.home()),
+                              "PYTHONDONTWRITEBYTECODE": "1", "LANG": "C.UTF-8"},
+        capture_output=True, text=True, check=False,
+    )
+    assert control.returncode == 0, control.stdout + control.stderr
+    assert sentinel.is_file(), "the timestamp-valid adversarial bytecode did not execute in the control"
+    sentinel.unlink()
+
+    map_repository = tmp_path / "selected-map-repository"
+    init_repo(map_repository)
+    (map_repository / "docs").mkdir()
+    (map_repository / "docs/local_project_map.md").write_text(
+        "### Optional task-output cleanup helper\n"
+        f"Optional task-output cleanup helper revision: `{revision}`\n"
+        f"The source is authenticated RI checkout `{helper_root}`.\n",
+        encoding="utf-8",
+    )
+    consumer_root = tmp_path / "consumer-fixture"
+    consumer_root.mkdir()
+    case = terminal_authored_fixture(consumer_root, attempt="GH-420-a13-cached-bytecode")
+    owner_before = case["owner"].read_bytes()
+    state_path = controller.state_path(case["state_dir"], 420)
+    state_before = state_path.read_bytes()
+    command = task_cli(
+        "--repo-root", str(map_repository), "--state-dir", str(case["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(case["owner"]),
+        "--durable-evidence", str(case["durable"]), "--shared-helper",
+    )
+    sentinel_created = sentinel.exists()
+    if command.returncode == 0:
+        report = json.loads(command.stdout)
+        item = next(row for row in report["items"] if row.get("path") == str(case["output"]))
+        assert report["mode"] == "shared-helper"
+        assessment_status = item["shared_helper_assessment"]["status"]
+        assert assessment_status in {"eligible", "retained"}, item
+        module_rows = {row["module"]: row for row in item["shared_helper_modules"]}
+        output_module = module_rows["repository_intelligence.output_cleanup"]
+        assert output_module == {
+            "module": "repository_intelligence.output_cleanup",
+            "path": str(module_path),
+            "sha256": hashlib.sha256(pinned_source).hexdigest(),
+        }
+    else:
+        report = {"error": command.stdout.strip(), "stderr": command.stderr.strip()}
+        assessment_status = None
+    owner_unchanged = case["owner"].read_bytes() == owner_before
+    controller_unchanged = state_path.read_bytes() == state_before
+    current_reference_absent = not (case["durable"] / "current-reference.json").exists()
+    assert owner_unchanged and controller_unchanged and current_reference_absent
+    return {"status": "PASS" if (command.returncode == 0 and not sentinel_created
+                                    and owner_unchanged and controller_unchanged
+                                    and current_reference_absent) else "FAIL",
+            "control_import_returncode": control.returncode,
+            "control_sentinel_observed": True, "cache_path": str(bytecode_path),
+            "source_matches_pinned_checkout": module_path.read_bytes() == pinned_source,
+            "cli_returncode": command.returncode, "assessment_status": assessment_status,
+            "cli_report": report,
+            "sentinel_created_by_cli": sentinel_created,
+            "owner_unchanged": owner_unchanged,
+            "controller_unchanged": controller_unchanged,
+            "current_reference_absent": current_reference_absent}
+
+
 def test_gh420_o5_public_authored_attempt_and_bundle_repeat_is_receipt_scoped(tmp_path: Path):
     case = authored_runner_fixture(tmp_path, attempt="GH-420-o5-authored-repeat", steps=[
         {"id": "authored-success", "argv": [sys.executable, "-c", "print('authored result')"],
@@ -1101,6 +1291,23 @@ def selected_ri949_conformance(tmp_path: Path) -> dict:
                 early_root, fault=fault,
             )
         )
+    a13_import_fault_results = []
+    for fault in ("hidden-module", "hidden-package-init"):
+        for execute in (False, True):
+            a13_root = tmp_path / f"a13-helper-{fault}-execute-{execute}"
+            a13_root.mkdir()
+            result = _verify_gh420_a13_selected_import_fault(
+                a13_root, selected_root=helper_root, revision=revision,
+                fault=fault, execute=execute,
+            )
+            assert not result["sentinel_created"], result
+            a13_import_fault_results.append(result)
+    a13_bytecode_root = tmp_path / "a13-cached-bytecode"
+    a13_bytecode_root.mkdir()
+    a13_bytecode_result = _verify_gh420_a13_cached_bytecode_is_not_executed(
+        a13_bytecode_root, selected_root=helper_root, revision=revision,
+    )
+    assert a13_bytecode_result["status"] == "PASS", a13_bytecode_result
     return {"status": "PASS", "source_root": str(helper_root), "source_revision": revision,
             "consumer_receipt": receipt, "assessment": shared_item["shared_helper_assessment"],
             "consumer_mode": consumer_report["mode"], "selected_mode": shared_report["mode"],
@@ -1119,6 +1326,8 @@ def selected_ri949_conformance(tmp_path: Path) -> dict:
                 json.loads(substituted_result.stdout)["error"],
             "a11_mixed_sibling_reference": mixed_reference,
             "a11_early_helper_authentication": early_auth_results,
+            "a13_pre_execution_authentication": a13_import_fault_results,
+            "a13_cached_bytecode_control": a13_bytecode_result,
             "owner_exit": owner_record["owner_exit"], "linked_tree_refused": linked_item["status"]}
 
 
