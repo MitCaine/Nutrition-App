@@ -6203,10 +6203,10 @@ for name, item in sorted(tuple(sys.modules.items())):
     loaded.append({"module": name, "path": str(path), "sha256": hashlib.sha256(raw).hexdigest()})
 request = json.load(sys.stdin)
 operation = request.get("operation", "assess")
-if operation not in {"assess", "dispose"}:
+if operation not in {"authenticate", "assess", "dispose"}:
     raise SystemExit("OUTPUT_SHARED_OPERATION_INVALID")
 results = []
-for item in request["items"]:
+for item in request.get("items", []):
     if operation == "assess":
         result = module.assess_output(item["receipt"], item["observation"],
                                       protected=item["protected"], retained=item["retained"])
@@ -6246,6 +6246,17 @@ print(json.dumps({"source_revision": revision, "source_root": str(root),
     if result.get("source_revision") != revision or result.get("source_root") != str(root):
         raise TaskControllerError("OUTPUT_SHARED_HELPER_RESULT_BINDING_MISMATCH")
     return result
+
+
+def _shared_output_authenticate(root: Path, revision: str) -> list[dict[str, str]]:
+    """Authenticate selected helper imports without assessing or mutating outputs."""
+    result = _shared_output_assess(
+        root, revision, {"operation": "authenticate", "items": []},
+    )
+    modules = result.get("modules")
+    if not isinstance(modules, list) or not modules:
+        raise TaskControllerError("OUTPUT_SHARED_HELPER_IMPORT_SET_INVALID")
+    return modules
 
 
 def _output_paths_overlap(first: Path, second: Path) -> bool:
@@ -7078,29 +7089,51 @@ def _output_closeout_disposition(
                if state.get(name) is not None]
     if not records or any(not isinstance(item, dict) for item in records):
         raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_EXECUTION_UNKNOWN")
+    reviewer_statuses: list[str | None] = []
     for current in records:
         phase = current.get("phase")
+        reviewer = current.get("reviewer_status")
+        nested_reviewer = (current.get("reviewer", {}).get("status")
+                           if isinstance(current.get("reviewer"), dict) else None)
+        if (isinstance(reviewer, str) and isinstance(nested_reviewer, str)
+                and reviewer.casefold() != nested_reviewer.casefold()):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_EXECUTION_AMBIGUOUS")
+        if reviewer is None:
+            reviewer = nested_reviewer
+        normalized_reviewer = reviewer.casefold() if isinstance(reviewer, str) else None
+        reviewer_statuses.append(normalized_reviewer)
         if (current.get("paused") is True or current.get("owner_pause") is True
-                or phase in {"STOP_REPLAN", "CANCELLED", "PAUSED", "PENDING", "RUNNING", "IN_PROGRESS", "ACTIVE"}):
+                or phase in {"STOP_REPLAN", "CANCELLED", "PAUSED", "PENDING", "RUNNING", "IN_PROGRESS", "ACTIVE"}
+                or current.get("installed_checks_due") is True):
             raise TaskControllerError("OUTPUT_CLOSEOUT_EXECUTION_ACTIVE_OR_PAUSED")
+        if normalized_reviewer == "active":
+            raise TaskControllerError("OUTPUT_CLOSEOUT_REVIEWER_DISPOSITION_UNKNOWN")
     attempts = {item.get("attempt") for item in records}
     if len(attempts) != 1:
         raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_EXECUTION_AMBIGUOUS")
+    if len(records) > 1:
+        summary_facts = [
+            (
+                item.get("phase"), item.get("paused"), item.get("owner_pause"),
+                item.get("installed_checks_due"), reviewer_statuses[index],
+            )
+            for index, item in enumerate(records)
+        ]
+        if any(facts != summary_facts[0] for facts in summary_facts[1:]):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_EXECUTION_AMBIGUOUS")
     candidate = _output_terminal_candidate(
         record, request, current_reference=_output_current_reference(state),
     )
     if not isinstance(candidate, str) or not re.fullmatch(r"[0-9a-f]{40}", candidate):
         raise TaskControllerError("OUTPUT_CLOSEOUT_REQUEST_CANDIDATE_INVALID")
     if attempts == {attempt}:
-        current = records[0]
-        if (record.get("status") not in {"complete", "failed"} or state.get("phase") != "INTEGRATED"
-                or current.get("phase") != "VERIFIED_TERMINAL_CLOSEOUT_COMPLETE"
-                or current.get("installed_checks_due") is not False):
+        if (record.get("status") not in {"complete", "failed"}
+                or state.get("phase") != "INTEGRATED"
+                or any(current.get("phase") != "VERIFIED_TERMINAL_CLOSEOUT_COMPLETE"
+                       or current.get("installed_checks_due") is not False
+                       for current in records)):
             raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_ATTEMPT_NOT_VERIFIED_TERMINAL")
-        reviewer = current.get("reviewer_status")
-        if reviewer is None and isinstance(current.get("reviewer"), dict):
-            reviewer = current["reviewer"].get("status")
-        if not isinstance(reviewer, str) or reviewer.casefold() not in {"consumed", "pass consumed"}:
+        if any(status not in {"consumed", "pass consumed"} for status in reviewer_statuses):
             raise TaskControllerError("OUTPUT_CLOSEOUT_REVIEWER_DISPOSITION_UNKNOWN")
         integration = state.get("integration")
         qualification = state.get("qualification")
@@ -7116,8 +7149,9 @@ def _output_closeout_disposition(
                 or not isinstance(review, dict) or review.get("decision") != "approved"
                 or review.get("candidate_sha") != candidate):
             raise TaskControllerError("OUTPUT_CLOSEOUT_CONTROLLER_OBLIGATIONS_INCOMPLETE")
-        installed = current.get("installed_checks_evidence")
-        if not isinstance(installed, dict) or installed.get("candidate_sha") != candidate:
+        if any(not isinstance(current.get("installed_checks_evidence"), dict)
+               or current["installed_checks_evidence"].get("candidate_sha") != candidate
+               for current in records):
             raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_MISSING")
         output_cleanup.checkpoint_evidence_bindings(state)
         return "completed"
@@ -7156,6 +7190,43 @@ def _output_closeout_disposition(
     return "superseded_terminal"
 
 
+def _output_closeout_reference_items(
+    owner_record: Path, record: dict[str, Any], receipts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Select receipt trees that contain proof consumed after an output moves."""
+    required_paths = {Path(os.path.abspath(owner_record))}
+    attempt_directory = record.get("attempt_directory")
+    if isinstance(attempt_directory, str) and Path(attempt_directory).is_absolute():
+        required_paths.add(Path(os.path.abspath(attempt_directory)))
+
+    terminal = record.get("terminal_result")
+    if isinstance(terminal, dict) and isinstance(terminal.get("path"), str):
+        terminal_path = Path(terminal["path"])
+        if terminal_path.is_absolute():
+            required_paths.add(Path(os.path.abspath(terminal_path)))
+            try:
+                result = output_cleanup._json(terminal_path)
+            except (OSError, ValueError, output_cleanup.OutputError) as error:
+                raise output_cleanup.OutputError("OWNER_TERMINAL_RESULT_UNREADABLE") from error
+            capture = result.get("candidate_capture") if isinstance(result, dict) else None
+            if isinstance(capture, dict) and isinstance(capture.get("path"), str):
+                capture_path = Path(capture["path"])
+                if capture_path.is_absolute():
+                    required_paths.add(Path(os.path.abspath(capture_path)))
+
+    selected: list[dict[str, Any]] = []
+    for receipt in receipts:
+        if not isinstance(receipt, dict) or not isinstance(receipt.get("path"), str):
+            continue
+        root = Path(os.path.abspath(receipt["path"]))
+        if any(path == root or path.is_relative_to(root) for path in required_paths):
+            selected.append({
+                "receipt": receipt,
+                "kind": "worktree" if "git_worktree" in receipt else "plain",
+            })
+    return selected
+
+
 def command_output_closeout(args: argparse.Namespace) -> int:
     if args.execute and not args.human_owner_authorized:
         raise TaskControllerError("OUTPUT_CLOSEOUT_AUTHORIZATION_REQUIRED")
@@ -7177,6 +7248,7 @@ def command_output_closeout(args: argparse.Namespace) -> int:
     helper_source = helper_revision = None
     if args.shared_helper:
         helper_source, helper_revision = _output_helper_selection(repo_root)
+        _shared_output_authenticate(helper_source, helper_revision)
     try:
         if args.execute:
             state, reference = _output_closeout_preflight_and_reconcile_departed_owner(
@@ -7273,9 +7345,9 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                                                                current_request, None)):
                     raise output_cleanup.OutputError("OWNER_TERMINAL_RESULT_UNVERIFIED")
                 bindings = output_cleanup.checkpoint_evidence_bindings(current_state)
-                output_items = [{"receipt": row,
-                                 "kind": "worktree" if "git_worktree" in row else "plain"}
-                                for row in receipts]
+                output_items = _output_closeout_reference_items(
+                    record_path, current_execution, receipts,
+                )
                 reference = output_cleanup.create_current_reference(
                     record_path, output_items, bindings, durable,
                 )
@@ -7619,8 +7691,9 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                     current_reference = _output_current_reference(current_state)
                     if current_reference is None:
                         bindings = output_cleanup.checkpoint_evidence_bindings(current_state)
-                        output_items = [{"receipt": row, "kind": "worktree" if "git_worktree" in row else "plain"}
-                                        for row in receipts]
+                        output_items = _output_closeout_reference_items(
+                            record_path, execution, receipts,
+                        )
                         current_reference = output_cleanup.create_current_reference(
                             record_path, output_items, bindings, durable,
                         )

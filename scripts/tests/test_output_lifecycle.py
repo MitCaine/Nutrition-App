@@ -563,6 +563,161 @@ def test_gh420_a7_refuses_before_departed_owner_reconciliation(tmp_path: Path, f
     assert not (state_fixture["durable"] / "current-reference.json").exists()
 
 
+@pytest.mark.parametrize("summary_name", ["execution", "execution_checkpoint"])
+@pytest.mark.parametrize("defect", ["pending-installed", "active-reviewer", "missing-completion"])
+def test_gh420_a11_dual_summary_defect_refuses_before_owner_reconciliation(
+    tmp_path: Path, summary_name: str, defect: str,
+):
+    attempt = f"GH-420-a11-{summary_name}-{defect}"
+    fixture = interrupted_authored_runner_before_reconciliation(tmp_path, attempt=attempt)
+    controller_root = tmp_path / "controller"
+    controller_root.mkdir()
+    state_fixture = integrated_controller_fixture(
+        controller_root, attempt=attempt, candidate=fixture["candidate"],
+    )
+    state_path = controller.state_path(state_fixture["state_dir"], 420)
+    state = controller.load_state(state_fixture["state_dir"], 420)
+    state["execution_checkpoint"] = json.loads(json.dumps(state["execution"]))
+    summary = state[summary_name]
+    if defect == "pending-installed":
+        summary["installed_checks_due"] = True
+    elif defect == "active-reviewer":
+        summary["reviewer_status"] = "active"
+    else:
+        del summary["installed_checks_evidence"]
+    write_json(state_path, state)
+
+    state_before = state_path.read_bytes()
+    owner_before = fixture["owner"].read_bytes()
+    receipts = lifecycle._json(fixture["owner"])["owned_outputs"]
+    snapshots = {
+        Path(receipt["path"]): (
+            lifecycle._node(Path(receipt["path"]).lstat()),
+            lifecycle._walk_native_tree(Path(receipt["path"]), Path(receipt["path"]).stat().st_dev)[1],
+        )
+        for receipt in receipts
+    }
+    result = task_cli(
+        "--repo-root", str(ROOT), "--state-dir", str(state_fixture["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(fixture["owner"]),
+        "--durable-evidence", str(state_fixture["durable"]),
+        "--execute", "--human-owner-authorized",
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    refusal = json.loads(result.stdout)
+    assert refusal["error"] in {
+        "OUTPUT_CLOSEOUT_EXECUTION_ACTIVE_OR_PAUSED",
+        "OUTPUT_CLOSEOUT_REVIEWER_DISPOSITION_UNKNOWN",
+        "OUTPUT_CLOSEOUT_CURRENT_EXECUTION_AMBIGUOUS",
+        "OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_MISSING",
+    }, result.stdout
+    assert state_path.read_bytes() == state_before
+    assert fixture["owner"].read_bytes() == owner_before
+    assert not (state_fixture["durable"] / "current-reference.json").exists()
+    for path, (node, entries) in snapshots.items():
+        assert path.is_dir() and lifecycle._node(path.lstat()) == node
+        assert lifecycle._walk_native_tree(path, path.stat().st_dev)[1] == entries
+
+
+def test_gh420_a11_coherent_dual_summary_allows_departed_owner_recovery(tmp_path: Path):
+    attempt = "GH-420-a11-dual-summary-positive"
+    fixture = interrupted_authored_runner_before_reconciliation(tmp_path, attempt=attempt)
+    controller_root = tmp_path / "controller"
+    controller_root.mkdir()
+    state_fixture = integrated_controller_fixture(
+        controller_root, attempt=attempt, candidate=fixture["candidate"],
+    )
+    state = controller.load_state(state_fixture["state_dir"], 420)
+    state["execution_checkpoint"] = json.loads(json.dumps(state["execution"]))
+    write_json(controller.state_path(state_fixture["state_dir"], 420), state)
+    result = task_cli(
+        "--repo-root", str(ROOT), "--state-dir", str(state_fixture["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(fixture["owner"]),
+        "--durable-evidence", str(state_fixture["durable"]),
+        "--execute", "--human-owner-authorized",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    item = next(row for row in report["items"] if row.get("path") == str(fixture["output"]))
+    assert item["status"] == "quarantined"
+    assert not fixture["output"].exists()
+
+
+def _verify_gh420_a11_selected_helper_bytes_refuse_before_departed_owner_recovery(
+    tmp_path: Path, fault: str,
+):
+    selected_root, revision = controller._output_helper_selection(ROOT)
+    synthetic_helper = tmp_path / "pinned-ri949"
+    subprocess.run(
+        ["git", "clone", "--no-hardlinks", str(selected_root), str(synthetic_helper)],
+        capture_output=True, text=True, check=True, timeout=60,
+    )
+    relative = "src/repository_intelligence/output_cleanup.py"
+    module_path = synthetic_helper / relative
+    if fault == "hidden-substitution":
+        module_path.write_bytes(module_path.read_bytes() + b"\n# hidden A11 substitution\n")
+    else:
+        module_path.unlink()
+    subprocess.run(
+        ["git", "-C", str(synthetic_helper), "update-index", "--skip-worktree", relative],
+        capture_output=True, text=True, check=True,
+    )
+    assert git(synthetic_helper, "rev-parse", "HEAD") == revision
+    assert not git(synthetic_helper, "status", "--porcelain=v1", "-uall")
+    index_tree_before = git(synthetic_helper, "write-tree")
+
+    map_repository = tmp_path / "selected-map-repository"
+    init_repo(map_repository)
+    (map_repository / "docs").mkdir()
+    (map_repository / "docs/local_project_map.md").write_text(
+        "### Optional task-output cleanup helper\n"
+        f"Optional task-output cleanup helper revision: `{revision}`\n"
+        f"The source is authenticated RI checkout `{synthetic_helper}`.\n",
+        encoding="utf-8",
+    )
+    attempt = f"GH-420-a11-helper-{fault}"
+    fixture = interrupted_authored_runner_before_reconciliation(tmp_path, attempt=attempt)
+    controller_root = tmp_path / "controller"
+    controller_root.mkdir()
+    state_fixture = integrated_controller_fixture(
+        controller_root, attempt=attempt, candidate=fixture["candidate"],
+    )
+    state_path = controller.state_path(state_fixture["state_dir"], 420)
+    owner_before = fixture["owner"].read_bytes()
+    state_before = state_path.read_bytes()
+    receipts = lifecycle._json(fixture["owner"])["owned_outputs"]
+    snapshots = {
+        Path(receipt["path"]): (
+            lifecycle._node(Path(receipt["path"]).lstat()),
+            lifecycle._walk_native_tree(Path(receipt["path"]), Path(receipt["path"]).stat().st_dev)[1],
+        )
+        for receipt in receipts
+    }
+    result = task_cli(
+        "--repo-root", str(map_repository), "--state-dir", str(state_fixture["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(fixture["owner"]),
+        "--durable-evidence", str(state_fixture["durable"]), "--shared-helper",
+        "--execute", "--human-owner-authorized",
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    refusal = json.loads(result.stdout)
+    assert refusal["error"].startswith("OUTPUT_SHARED_HELPER_REFUSED:"), result.stdout
+    if fault == "hidden-substitution":
+        assert "OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:repository_intelligence.output_cleanup" in refusal["error"]
+    assert fixture["owner"].read_bytes() == owner_before
+    assert state_path.read_bytes() == state_before
+    assert not (state_fixture["durable"] / "current-reference.json").exists()
+    assert git(synthetic_helper, "write-tree") == index_tree_before
+    assert git(synthetic_helper, "rev-parse", "HEAD") == revision
+    assert not git(synthetic_helper, "status", "--porcelain=v1", "-uall")
+    for path, (node, entries) in snapshots.items():
+        assert path.is_dir() and lifecycle._node(path.lstat()) == node
+        assert lifecycle._walk_native_tree(path, path.stat().st_dev)[1] == entries
+    return {"fault": fault, "refusal": refusal["error"], "owner_unchanged": True,
+            "controller_unchanged": True, "receipt_nodes_unchanged": True,
+            "current_reference_absent": True, "selected_tree_unchanged": True}
+
+
 def test_gh420_o5_public_authored_attempt_and_bundle_repeat_is_receipt_scoped(tmp_path: Path):
     case = authored_runner_fixture(tmp_path, attempt="GH-420-o5-authored-repeat", steps=[
         {"id": "authored-success", "argv": [sys.executable, "-c", "print('authored result')"],
@@ -904,6 +1059,20 @@ def selected_ri949_conformance(tmp_path: Path) -> dict:
     assert linked_item["shared_helper_assessment"]["status"] == "retained"
     assert linked_output.is_dir() and (linked_output / "outside-link").is_symlink()
     assert outside.read_bytes() == b"selected helper must not follow links\n"
+    mixed_root = tmp_path / "a11-mixed-reference"
+    mixed_root.mkdir()
+    mixed_reference = _verify_gh420_a11_reference_closure_is_per_item_and_recovers(
+        mixed_root, mode="shared-helper", sibling_fault="special-substitute",
+    )
+    early_auth_results = []
+    for fault in ("hidden-substitution", "hidden-missing-module"):
+        early_root = tmp_path / ("a11-early-helper-" + fault)
+        early_root.mkdir()
+        early_auth_results.append(
+            _verify_gh420_a11_selected_helper_bytes_refuse_before_departed_owner_recovery(
+                early_root, fault=fault,
+            )
+        )
     return {"status": "PASS", "source_root": str(helper_root), "source_revision": revision,
             "consumer_receipt": receipt, "assessment": shared_item["shared_helper_assessment"],
             "consumer_mode": consumer_report["mode"], "selected_mode": shared_report["mode"],
@@ -920,6 +1089,8 @@ def selected_ri949_conformance(tmp_path: Path) -> dict:
             },
             "selected_source_substitution_refused":
                 json.loads(substituted_result.stdout)["error"],
+            "a11_mixed_sibling_reference": mixed_reference,
+            "a11_early_helper_authentication": early_auth_results,
             "owner_exit": owner_record["owner_exit"], "linked_tree_refused": linked_item["status"]}
 
 
@@ -1969,6 +2140,125 @@ def test_gh420_o4_public_authored_failure_closure_and_current_references(tmp_pat
     assert lifecycle.file_binding(Path(recovery["path"]))["sha256"] == controller_state["bindings"]["source-recovery"]["sha256"]
     assert controller_state["bindings"]["source-recovery"]["path"] != recovery["path"]
     assert lifecycle.checkpoint_evidence_bindings(state_after)
+
+
+def _verify_gh420_a11_reference_closure_is_per_item_and_recovers(
+    tmp_path: Path, mode: str, sibling_fault: str,
+):
+    attempt = f"GH-420-a11-reference-{mode}-{sibling_fault}"
+    case = terminal_authored_fixture(tmp_path, attempt=attempt)
+    original_output = case["output"]
+    original_cache = case["cache"]
+    owner = lifecycle._json(case["owner"])
+    output_receipt = next(row for row in owner["owned_outputs"]
+                          if row["path"] == str(original_output))
+    cache_receipt = next(row for row in owner["owned_outputs"]
+                         if row["path"] == str(original_cache))
+    raw_stdout_hash = sha(original_output / "failure.stdout.log")
+    original_cache_node = lifecycle._node(original_cache.lstat())
+    cache_bytes = {path.relative_to(original_cache).as_posix(): sha(path)
+                   for path in original_cache.rglob("*") if path.is_file()}
+    old_bundle = tmp_path / "preserved-original-cache-bundle"
+    if sibling_fault != "protected-intact":
+        original_cache.rename(old_bundle)
+        original_cache.mkdir()
+        if sibling_fault == "unreadable-substitute":
+            unreadable = original_cache / "unknown-unreadable.bin"
+            unreadable.write_bytes(b"substituted unreadable sibling\n")
+            unreadable.chmod(0)
+        else:
+            os.mkfifo(original_cache / "unknown-special-sibling")
+
+    injection = tmp_path / "python-injection"
+    injection.mkdir()
+    (injection / "sitecustomize.py").write_text(
+        "import os\n"
+        "from lib import task_output_cleanup as cleanup\n"
+        "_execute = cleanup.execute_native_quarantine\n"
+        "def _interrupt_after_move(*args, **kwargs):\n"
+        "    result = _execute(*args, **kwargs)\n"
+        "    if str(kwargs.get('output_path')) == os.environ.get('GH420_A11_INTERRUPT_PATH'):\n"
+        "        raise OSError('injected A11 interruption after move before result persistence')\n"
+        "    return result\n"
+        "cleanup.execute_native_quarantine = _interrupt_after_move\n",
+        encoding="utf-8",
+    )
+    args = (
+        "--repo-root", str(ROOT), "--state-dir", str(case["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(case["owner"]),
+        "--durable-evidence", str(case["durable"]),
+        *(("--shared-helper",) if mode == "shared-helper" else ()),
+        "--execute", "--human-owner-authorized",
+    )
+    interrupted_environment = dict(
+        os.environ,
+        PYTHONPATH=str(injection) + os.pathsep + str(ROOT / "scripts"),
+        GH420_A11_INTERRUPT_PATH=str(original_output),
+        PYTHONDONTWRITEBYTECODE="1",
+        TMPDIR="/private/tmp",
+    )
+    interrupted = task_cli(*args, env=interrupted_environment)
+    assert interrupted.returncode == 1, interrupted.stdout + interrupted.stderr
+    report = json.loads(interrupted.stdout)
+    moved_item = next(row for row in report["items"] if row.get("path") == str(original_output))
+    retained_sibling = next(row for row in report["items"] if row.get("path") == str(original_cache))
+    assert moved_item["status"] == "incomplete", moved_item
+    assert retained_sibling["status"] == "retained", retained_sibling
+    assert not original_output.exists()
+    assert original_cache.is_dir()
+    if sibling_fault == "protected-intact":
+        assert lifecycle._node(original_cache.lstat()) == original_cache_node
+        assert {path.relative_to(original_cache).as_posix(): sha(path)
+                for path in original_cache.rglob("*") if path.is_file()} == cache_bytes
+    else:
+        assert old_bundle.is_dir() and lifecycle._node(old_bundle.lstat()) == original_cache_node
+        assert {path.relative_to(old_bundle).as_posix(): sha(path)
+                for path in old_bundle.rglob("*") if path.is_file()} == cache_bytes
+
+    current_state = controller.load_state(case["state_dir"], 420)
+    reference_binding = current_state["output_closeout"]["current_reference"]
+    reference = lifecycle.read_current_reference(Path(reference_binding["path"]))
+    assert not any(Path(row["original_path"]).is_relative_to(original_cache)
+                   for row in reference["relocations"])
+    assert not any(Path(row["path"]).name == "shared.bin" for row in reference["retained"])
+    operations = current_state["output_closeout"]["operations"]
+    operation = next(row for row in operations if row.get("original") == str(original_output))
+    destination = Path(operation["destination"])
+    assert destination.is_dir()
+    assert sha(destination / "failure.stdout.log") == raw_stdout_hash
+
+    recovered = task_cli(*args)
+    assert recovered.returncode == 1, recovered.stdout + recovered.stderr
+    recovered_report = json.loads(recovered.stdout)
+    recovered_item = next(row for row in recovered_report["items"]
+                          if row.get("owner_node") == output_receipt["node"])
+    recovered_sibling = next(row for row in recovered_report["items"]
+                             if row.get("owner_node") == cache_receipt["node"])
+    assert recovered_item["status"] == "already_quarantined", recovered_item
+    assert recovered_item["newly_removed_bytes"] == 0
+    assert recovered_sibling["status"] == "retained", recovered_sibling
+    repeated = task_cli(*args)
+    assert repeated.returncode == 1, repeated.stdout + repeated.stderr
+    repeated_report = json.loads(repeated.stdout)
+    repeated_item = next(row for row in repeated_report["items"]
+                         if row.get("owner_node") == output_receipt["node"])
+    assert repeated_item["status"] == "already_quarantined"
+    assert repeated_item["newly_removed_bytes"] == 0
+    assert destination.is_dir()
+    return {"mode": mode, "sibling_fault": sibling_fault,
+            "interrupted_move": moved_item["status"],
+            "recovery": recovered_item["status"], "repeat": repeated_item["status"],
+            "mixed_disposition": [recovered_item["status"], recovered_sibling["status"]],
+            "current_reference_excludes_sibling": True}
+
+
+@pytest.mark.parametrize("sibling_fault", ["protected-intact", "unreadable-substitute", "special-substitute"])
+def test_gh420_a11_consumer_reference_closure_is_per_item_and_recovers(
+    tmp_path: Path, sibling_fault: str,
+):
+    _verify_gh420_a11_reference_closure_is_per_item_and_recovers(
+        tmp_path, mode="consumer-only", sibling_fault=sibling_fault,
+    )
 
 
 @pytest.mark.parametrize("missing_member", ["raw-log", "approval-reference", "unreadable-reference"])
