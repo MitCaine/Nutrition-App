@@ -224,9 +224,11 @@ fi
 
 AUTHORED_PREPARED=0
 OUTPUT_OWNER_GUARD_PID=""
+OUTPUT_OWNER_GUARD_READY="$RUN_DIR/output-owner-ready.json"
 
 cleanup() {
     local original_status=$?
+    local owner_guard_pid="$OUTPUT_OWNER_GUARD_PID"
     if [[ $RUN_AUTHORED -eq 1 && $AUTHORED_PREPARED -eq 1 && ! -f "$RUN_DIR/complete.json" ]]; then
         python3 "$AUTHORED_HELPER" incomplete \
             --attempt-dir "$RUN_DIR" \
@@ -237,6 +239,15 @@ cleanup() {
         kill "$OUTPUT_OWNER_GUARD_PID" >/dev/null 2>&1 || true
         wait "$OUTPUT_OWNER_GUARD_PID" >/dev/null 2>&1 || true
         OUTPUT_OWNER_GUARD_PID=""
+        if [[ -f "$OUTPUT_OWNER_GUARD_READY" && -f "$RUN_DIR/attempt-state.json" ]]; then
+            if ! python3 "$OUTPUT_OWNER_HELPER" reconcile-owner-exit \
+                --owner-record "$RUN_DIR/attempt-state.json" \
+                --ready-file "$OUTPUT_OWNER_GUARD_READY" \
+                --holder-pid "$owner_guard_pid" \
+                > "$RUN_DIR/output-owner-reconciliation.json" 2> "$RUN_DIR/output-owner-reconciliation.stderr.log"; then
+                [[ $original_status -ne 0 ]] || original_status=1
+            fi
+        fi
     fi
     if [[ $RUN_AUTHORED -eq 0 ]]; then
         rm -rf "$BUNDLE_STAGE"
@@ -263,6 +274,7 @@ if [[ $RUN_AUTHORED -eq 1 ]]; then
         >> "$RUN_DIR/output-owner.log"
     python3 "$OUTPUT_OWNER_HELPER" owner-hold \
         --owner-record "$RUN_DIR/attempt-state.json" \
+        --ready-file "$OUTPUT_OWNER_GUARD_READY" \
         >> "$RUN_DIR/output-owner.log" 2>&1 &
     OUTPUT_OWNER_GUARD_PID=$!
     owner_lock_ready=0

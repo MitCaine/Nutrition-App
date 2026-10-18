@@ -170,6 +170,64 @@ def capture(request: dict) -> str:
     return candidate
 
 
+def record_capture(request_path: Path, evidence: Path, request: dict, candidate: str) -> dict:
+    """Bind the actual captured candidate without changing the creation receipt."""
+    owner_path = evidence / "workspace-owner.json"
+    owner = output_owner._json(owner_path)
+    request_binding = identity(request_path)
+    attempt = request.get("attempt")
+    assignment = request.get("assignment", attempt)
+    base = request.get("base")
+    root = native._canonical_root(request.get("workspace", ""))
+    protected = native._canonical_root(request.get("protected_repository", ""))
+    require(owner.get("task") == output_owner.task_identifier(assignment)
+            and owner.get("attempt") == attempt, "Capture owner identity changed")
+    receipts = [item for item in owner.get("owned_outputs", [])
+                if isinstance(item, dict) and item.get("path") == str(root)]
+    require(len(receipts) == 1 and receipts[0].get("git_worktree", {}).get("head") == base,
+            "Capture creation provenance is missing or changed")
+    require(receipts[0].get("definition") == {"path": request_binding["path"],
+                                                "sha256": request_binding["sha256"]},
+            "Capture request differs from immutable creation request")
+    head = git(root, "rev-parse", "HEAD")
+    require(candidate == head and native.COMMIT_RE.fullmatch(candidate) is not None,
+            "Captured candidate differs from detached workspace HEAD")
+    parents = git(root, "rev-list", "--parents", "-n", "1", candidate).split()
+    require(len(parents) == 2 and parents[0] == candidate,
+            "Captured candidate must have one authenticated parent")
+    parent = parents[1]
+    changed = sorted(filter(None, git(root, "diff", "--name-only", base, candidate).splitlines()))
+    allowed = request.get("allowed_changes")
+    if candidate == base:
+        require(git(protected, "merge-base", "--is-ancestor", parent, base) == "",
+                "Unchanged candidate is outside the immutable base lineage")
+    else:
+        require(changed and git(protected, "merge-base", "--is-ancestor", base, parent) == "",
+                "Captured candidate parent is outside the immutable base lineage")
+    require(isinstance(allowed, list) and set(changed) <= set(allowed),
+            "Captured candidate exceeds the request's exact source inventory")
+    status = git(root, "status", "--porcelain=v1", "--untracked-files=all")
+    flags = native._git(root, "ls-files", "-v", "-z").split(b"\0")
+    require(not status and not any(value and (value[:1].islower() or value[:1] == b"S")
+                                   for value in flags),
+            "Captured candidate has uncommitted or hidden-index source")
+    tree = git(root, "rev-parse", candidate + "^{tree}")
+    value = {"schema_version": 1, "task": owner["task"], "attempt": attempt,
+             "request": request_binding, "workspace": str(root),
+             "protected_repository": str(protected), "creation_base": base,
+             "candidate": candidate, "candidate_parent": parent, "candidate_tree": tree,
+             "allowed_changes": sorted(set(allowed)), "changed_paths": changed,
+             "status_clean": True, "hidden_index_flags": False}
+    path = evidence / "workspace-capture-result.json"
+    raw_value = native._json_bytes(value)
+    if path.exists() or path.is_symlink():
+        require(not path.is_symlink() and path.read_bytes() == raw_value,
+                "Captured candidate receipt already changed")
+    else:
+        native._write_exclusive(path, raw_value)
+    return identity(path)
+
+
 def project(request_path: Path, directory: Path, candidate: str) -> dict:
     """Validate native completion and all accepted gates, never merely eligible."""
     accepted = read(request_path)
@@ -272,6 +330,18 @@ def _run_bound_runner(args) -> int:
         result = project(args.check_request, directory, args.candidate)
         require(completed.returncode == (0 if result["native_status"] == "passed" else 1),
                 "Native runner exit contradicts completed evidence")
+        if args.evidence is not None:
+            capture_path = args.evidence / "workspace-capture-result.json"
+            if capture_path.is_file() and not capture_path.is_symlink():
+                capture_binding = identity(capture_path)
+                capture = read(capture_path)
+                request_binding = identity(args.request)
+                require(capture.get("request") == request_binding
+                        and capture.get("candidate") == args.candidate
+                        and capture.get("workspace") == str(root)
+                        and capture.get("attempt") == spec.get("attempt"),
+                        "Captured candidate receipt does not bind this runner")
+                result["candidate_capture"] = capture_binding
     except (native.RequestError, OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         result = {"ready": False, "error": str(error), "references": [], "native_attempt": str(directory)}
     result["native_runner_exit_code"] = completed.returncode
@@ -454,6 +524,7 @@ def main(argv=None) -> int:
             print(json.dumps(result, sort_keys=True))
             return 0 if args.mode == "prepare" or result["review_ready"] else 1
         if args.mode == "capture":
+            candidate_binding = None
             request = read(args.request)
             if args.evidence is None:
                 # Preserve the established capture interface for existing
@@ -466,9 +537,13 @@ def main(argv=None) -> int:
                 if owner_record.is_file():
                     with output_owner.owner_lock(owner_record):
                         candidate = capture(request)
+                        candidate_binding = record_capture(args.request, args.evidence, request, candidate)
                 else:
                     candidate = capture(request)
-            print(json.dumps({"candidate": candidate}))
+                    candidate_binding = None
+            if args.evidence is not None and not owner_record.is_file():
+                candidate_binding = None
+            print(json.dumps({"candidate": candidate, "capture_receipt": candidate_binding}, sort_keys=True))
             return 0
         if args.mode == "runner":
             return runner(args)

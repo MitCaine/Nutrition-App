@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 import tempfile
 import time
 import zipfile
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 from lib import task_output_cleanup as lifecycle  # noqa: E402
 import task as controller  # noqa: E402
+import worker_execution as worker  # noqa: E402
 
 
 def git(root: Path, *args: str) -> str:
@@ -118,7 +120,9 @@ def terminal_authored_fixture(
                 "source_after_package_sha256": fingerprint}
     write_json(output / "complete.json", complete)
     owner_record = lifecycle._json(owner)
-    owner_record.update(status="complete", attempt_directory=str(output), request_sha256=sha(request_path))
+    owner_record.update(status="complete", attempt_directory=str(output), request_sha256=sha(request_path),
+                        terminal_result=lifecycle.file_binding(output / "results.json"),
+                        native_result_ready=True)
     lifecycle._atomic_json(owner, owner_record)
 
     proof = tmp_path / "installed-proof.json"
@@ -296,14 +300,36 @@ def test_gh420_o1_keeps_selected_helper_sources_separate():
 
 
 def selected_ri949_conformance(tmp_path: Path) -> dict:
-    case = terminal_authored_fixture(tmp_path, attempt="GH-420-o1-conformance")
+    attempt = "GH-420-o1-conformance"
+    case = authored_runner_fixture(tmp_path, attempt=attempt, steps=[
+        {"id": "mandatory-failure", "argv": [sys.executable, "-c",
+             "import sys; print('failure output retained', flush=True); sys.exit(23)"],
+         "cwd": ".", "env": {}, "prerequisites": [], "designation": "mandatory"},
+        {"id": "dependent-blocked", "argv": [sys.executable, "-c", "raise AssertionError('must be blocked')"],
+         "cwd": ".", "env": {}, "prerequisites": ["mandatory-failure"], "designation": "mandatory"},
+        {"id": "independent-success", "argv": [sys.executable, "-c", "print('independent success')"],
+         "cwd": ".", "env": {}, "prerequisites": [], "designation": "mandatory"},
+    ])
+    assert case["runner"].returncode == 1, case["runner"].stdout + case["runner"].stderr
     owner = case["owner"]
     output = case["output"]
     receipt = next(item for item in lifecycle._json(owner)["owned_outputs"]
                    if item["path"] == str(output))
-    consumer_args = ("--repo-root", str(ROOT), "--state-dir", str(case["state_dir"]),
+    owner_record = lifecycle._json(owner)
+    assert owner_record["status"] == "failed" and owner_record.get("active_owner") is None
+    assert owner_record["owner_exit"]["result"] == "failed"
+    authored_results = lifecycle._json(output / "results.json")
+    assert [(step["id"], step["status"]) for step in authored_results["authored_commands"]["steps"]] == [
+        ("mandatory-failure", "failed"), ("dependent-blocked", "blocked"),
+        ("independent-success", "passed"),
+    ]
+    controller_fixture = integrated_controller_fixture(
+        tmp_path, attempt=attempt, candidate=case["candidate"],
+    )
+    durable = controller_fixture["durable"]
+    consumer_args = ("--repo-root", str(ROOT), "--state-dir", str(controller_fixture["state_dir"]),
                      "output-closeout", "420", "--execution-record", str(owner),
-                     "--durable-evidence", str(case["durable"]))
+                     "--durable-evidence", str(durable))
     consumer = task_cli(*consumer_args)
     assert consumer.returncode == 0, consumer.stdout + consumer.stderr
     consumer_report = json.loads(consumer.stdout)
@@ -312,19 +338,21 @@ def selected_ri949_conformance(tmp_path: Path) -> dict:
     assert consumer_item["status"] == "eligible"
 
     helper_root, revision = controller._output_helper_selection(ROOT)
-    _, protected = lifecycle.derive_protected_inputs(owner, lifecycle._json(owner))
-    original_raw_sha256 = sha(output / "failure.stdout.log")
-    retained_binding = {"path": str(case["proof"]), "sha256": sha(case["proof"])}
-    observation = {"task": receipt["task"], "attempt": receipt["attempt"], "state": "completed",
-                   "exclusive": True, "quiescent": True, "regenerable": True,
-                   "source_preserved": True, "references_relocated": True}
-    helper_request = {"items": [{"receipt": receipt, "observation": observation,
-                                  "protected": protected, "retained": [retained_binding]}]}
-    assessed = controller._shared_output_assess(helper_root, revision, helper_request)
-    assert assessed["source_root"] == str(helper_root)
-    assert assessed["source_revision"] == "949b838809bcddb01e2cbe161faed6f6f1f705fe"
-    result = assessed["results"][0]
-    assert result["status"] == "eligible" and result["bytes"] == consumer_item["logical_bytes"], result
+    original_raw_sha256 = sha(output / "commands" / "mandatory-failure" / "stdout.log")
+    shared_args = (*consumer_args, "--shared-helper", "--execute", "--human-owner-authorized")
+    shared = task_cli(*shared_args)
+    assert shared.returncode == 0, shared.stdout + shared.stderr
+    shared_report = json.loads(shared.stdout)
+    assert shared_report["mode"] == "shared-helper"
+    assert shared_report["source"] == {"root": str(helper_root), "revision": revision}
+    shared_item = next(item for item in shared_report["items"] if item.get("path") == str(output))
+    assert shared_item["status"] == "quarantined"
+    assert shared_item["shared_helper_assessment"]["status"] == "eligible"
+    assert shared_item["newly_removed_bytes"] == consumer_item["logical_bytes"]
+    assert shared_item["owner_node"] == receipt["node"]
+    assert shared_item["shared_helper_modules"]
+    modules = {item["module"]: (item["path"], item["sha256"])
+               for item in shared_item["shared_helper_modules"]}
     expected_modules = {
         "repository_intelligence": (
             "src/repository_intelligence/__init__.py",
@@ -347,27 +375,14 @@ def selected_ri949_conformance(tmp_path: Path) -> dict:
             "4d642a3ab03537e398e4aa4506acafc809b921c084cd848a30968a0147a92f98",
         ),
     }
-    observed = {item["module"]: (item["path"], item["sha256"])
-                for item in assessed["modules"]}
-    assert set(observed) == set(expected_modules)
-    assert observed == {
+    assert set(modules) == set(expected_modules)
+    assert modules == {
         name: (str(helper_root / relative), digest)
         for name, (relative, digest) in expected_modules.items()
     }
-
-    shared_args = (*consumer_args, "--shared-helper", "--execute", "--human-owner-authorized")
-    shared = task_cli(*shared_args)
-    assert shared.returncode == 1, shared.stdout + shared.stderr
-    shared_report = json.loads(shared.stdout)
-    assert shared_report["mode"] == "shared-helper"
-    assert shared_report["source"] == {"root": str(helper_root), "revision": revision}
-    shared_item = next(item for item in shared_report["items"]
-                       if item.get("destination") and Path(item["destination"]).name == output.name)
-    assert shared_item["status"] == "quarantined"
-    assert shared_item["newly_removed_bytes"] == consumer_item["logical_bytes"]
     destination = Path(shared_item["destination"])
     assert not output.exists() and destination.lstat().st_ino == receipt["node"][1]
-    assert sha(destination / "failure.stdout.log") == original_raw_sha256
+    assert sha(destination / "commands" / "mandatory-failure" / "stdout.log") == original_raw_sha256
 
     linked = terminal_authored_fixture(tmp_path / "linked", attempt="GH-420-o1-linked")
     linked_output = linked["output"]
@@ -387,8 +402,9 @@ def selected_ri949_conformance(tmp_path: Path) -> dict:
     assert linked_output.is_dir() and (linked_output / "outside-link").is_symlink()
     assert outside.read_bytes() == b"selected helper must not follow links\n"
     return {"status": "PASS", "source_root": str(helper_root), "source_revision": revision,
-            "consumer_receipt": receipt, "assessment": result, "consumer_mode": consumer_report["mode"],
-            "selected_mode": shared_report["mode"], "linked_tree_refused": linked_item["status"]}
+            "consumer_receipt": receipt, "assessment": shared_item["shared_helper_assessment"],
+            "consumer_mode": consumer_report["mode"], "selected_mode": shared_report["mode"],
+            "owner_exit": owner_record["owner_exit"], "linked_tree_refused": linked_item["status"]}
 
 
 def test_gh420_o1_selected_shared_helper_unavailable_refuses_before_action(tmp_path: Path):
@@ -494,11 +510,11 @@ def selected_e0_prepared_workspace_conformance(tmp_path: Path) -> dict:
                                 "protected_repository": str(protected), "base": base,
                                 "inputs": [{"path": str(handoff), "sha256": sha(handoff)}],
                                 "allowed_changes": ["tracked.txt"], "capture_authority": str(handoff),
-                                "environment": worker_environment, "require_new_candidate": False,
+                                "environment": worker_environment, "require_new_candidate": True,
                                 "check_request": {"schema_version": 1, "repository": "{workspace}",
                                                   "expected_head": "{candidate}", "attempt": "{attempt}",
                                                   "steps": [{"id": "check", "argv": [sys.executable, "-c",
-                                                                                       "assert open('tracked.txt').read() == 'before\\n'"],
+                                                                                       "assert open('tracked.txt').read() == 'captured\\n'"],
                                                              "cwd": ".", "env": {}, "designation": "mandatory",
                                                              "prerequisites": []}]},
                                 "runner_result": "NUTRITION_RESULT.json",
@@ -521,13 +537,26 @@ def selected_e0_prepared_workspace_conformance(tmp_path: Path) -> dict:
                                "--evidence", str(evidence)], cwd=ROOT, env=worker_environment,
                               capture_output=True, text=True, timeout=60)
     assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+    (workspace / "tracked.txt").write_text("captured\n", encoding="utf-8")
     executed = subprocess.run([sys.executable, str(worker), "run", "--request", str(worker_request),
                                "--evidence", str(evidence)], cwd=ROOT, env=worker_environment,
                              capture_output=True, text=True, timeout=60)
     assert executed.returncode == 0, executed.stdout + executed.stderr
     worker_result = json.loads(executed.stdout)
     assert worker_result["review_ready"] is True
+    candidate = worker_result["candidate"]
+    assert candidate != base
     worker_owner = json.loads(owner_path.read_text(encoding="utf-8"))
+    terminal_result = lifecycle._json(Path(worker_owner["terminal_result"]["path"]))
+    capture_binding = terminal_result.get("candidate_capture")
+    assert capture_binding, terminal_result
+    assert lifecycle.file_binding(Path(capture_binding["path"])) == capture_binding
+    capture_result = lifecycle._json(Path(capture_binding["path"]))
+    assert capture_result["creation_base"] == base
+    assert capture_result["candidate"] == candidate
+    assert capture_result["changed_paths"] == ["tracked.txt"]
+    git(protected, "update-ref", "refs/heads/main", candidate)
+    git(protected, "reset", "--hard", candidate)
     assert worker_owner["status"] == "complete"
     assert worker_owner["native_result_ready"] is True
     assert worker_owner["terminal_result"]["sha256"] == sha(Path(worker_owner["terminal_result"]["path"]))
@@ -535,15 +564,16 @@ def selected_e0_prepared_workspace_conformance(tmp_path: Path) -> dict:
     workspace_owner = worker_owner
     assert workspace_owner["task"] == "GH-420"
     assert len(workspace_owner["owned_outputs"]) == 2
+    assert workspace_owner["owned_outputs"][1]["git_worktree"]["head"] == base
     assert workspace_owner["owned_outputs"][0]["definition"] == {
         "path": str(worker_request), "sha256": sha(worker_request)}
-    assert workspace_owner["owned_outputs"][1]["git_worktree"]["head"] == base
+    assert workspace_owner["terminal_result"]["sha256"] == sha(Path(workspace_owner["terminal_result"]["path"]))
     worker_durable = tmp_path / "worker-durable-evidence"
     worker_durable.mkdir()
     controller_root = tmp_path / "selected-e0-controller"
     controller_root.mkdir()
     controller_fixture = integrated_controller_fixture(
-        controller_root, attempt=worker_attempt, candidate=base,
+        controller_root, attempt=worker_attempt, candidate=candidate,
     )
     owner_request, _ = lifecycle.derive_protected_inputs(owner_path, worker_owner)
     assert controller._output_owner_terminal_evidence(owner_path, worker_owner, owner_request), {
@@ -572,7 +602,8 @@ def selected_e0_prepared_workspace_conformance(tmp_path: Path) -> dict:
     return {"status": "PASS", "source": source, "workspace": str(workspace),
             "owner_record": str(owner_path), "prepare_exit": prepared.returncode,
             "run_exit": executed.returncode, "closeout_mode": report["mode"],
-            "closeout_execution": report["execution"], "worktree_destination": str(worktree_destination)}
+            "closeout_execution": report["execution"], "creation_base": base,
+            "captured_candidate": candidate, "worktree_destination": str(worktree_destination)}
 
 
 def test_gh420_o2_public_authored_runner_records_creation(tmp_path: Path):
@@ -783,6 +814,212 @@ def test_gh420_o3_changed_bound_input_ignored_source_and_unreachable_candidate_r
     assert unreachable["output"].is_dir()
 
 
+@pytest.mark.parametrize("control", ["untracked", "ignored", "assume-unchanged", "skip-worktree"])
+def test_gh420_o3_public_prepared_worktree_unique_source_is_retained(tmp_path: Path, control: str):
+    case = terminal_authored_fixture(tmp_path, attempt=f"GH-420-o3-prepared-{control}")
+    source, receipt = add_registered_closeout_worktree(case)
+    if control in {"untracked", "ignored"}:
+        unique = source / "unique-recovery.bin"
+        if control == "ignored":
+            exclude = Path(git(source, "rev-parse", "--git-path", "info/exclude"))
+            if not exclude.is_absolute():
+                exclude = source / exclude
+            existing = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+            exclude.write_text(existing + "\nunique-recovery.bin\n", encoding="utf-8")
+        unique.write_bytes(b"untracked or ignored recovery bytes\n")
+        unique_hash = sha(unique)
+    else:
+        git(source, "update-index", "--" + control, "tracked.txt")
+        unique = None
+        unique_hash = None
+    args = ("--repo-root", str(ROOT), "--state-dir", str(case["state_dir"]),
+            "output-closeout", "420", "--execution-record", str(case["owner"]),
+            "--durable-evidence", str(case["durable"]), "--execute", "--human-owner-authorized")
+    result = task_cli(*args)
+    assert result.returncode == 1, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    item = next(row for row in report["items"] if row.get("path") == str(source))
+    assert item["status"] == "retained", item
+    assert source.is_dir() and lifecycle._node(source.lstat()) == receipt["node"]
+    assert git(case["repo"], "worktree", "list", "--porcelain").splitlines().count(
+        "worktree " + str(source)) == 1
+    if unique is not None:
+        assert sha(unique) == unique_hash
+        assert "PREPARED_WORKTREE_HAS_UNIQUE_OR_GENERATED_SOURCE" in item["reason"]
+    else:
+        assert "PREPARED_WORKTREE_INDEX_RECOVERY_FLAGS_PRESENT" in item["reason"]
+
+
+@pytest.mark.parametrize("attack", ["root-symlink", "ancestor-symlink", "hardlink", "fifo"])
+def test_gh420_o3_public_plain_path_and_special_file_attacks_are_retained(
+    tmp_path: Path, attack: str,
+):
+    case = terminal_authored_fixture(tmp_path, attempt=f"GH-420-o3-path-{attack}")
+    output = case["output"]
+    original_node = lifecycle._node(output.lstat())
+    outside = tmp_path / "outside-source-sentinel"
+    if attack == "root-symlink":
+        output.rename(outside)
+        output.symlink_to(outside)
+    elif attack == "ancestor-symlink":
+        parent = output.parent
+        preserved_parent = tmp_path / "preserved-attempt-parent"
+        parent.rename(preserved_parent)
+        parent.symlink_to(preserved_parent, target_is_directory=True)
+    elif attack == "hardlink":
+        outside.write_bytes(b"shared sentinel hardlink bytes\n")
+        os.link(outside, output / "hardlinked-source.bin")
+        outside_hash = sha(outside)
+    else:
+        os.mkfifo(output / "unreadable-fifo")
+
+    result = task_cli(
+        "--repo-root", str(case["repo"]), "--state-dir", str(case["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(case["owner"]),
+        "--durable-evidence", str(case["durable"]), "--execute", "--human-owner-authorized",
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    if attack in {"root-symlink", "ancestor-symlink"}:
+        assert output.is_symlink() if attack == "root-symlink" else output.parent.is_symlink()
+        target = outside if attack == "root-symlink" else tmp_path / "preserved-attempt-parent" / output.name
+        assert target.is_dir() and lifecycle._node(target.lstat()) == original_node
+        refusal = json.loads(result.stdout)
+        assert refusal.get("result") == "FAIL" and refusal.get("error")
+    else:
+        report = json.loads(result.stdout)
+        item = next(row for row in report["items"] if row.get("path") == str(output))
+        assert item["status"] == "retained", item
+        assert output.is_dir() and lifecycle._node(output.lstat()) == original_node
+        if attack == "hardlink":
+            assert sha(outside) == outside_hash
+
+
+def test_gh420_o3_public_closeout_refuses_cross_device_destination_observation(
+    tmp_path: Path, monkeypatch, capsys,
+):
+    case = terminal_authored_fixture(tmp_path, attempt="GH-420-o3-cross-device")
+    output = case["output"]
+    original_node = lifecycle._node(output.lstat())
+    args = controller.build_parser().parse_args([
+        "--repo-root", str(case["repo"]), "--state-dir", str(case["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(case["owner"]),
+        "--durable-evidence", str(case["durable"]), "--execute", "--human-owner-authorized",
+    ])
+    original_parent = lifecycle._canonical_parent
+
+    def observe_different_destination_device(path: Path):
+        parent, observed = original_parent(path)
+        selected = Path(path)
+        if (selected.name == output.name and selected.parent.parent == case["durable"]
+                and selected.parent.name.startswith("quarantine-")):
+            values = list(observed)
+            values[2] += 1
+            observed = os.stat_result(values)
+        return parent, observed
+
+    monkeypatch.setattr(lifecycle, "_canonical_parent", observe_different_destination_device)
+    status = controller.command_output_closeout(args)
+    report = json.loads(capsys.readouterr().out)
+    assert status == 1
+    item = next(row for row in report["items"] if row.get("path") == str(output))
+    assert item["status"] == "incomplete" and "QUARANTINE_CROSS_DEVICE" in item["reason"]
+    assert output.is_dir() and lifecycle._node(output.lstat()) == original_node
+
+
+@pytest.mark.parametrize("change", ["pause", "assignment"])
+def test_gh420_o3_closeout_serializes_concurrent_current_state_writer(
+    tmp_path: Path, monkeypatch, capsys, change: str,
+):
+    case = terminal_authored_fixture(tmp_path, attempt=f"GH-420-o3-race-{change}")
+    output = case["output"]
+    args = controller.build_parser().parse_args([
+        "--repo-root", str(ROOT), "--state-dir", str(case["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(case["owner"]),
+        "--durable-evidence", str(case["durable"]), "--execute", "--human-owner-authorized",
+    ])
+    at_action = threading.Event()
+    release_action = threading.Event()
+    closeout_done = threading.Event()
+    closeout_results: list[int] = []
+    closeout_errors: list[BaseException] = []
+    original_rename = lifecycle.os.rename
+
+    def barrier_rename(source, destination):
+        if Path(source) == output:
+            at_action.set()
+            if not release_action.wait(10):
+                raise TimeoutError("test did not release closeout barrier")
+        return original_rename(source, destination)
+
+    monkeypatch.setattr(lifecycle.os, "rename", barrier_rename)
+
+    def run_closeout():
+        try:
+            closeout_results.append(controller.command_output_closeout(args))
+        except BaseException as error:
+            closeout_errors.append(error)
+        finally:
+            closeout_done.set()
+
+    thread = threading.Thread(target=run_closeout, daemon=True)
+    thread.start()
+    assert at_action.wait(10), "closeout did not reach its filesystem action barrier"
+    writer_started = tmp_path / "state-writer-started"
+    writer_change = (
+        "    state['paused'] = True\n" if change == "pause" else
+        "    state['execution']['attempt'] = 'GH-420-reassigned'\n"
+        "    state['execution']['phase'] = 'AUTHORIZED'\n"
+    )
+    writer_code = (
+        "import sys\nfrom pathlib import Path\n"
+        "sys.path.insert(0, sys.argv[1])\nimport task\n"
+        "state_dir = Path(sys.argv[2])\nmarker = Path(sys.argv[3])\n"
+        "marker.write_text('waiting\\n')\n"
+        "def mutate(state):\n"
+        "    rows = [row for row in state.get('output_closeout', {}).get('operations', []) "
+        "if row.get('original') == sys.argv[4]]\n"
+        "    if len(rows) != 1 or rows[0].get('status') != 'complete':\n"
+        "        raise RuntimeError('writer did not observe completed action')\n"
+        "    state['concurrent_writer_observed_completed_output_operation'] = True\n"
+        + writer_change
+        + "    return state\n"
+        "task.checkpoint_transaction(state_dir, 420, mutate)\n"
+        "print('STATE_WRITER_COMMITTED')\n"
+    )
+    writer = subprocess.Popen(
+        [sys.executable, "-c", writer_code, str(ROOT / "scripts"), str(case["state_dir"]),
+         str(writer_started), str(output)],
+        cwd=ROOT, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1", TMPDIR="/private/tmp"),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not writer_started.is_file() and time.monotonic() < deadline and writer.poll() is None:
+            time.sleep(0.01)
+        assert writer_started.is_file(), "state writer did not start"
+        time.sleep(0.1)
+        assert writer.poll() is None, "state writer bypassed the held issue transaction"
+        assert not closeout_done.is_set() and output.is_dir()
+    finally:
+        release_action.set()
+    thread.join(timeout=15)
+    assert closeout_done.is_set() and not closeout_errors, closeout_errors
+    writer_out, writer_err = writer.communicate(timeout=15)
+    assert writer.returncode == 0, writer_out + writer_err
+    assert "STATE_WRITER_COMMITTED" in writer_out
+    captured = capsys.readouterr().out
+    assert closeout_results == [1], captured
+    report = json.loads(captured)
+    output_item = next(row for row in report["items"] if row.get("path") == str(output))
+    assert output_item["status"] == "quarantined"
+    state_after = controller.load_state(case["state_dir"], 420)
+    assert state_after["concurrent_writer_observed_completed_output_operation"] is True
+    if change == "pause":
+        assert state_after["paused"] is True
+    else:
+        assert state_after["execution"]["attempt"] == "GH-420-reassigned"
+
+
 def test_gh420_o4_retains_complete_raw_tree_without_editing_source(tmp_path: Path):
     definition = tmp_path / "definition.json"
     definition.write_text("{\"fixture\":true}\n", encoding="utf-8")
@@ -911,7 +1148,7 @@ def test_gh420_o4_public_closeout_refuses_incomplete_evidence_closure(tmp_path: 
     assert result.returncode == 1, result.stdout + result.stderr
     report = json.loads(result.stdout)
     if missing_member == "unreadable-reference":
-        assert "error" in report
+        assert report.get("items") and all(item["status"] == "retained" for item in report["items"])
     else:
         item = next(row for row in report["items"] if row.get("path") == str(fixture["output"]))
         assert item["status"] == "retained"
@@ -953,6 +1190,46 @@ def test_gh420_o2_receipt_persistence_interruption_leaves_unknown_output(tmp_pat
         )
     assert json.loads(owner.read_text(encoding="utf-8"))["owned_outputs"] == []
     assert {item.relative_to(output).as_posix(): sha(item) for item in output.rglob("*") if item.is_file()} == before
+
+
+def test_gh420_o2_public_create_workspace_receipt_interruption_is_not_adopted(
+    tmp_path: Path, monkeypatch, capsys,
+):
+    protected = tmp_path / "protected-repository"
+    base = init_repo(protected)
+    evidence = tmp_path / "workspace-evidence"
+    evidence.mkdir()
+    workspace = tmp_path / "unknown-container" / "workspace"
+    request = tmp_path / "workspace-request.json"
+    write_json(request, {"assignment": "GH-420/implementation", "attempt": "GH-420-o2-interrupted-create",
+                         "workspace": str(workspace), "protected_repository": str(protected), "base": base})
+    owner = evidence / "workspace-owner.json"
+    args = ["create-workspace", "--request", str(request), "--evidence", str(evidence)]
+    original_atomic = lifecycle._atomic_json
+    def interrupted_receipt(path: Path, value: dict) -> None:
+        if path == owner and value.get("owned_outputs"):
+            raise OSError("injected workspace receipt persistence interruption")
+        original_atomic(path, value)
+
+    monkeypatch.setattr(lifecycle, "_atomic_json", interrupted_receipt)
+    failed = worker.main(args)
+    captured = capsys.readouterr()
+    assert failed == 1 and "injected workspace receipt persistence interruption" in captured.out
+    container = workspace.parent
+    container_node = lifecycle._node(container.lstat())
+    owner_before = owner.read_bytes()
+    assert json.loads(owner_before)["owned_outputs"] == []
+    assert not workspace.exists()
+    assert git(protected, "worktree", "list", "--porcelain").splitlines().count(
+        "worktree " + str(workspace)) == 0
+
+    monkeypatch.setattr(lifecycle, "_atomic_json", original_atomic)
+    refused = worker.main(args)
+    retried = capsys.readouterr()
+    assert refused == 1 and "Workspace container already exists" in retried.out
+    assert lifecycle._node(container.lstat()) == container_node
+    assert owner.read_bytes() == owner_before and json.loads(owner_before)["owned_outputs"] == []
+    assert not workspace.exists()
 
 
 def test_gh420_o5_public_closeout_is_dry_run_and_requires_authorization(tmp_path: Path):
@@ -1000,6 +1277,95 @@ def test_gh420_o5_public_closeout_is_dry_run_and_requires_authorization(tmp_path
                    for item in repeated["items"]
                ]
     assert case["cache"].exists() and sha(case["cache"] / "shared.bin") == cache_before
+
+
+@pytest.mark.parametrize("mutation", [
+    "tampered-content", "unreadable-content", "parent-substitution", "both-locations",
+    "neither-location", "missing-current-reference", "tampered-current-reference",
+    "missing-retained-member", "paused-disposition", "changed-assignment",
+])
+def test_gh420_o5_public_plain_repeat_refuses_changed_reconciliation(
+    tmp_path: Path, mutation: str,
+):
+    case = terminal_authored_fixture(tmp_path, attempt=f"GH-420-o5-repeat-{mutation}")
+    args = ("--repo-root", str(ROOT), "--state-dir", str(case["state_dir"]),
+            "output-closeout", "420", "--execution-record", str(case["owner"]),
+            "--durable-evidence", str(case["durable"]), "--execute", "--human-owner-authorized")
+    first = task_cli(*args)
+    assert first.returncode == 1, first.stdout + first.stderr
+    first_report = json.loads(first.stdout)
+    item = next(row for row in first_report["items"] if row.get("path") == str(case["output"]))
+    assert item["status"] == "quarantined", item
+    destination = Path(item["destination"])
+    operation = next(row for row in controller.load_state(case["state_dir"], 420)
+                     ["output_closeout"]["operations"] if row.get("original") == str(case["output"]))
+    assert operation["status"] == "complete"
+
+    if mutation == "tampered-content":
+        (destination / "failure.stdout.log").write_bytes(b"changed after quarantine\n")
+    elif mutation == "unreadable-content":
+        (destination / "failure.stderr.log").chmod(0)
+    elif mutation == "parent-substitution":
+        moved_parent = tmp_path / "original-quarantine-parent"
+        destination.parent.rename(moved_parent)
+        destination.parent.mkdir()
+    elif mutation == "both-locations":
+        shutil.copytree(destination, case["output"])
+    elif mutation == "neither-location":
+        destination.rename(tmp_path / "lost-quarantine-destination")
+    elif mutation == "missing-current-reference":
+        Path(controller.load_state(case["state_dir"], 420)["output_closeout"]
+             ["current_reference"]["path"]).unlink()
+    elif mutation == "tampered-current-reference":
+        reference_path = Path(controller.load_state(case["state_dir"], 420)["output_closeout"]
+                              ["current_reference"]["path"])
+        reference_path.write_bytes(reference_path.read_bytes() + b"tamper\n")
+    elif mutation == "missing-retained-member":
+        reference = lifecycle.read_current_reference(Path(
+            controller.load_state(case["state_dir"], 420)["output_closeout"]["current_reference"]["path"],
+        ))
+        retained = next(item for item in reference["retained"]
+                        if item["path"].endswith("failure.stdout.log"))
+        Path(retained["path"]).unlink()
+    elif mutation in {"paused-disposition", "changed-assignment"}:
+        state = controller.load_state(case["state_dir"], 420)
+        if mutation == "paused-disposition":
+            state["paused"] = True
+        else:
+            state["execution"]["attempt"] = "GH-420-next-assignment"
+            state["execution"]["phase"] = "AUTHORIZED"
+        write_json(controller.state_path(case["state_dir"], 420), state)
+
+    repeat = task_cli(*args)
+    assert repeat.returncode == 1, repeat.stdout + repeat.stderr
+    if mutation in {"missing-current-reference", "tampered-current-reference", "missing-retained-member"}:
+        assert not case["output"].exists() and destination.is_dir()
+        assert "already_quarantined" not in repeat.stdout and "verified prior quarantine" not in repeat.stdout
+        if mutation == "missing-retained-member":
+            refusal = json.loads(repeat.stdout)
+            assert refusal.get("result") == "FAIL" and refusal.get("error")
+    elif mutation == "parent-substitution":
+        assert not case["output"].exists() and not destination.exists()
+        assert (tmp_path / "original-quarantine-parent" / destination.name).is_dir()
+        assert "already_quarantined" not in repeat.stdout and "verified prior quarantine" not in repeat.stdout
+    elif mutation == "neither-location":
+        assert not case["output"].exists() and not destination.exists()
+        assert (tmp_path / "lost-quarantine-destination").is_dir()
+        assert "already_quarantined" not in repeat.stdout and "verified prior quarantine" not in repeat.stdout
+    elif mutation == "both-locations":
+        assert case["output"].is_dir() and destination.is_dir()
+        assert "already_quarantined" not in repeat.stdout and "verified prior quarantine" not in repeat.stdout
+    else:
+        repeat_report = json.loads(repeat.stdout)
+        repeated_item = next(row for row in repeat_report["items"]
+                             if row.get("path") == str(case["output"]))
+        assert repeated_item["status"] not in {"quarantined", "already_quarantined"}, repeated_item
+        assert "verified prior quarantine" not in repeated_item.get("reason", "")
+        assert destination.is_dir()
+    if mutation == "tampered-content":
+        assert (destination / "failure.stdout.log").read_bytes() == b"changed after quarantine\n"
+    if mutation == "unreadable-content":
+        (destination / "failure.stderr.log").chmod(0o600)
 
 
 def test_gh420_o5_public_closeout_reconciles_interrupted_move_after_intent(tmp_path: Path, monkeypatch, capsys):

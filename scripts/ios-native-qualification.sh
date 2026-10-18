@@ -1845,6 +1845,7 @@ prebuild_plugins_stage() {
   local expo_version
   local react_native_version
   local project
+  local producer_exit_code
 
   expo_version="$(
     cd "$mobile"
@@ -1859,7 +1860,12 @@ prebuild_plugins_stage() {
     "$react_native_version" \
     > "$dependency_versions"
 
-  (
+  "$native_lifecycle_python" "$native_output_cleanup" begin-native-generated-output \
+    --owner-record "$native_output_owner" \
+    --invocation-record "$native_lifecycle_binding" \
+    > "$native_lifecycle_dir/expo-output-intent.json"
+
+  if (
     cd "$mobile"
 
     EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
@@ -1871,6 +1877,22 @@ prebuild_plugins_stage() {
       --platform ios \
       --no-install
   ) > "$evidence_dir/prebuild.log" 2>&1
+  then
+    producer_exit_code=0
+  else
+    producer_exit_code="$?"
+  fi
+
+  "$native_lifecycle_python" "$native_output_cleanup" finish-native-generated-output \
+    --owner-record "$native_output_owner" \
+    --invocation-record "$native_lifecycle_binding" \
+    --producer-exit-code "$producer_exit_code" \
+    > "$native_lifecycle_dir/expo-output-observed.json"
+
+  if test "$producer_exit_code" -ne 0
+  then
+    return "$producer_exit_code"
+  fi
 
   test -d "$mobile/ios"
   test -f "$mobile/ios/Podfile"
@@ -1924,6 +1946,7 @@ prebuild_plugins_stage() {
   test "$unsafe_bundle_count" -eq 0
 
   printf 'PROJECT=%s\n' "$project" > "$prebuild_paths"
+
 }
 
 autolinking_stage() {
@@ -3257,6 +3280,7 @@ fi
 commit="$(git -C "$repo_root" rev-parse HEAD)"
 export IOS_NATIVE_COMMIT="$commit"
 export IOS_NATIVE_RUNNER="$runner"
+export IOS_NATIVE_QUALIFIER_PID="$$"
 
 if ! setup_native_lifecycle
 then

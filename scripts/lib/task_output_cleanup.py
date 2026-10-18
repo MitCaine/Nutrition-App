@@ -127,7 +127,8 @@ def _sha_file(path: Path) -> str:
 
 def _identity(path: Path) -> dict[str, Any]:
     st = path.lstat()
-    if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+    if (not stat.S_ISREG(st.st_mode) or st.st_nlink != 1
+            or not st.st_mode & 0o444):
         raise OutputError("DEFINITION_NOT_UNIQUE_REGULAR_FILE")
     return {"path": str(path), "sha256": _sha_file(path), "bytes": st.st_size}
 
@@ -458,7 +459,8 @@ def _walk_native_tree(root: Path, root_device: int) -> tuple[int, list[dict[str,
         root_stat = root.lstat()
     except OSError as error:
         raise OutputError("OUTPUT_ROOT_UNREADABLE") from error
-    if not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_dev != root_device:
+    if (not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_dev != root_device
+            or not root_stat.st_mode & 0o444 or not root_stat.st_mode & 0o111):
         raise OutputError("OUTPUT_ROOT_IDENTITY_INVALID")
     total = 0
     entries: list[dict[str, Any]] = []
@@ -480,8 +482,11 @@ def _walk_native_tree(root: Path, root_device: int) -> tuple[int, list[dict[str,
                                 "mode": stat.S_IMODE(st.st_mode)})
                 continue
             if stat.S_ISDIR(st.st_mode):
+                if not st.st_mode & 0o444 or not st.st_mode & 0o111:
+                    raise OutputError("OUTPUT_TREE_UNREADABLE:" + str(item))
                 continue
-            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+            if (not stat.S_ISREG(st.st_mode) or st.st_nlink != 1
+                    or not st.st_mode & 0o444):
                 raise OutputError("OUTPUT_TREE_SPECIAL_OR_HARDLINK")
             total += st.st_size
             entries.append({"path": relative, "kind": "file", "bytes": st.st_size,
@@ -600,7 +605,9 @@ def derive_protected_inputs(owner_record: Path, record: dict[str, Any]) -> tuple
                 path = Path(value)
                 if not os.path.lexists(path):
                     raise OutputError("PROTECTED_RUNTIME_INPUT_UNAVAILABLE")
-                protected.add(str(path.absolute()))
+                absolute = path.absolute()
+                if not any(item.is_symlink() for item in (absolute, *absolute.parents)):
+                    protected.add(str(absolute))
                 protected.add(str(path.resolve(strict=True)))
         env = step.get("env", {})
         if not isinstance(env, dict):
@@ -616,10 +623,16 @@ def derive_protected_inputs(owner_record: Path, record: dict[str, Any]) -> tuple
                 candidate = Path(part).expanduser()
                 if candidate.is_absolute():
                     if os.path.lexists(candidate):
-                        protected.add(str(candidate.absolute()))
+                        absolute = candidate.absolute()
+                        if not any(item.is_symlink() for item in (absolute, *absolute.parents)):
+                            protected.add(str(absolute))
                         protected.add(str(candidate.resolve(strict=True)))
                     else:
-                        protected.add(str(candidate.absolute()))
+                        absolute = candidate.absolute()
+                        if not any(item.is_symlink() for item in (absolute, *absolute.parents)):
+                            protected.add(str(absolute))
+                        else:
+                            protected.add(str(candidate.resolve(strict=False)))
     # Owner-local raw evidence and the durable target are handled separately;
     # a caller-provided protected_paths list never grants eligibility.
     return request, sorted(protected)
@@ -869,6 +882,16 @@ def _known_nested_worktree_move_matches_retained_snapshot(
     operation = _json(operation_path)
     destination = Path(operation.get("destination", ""))
     binding = receipt.get("git_worktree", {})
+    terminal_binding = record.get("terminal_result")
+    if (not isinstance(terminal_binding, dict)
+            or set(terminal_binding) != {"path", "sha256"}
+            or file_binding(Path(terminal_binding["path"])) != terminal_binding):
+        return False
+    try:
+        terminal_result = _json(Path(terminal_binding["path"]))
+    except (OSError, ValueError, KeyError, TypeError, OutputError):
+        return False
+    current_head = operation.get("current_head")
     if (operation.get("schema_version") != SCHEMA_VERSION
             or operation.get("operation") != "registered-worktree-quarantine"
             or operation.get("task") != receipt.get("task")
@@ -877,6 +900,9 @@ def _known_nested_worktree_move_matches_retained_snapshot(
             or operation.get("source_node") != receipt.get("node")
             or operation.get("repository") != binding.get("repository")
             or operation.get("head") != binding.get("head")
+            or not isinstance(current_head, str) or not re.fullmatch(r"[0-9a-f]{40}", current_head)
+            or terminal_result.get("attempt") != record.get("attempt")
+            or terminal_result.get("candidate") != current_head
             or operation.get("quarantine_parent") != str(destination.parent)
             or operation.get("status") != "complete"
             or operation.get("result_persisted") is not True
@@ -890,7 +916,7 @@ def _known_nested_worktree_move_matches_retained_snapshot(
         moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                          "parent_node": _node(destination.parent.lstat())}
         moved, moved_stat, moved_binding = _registered_worktree(
-            moved_receipt, Path(binding["repository"]),
+            moved_receipt, Path(binding["repository"]), current_head,
         )
         if (_node(moved_stat) != receipt.get("node") or moved_binding.get("head") != binding.get("head")
                 or _worktree_tree(moved, moved_stat.st_dev)[1] != operation["evidence_entries"]):
@@ -981,7 +1007,9 @@ def plan_native_quarantine(owner_record: Path, *, output_path: Path, destination
             "entries": entries, "receipt": receipts[0]}
 
 
-def _registered_worktree(receipt: dict[str, Any], repository: Path) -> tuple[Path, os.stat_result, dict[str, Any]]:
+def _registered_worktree(
+    receipt: dict[str, Any], repository: Path, expected_head: str | None = None,
+) -> tuple[Path, os.stat_result, dict[str, Any]]:
     path, st = verify_receipt(receipt)
     binding = receipt.get("git_worktree")
     if not isinstance(binding, dict) or set(binding) != {"repository", "head", "branch"}:
@@ -994,10 +1022,18 @@ def _registered_worktree(receipt: dict[str, Any], repository: Path) -> tuple[Pat
                           capture_output=True, text=True, check=False, timeout=30)
     branch = subprocess.run(["git", "-C", str(path), "branch", "--show-current"],
                             capture_output=True, text=True, check=False, timeout=30)
-    if (listed.returncode or head.returncode or branch.returncode
+    selected_head = binding.get("head") if expected_head is None else expected_head
+    if (not isinstance(selected_head, str) or not re.fullmatch(r"[0-9a-f]{40}", selected_head)
+            or listed.returncode or head.returncode or branch.returncode
             or listed.stdout.splitlines().count("worktree " + str(path)) != 1
-            or head.stdout.strip() != binding.get("head") or branch.stdout.strip()):
+            or head.stdout.strip() != selected_head or branch.stdout.strip()):
         raise OutputError("WORKTREE_REGISTRATION_MISMATCH")
+    if selected_head != binding.get("head"):
+        ancestor = subprocess.run(["git", "-C", str(repository), "merge-base", "--is-ancestor",
+                                  binding["head"], selected_head], capture_output=True,
+                                 check=False, timeout=30)
+        if ancestor.returncode:
+            raise OutputError("WORKTREE_CURRENT_CANDIDATE_NOT_FROM_CREATION_BASE")
     _walk_native_tree(path, st.st_dev)
     return path, st, binding
 
@@ -1010,23 +1046,64 @@ def _worktree_tree(root: Path, device: int) -> tuple[int, list[dict[str, Any]]]:
     ]
 
 
-def _verify_native_worktree_source(path: Path, repository: Path, binding: dict[str, Any]) -> None:
+def _verify_native_worktree_source(
+    path: Path, repository: Path, binding: dict[str, Any], *, owner_record: Path | None = None,
+    durable_evidence: Path | None = None,
+) -> None:
     """Refuse a native worktree move when Git observes unique source outside generated roots."""
     roots = binding.get("roots")
     expected_root = roots.get("worktree") if isinstance(roots, dict) else None
     source = binding.get("source")
     source_commit = source.get("commit") if isinstance(source, dict) else None
     source_root = source.get("root") if isinstance(source, dict) else None
-    if (expected_root != str(path) or source_root != str(repository) or not isinstance(source_commit, str)
+    original_root = Path(expected_root) if isinstance(expected_root, str) else Path()
+    if (not isinstance(expected_root, str) or source_root != str(repository) or not isinstance(source_commit, str)
             or not re.fullmatch(r"[0-9a-f]{40}", source_commit)):
         raise OutputError("NATIVE_WORKTREE_SOURCE_BINDING_INVALID")
+    if path != original_root:
+        if owner_record is None or durable_evidence is None:
+            raise OutputError("NATIVE_WORKTREE_MOVED_SOURCE_OWNER_BINDING_MISSING")
+        owner = _json(owner_record)
+        parent = owner.get("quarantine_parent")
+        receipts = [item for item in owner.get("owned_outputs", [])
+                    if isinstance(item, dict) and item.get("path") == str(original_root)]
+        if (not isinstance(parent, dict) or len(receipts) != 1
+                or path != Path(parent.get("path", "")) / original_root.name
+                or os.path.lexists(original_root)):
+            raise OutputError("NATIVE_WORKTREE_MOVED_SOURCE_IDENTITY_INVALID")
+        receipt = receipts[0]
+        operation_path = durable_evidence / f"worktree-quarantine-{receipt['node'][1]}.json"
+        operation = _json(operation_path)
+        moved_stat = path.lstat()
+        if (operation.get("schema_version") != SCHEMA_VERSION
+                or operation.get("operation") != "registered-worktree-quarantine"
+                or operation.get("task") != owner.get("task")
+                or operation.get("attempt") != owner.get("attempt")
+                or operation.get("source") != str(original_root)
+                or operation.get("source_node") != receipt.get("node")
+                or operation.get("source_parent_node") != receipt.get("parent_node")
+                or operation.get("repository") != str(repository)
+                or operation.get("head") != receipt.get("git_worktree", {}).get("head")
+                or operation.get("current_head") != source_commit
+                or operation.get("destination") != str(path)
+                or operation.get("quarantine_parent") != str(parent.get("path"))
+                or operation.get("quarantine_parent_node") != parent.get("node")
+                or parent.get("node") != _node(path.parent.lstat())
+                or _node(moved_stat) != receipt.get("node")
+                or operation.get("status") not in {"intent", "complete"}
+                or (operation.get("status") == "complete"
+                    and (operation.get("result_persisted") is not True
+                         or operation.get("destination_node") != _node(moved_stat)))
+                or not isinstance(operation.get("evidence_entries"), list)
+                or _worktree_tree(path, moved_stat.st_dev)[1] != operation.get("evidence_entries")):
+            raise OutputError("NATIVE_WORKTREE_MOVED_SOURCE_OPERATION_INVALID")
     generated_roots = []
     for name in ("ios", "node_modules", "pods"):
         value = roots.get(name)
         if not isinstance(value, str) or not Path(value).is_absolute():
             raise OutputError("NATIVE_WORKTREE_GENERATED_OUTPUT_BINDING_INVALID")
         try:
-            generated = Path(value).relative_to(path)
+            generated = Path(value).relative_to(original_root)
         except ValueError as error:
             raise OutputError("NATIVE_WORKTREE_GENERATED_OUTPUT_OUTSIDE_WORKTREE") from error
         if not generated.parts or ".." in generated.parts:
@@ -1040,6 +1117,16 @@ def _verify_native_worktree_source(path: Path, repository: Path, binding: dict[s
     if (head.returncode or head.stdout.strip() != source_commit or reachable.returncode
             or not reachable.stdout.strip()):
         raise OutputError("NATIVE_WORKTREE_SOURCE_RECOVERY_UNVERIFIED")
+    expo_output = path / "apps/mobile/.expo"
+    if os.path.lexists(expo_output):
+        if owner_record is None:
+            raise OutputError("NATIVE_EXPO_OUTPUT_OWNER_BINDING_MISSING")
+        _verify_native_expo_output(owner_record, binding, path)
+        generated_roots.append(Path("apps/mobile/.expo"))
+    elif owner_record is not None:
+        owner = _json(owner_record)
+        if owner.get("nutrition_generated_outputs"):
+            raise OutputError("NATIVE_EXPO_OUTPUT_DISAPPEARED")
     status = subprocess.run(["git", "-C", str(path), "status", "--porcelain=v1", "-z",
                              "--untracked-files=normal", "--ignored=matching"],
                             capture_output=True, check=False, timeout=60)
@@ -1071,6 +1158,73 @@ def _verify_native_worktree_source(path: Path, repository: Path, binding: dict[s
         raise OutputError("NATIVE_WORKTREE_INDEX_RECOVERY_FLAGS_PRESENT")
 
 
+def _verify_prepared_worktree_source(
+    path: Path, repository: Path, expected_head: str, creation_head: str,
+) -> None:
+    """Keep unexplained prepared-workspace source and hidden index state at origin."""
+    if (not re.fullmatch(r"[0-9a-f]{40}", expected_head)
+            or not re.fullmatch(r"[0-9a-f]{40}", creation_head)):
+        raise OutputError("PREPARED_WORKTREE_SOURCE_BINDING_INVALID")
+    head = subprocess.run(["git", "-C", str(path), "rev-parse", "--verify", "HEAD"],
+                          capture_output=True, text=True, check=False, timeout=30)
+    base_recovery = subprocess.run(["git", "-C", str(repository), "merge-base", "--is-ancestor",
+                                    creation_head, expected_head], capture_output=True,
+                                   check=False, timeout=30)
+    current_recovery = subprocess.run(["git", "-C", str(repository), "for-each-ref", "--contains",
+                                       expected_head, "--format=%(refname)"], capture_output=True,
+                                      text=True, check=False, timeout=30)
+    if (head.returncode or head.stdout.strip() != expected_head or base_recovery.returncode
+            or current_recovery.returncode or not current_recovery.stdout.strip()):
+        raise OutputError("PREPARED_WORKTREE_SOURCE_RECOVERY_UNVERIFIED")
+    status = subprocess.run(["git", "-C", str(path), "status", "--porcelain=v1", "-z",
+                             "--untracked-files=all", "--ignored=matching"],
+                            capture_output=True, check=False, timeout=60)
+    if status.returncode:
+        raise OutputError("PREPARED_WORKTREE_SOURCE_STATUS_UNAVAILABLE")
+    if status.stdout:
+        raise OutputError("PREPARED_WORKTREE_HAS_UNIQUE_OR_GENERATED_SOURCE")
+    flags = subprocess.run(["git", "-C", str(path), "ls-files", "-v", "-z"],
+                           capture_output=True, check=False, timeout=30)
+    if flags.returncode:
+        raise OutputError("PREPARED_WORKTREE_INDEX_OBSERVATION_UNAVAILABLE")
+    if any(item[:1].islower() or item[:1] == b"S" for item in flags.stdout.split(b"\0") if item):
+        raise OutputError("PREPARED_WORKTREE_INDEX_RECOVERY_FLAGS_PRESENT")
+
+
+def verify_registered_worktree_source(
+    owner_record: Path, receipt: dict[str, Any], *, repository: Path, expected_head: str,
+    durable_evidence: Path, current_path: Path | None = None,
+) -> dict[str, Any]:
+    """Classify a disposable registered checkout before any report or movement."""
+    owner = _json(owner_record)
+    selected_receipt = receipt
+    if current_path is not None:
+        observed = current_path.lstat()
+        selected_receipt = {**receipt, "path": str(current_path), "node": _node(observed),
+                            "parent_node": _node(current_path.parent.lstat())}
+    path, st, immutable = _registered_worktree(selected_receipt, repository, expected_head)
+    if owner.get("native_terminal") is not None:
+        parent_binding = owner.get("quarantine_parent")
+        invocation_binding = parent_binding.get("invocation") if isinstance(parent_binding, dict) else None
+        if not isinstance(invocation_binding, dict) or set(invocation_binding) != {"path", "sha256"}:
+            raise OutputError("NATIVE_INVOCATION_OWNER_BINDING_MISSING")
+        invocation_record = Path(invocation_binding["path"])
+        binding, phase, phase_path = _native_owner_phase(owner, invocation_record)
+        if file_binding(invocation_record) != invocation_binding:
+            raise OutputError("NATIVE_INVOCATION_OWNER_BINDING_CHANGED")
+        _native_terminal(owner, phase, phase_path)
+        verify_native_proof_readback(
+            owner_record, invocation_record=invocation_record, durable_evidence=durable_evidence,
+        )
+        _verify_native_worktree_source(
+            path, repository, binding, owner_record=owner_record, durable_evidence=durable_evidence,
+        )
+    else:
+        _verify_prepared_worktree_source(path, repository, expected_head, immutable["head"])
+    return {"path": str(path), "node": _node(st), "creation_head": immutable["head"],
+            "current_head": expected_head, "status": "verified"}
+
+
 def _ensure_quarantine_parent(path: Path, device: int) -> list[int]:
     parent, _ = _canonical_parent(path)
     if os.path.lexists(path):
@@ -1093,6 +1247,7 @@ def execute_registered_worktree_quarantine(
     durable_evidence: Path,
     task: str,
     attempt: str,
+    expected_head: str | None = None,
     owner_lock_held: bool = False,
     before_move: Any = None,
 ) -> dict[str, Any]:
@@ -1115,10 +1270,20 @@ def execute_registered_worktree_quarantine(
                 raise OutputError("QUARANTINE_PARENT_NOT_CONTROLLER_BOUND")
         invocation_binding = parent_binding.get("invocation") if isinstance(parent_binding, dict) else None
         native_binding = None
+        if expected_head is None:
+            terminal_binding = record.get("terminal_result")
+            if isinstance(terminal_binding, dict) and set(terminal_binding) == {"path", "sha256"}:
+                terminal_result = _json(Path(terminal_binding["path"]))
+                expected_head = terminal_result.get("candidate")
         if record.get("native_terminal") is not None:
             if not isinstance(invocation_binding, dict) or set(invocation_binding) != {"path", "sha256"}:
                 raise OutputError("NATIVE_INVOCATION_OWNER_BINDING_MISSING")
             native_binding, phase, phase_path = _native_owner_phase(record, Path(invocation_binding["path"]))
+            source = native_binding.get("source")
+            native_head = source.get("commit") if isinstance(source, dict) else None
+            if expected_head is not None and expected_head != native_head:
+                raise OutputError("NATIVE_WORKTREE_CURRENT_CANDIDATE_MISMATCH")
+            expected_head = native_head
             if file_binding(Path(invocation_binding["path"]))["sha256"] != invocation_binding["sha256"]:
                 raise OutputError("NATIVE_INVOCATION_OWNER_BINDING_CHANGED")
             _native_terminal(record, phase, phase_path)
@@ -1139,7 +1304,14 @@ def execute_registered_worktree_quarantine(
         if (not os.path.lexists(original) and os.path.lexists(destination)
                 and operation_path.is_file() and not operation_path.is_symlink()):
             previous = _json(operation_path)
+            _no_symlinks(original.parent)
+            try:
+                source_parent_node = _node(original.parent.lstat())
+            except OSError as error:
+                raise OutputError("WORKTREE_QUARANTINE_SOURCE_PARENT_UNREADABLE") from error
             if (previous.get("source") != str(original) or previous.get("source_node") != receipt_node
+                    or previous.get("source_parent_node") != receipt.get("parent_node")
+                    or source_parent_node != receipt.get("parent_node")
                     or previous.get("destination") != str(destination)
                     or previous.get("repository") != str(repository)
                     or previous.get("task") != task or previous.get("attempt") != attempt
@@ -1153,16 +1325,27 @@ def execute_registered_worktree_quarantine(
             moved_stat = destination.lstat()
             moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                              "parent_node": _node(parent_stat)}
-            moved, moved_stat, binding = _registered_worktree(moved_receipt, repository)
+            moved, moved_stat, binding = _registered_worktree(moved_receipt, repository, expected_head)
             if (_node(moved_stat) != receipt_node
                     or binding["head"] != previous.get("head")
+                    or previous.get("current_head") != expected_head
                     or _worktree_tree(moved, moved_stat.st_dev)[1] != previous.get("evidence_entries")):
                 raise OutputError("WORKTREE_QUARANTINE_RECONCILIATION_MISMATCH")
+            if native_binding is not None:
+                _verify_native_worktree_source(
+                    moved, repository, native_binding, owner_record=owner_record,
+                    durable_evidence=durable_evidence,
+                )
+            else:
+                _verify_prepared_worktree_source(
+                    moved, repository, expected_head or binding["head"], binding["head"],
+                )
             previous.update(status="complete", destination_node=_node(moved_stat), result_persisted=True,
                             head=binding["head"])
             _atomic_json(operation_path, previous)
             return {**previous, "status": "already_quarantined", "newly_removed_bytes": 0}
-        original, original_stat, binding = _registered_worktree(receipt, repository)
+        original, original_stat, binding = _registered_worktree(receipt, repository, expected_head)
+        current_head = expected_head or binding["head"]
         if (destination.parent != quarantine_parent or paths_overlap(original, destination)
                 or paths_overlap(original, quarantine_parent)):
             raise OutputError("WORKTREE_QUARANTINE_PATH_OVERLAP")
@@ -1178,17 +1361,21 @@ def execute_registered_worktree_quarantine(
             raise OutputError("WORKTREE_QUARANTINE_DESTINATION_EXISTS")
         total, entries = _worktree_tree(original, original_stat.st_dev)
         operation_path = durable_evidence / f"worktree-quarantine-{original_stat.st_ino}.json"
+        source_parent_node = _node(original.parent.lstat())
         pending = {"schema_version": SCHEMA_VERSION, "operation": "registered-worktree-quarantine",
                    "task": task, "attempt": attempt, "source": str(original),
-                   "source_node": _node(original_stat), "repository": str(repository),
-                   "head": binding["head"], "destination": str(destination),
+                   "source_node": _node(original_stat), "source_parent_node": source_parent_node,
+                   "repository": str(repository),
+                   "head": binding["head"], "current_head": current_head,
+                   "destination": str(destination),
                    "quarantine_parent": str(quarantine_parent),
                    "quarantine_parent_node": _node(parent_stat), "logical_bytes": total,
                    "evidence_entries": entries, "physical_bytes_reclaimed": 0,
                    "status": "intent", "result_persisted": False}
         if operation_path.exists() or operation_path.is_symlink():
             previous = _json(operation_path)
-            for field in ("task", "attempt", "source", "source_node", "repository", "head", "destination",
+            for field in ("task", "attempt", "source", "source_node", "source_parent_node",
+                          "repository", "head", "destination", "current_head",
                           "quarantine_parent", "quarantine_parent_node", "evidence_entries"):
                 if previous.get(field) != pending.get(field):
                     raise OutputError("WORKTREE_QUARANTINE_INTENT_CHANGED")
@@ -1196,10 +1383,17 @@ def execute_registered_worktree_quarantine(
                 moved_stat = destination.lstat()
                 moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                                  "parent_node": _node(parent_stat)}
-                moved, moved_stat, _ = _registered_worktree(moved_receipt, repository)
+                moved, moved_stat, _ = _registered_worktree(moved_receipt, repository, expected_head)
                 if (os.path.lexists(original) or _node(moved_stat) != pending["source_node"]
                         or _worktree_tree(moved, moved_stat.st_dev)[1] != entries):
                     raise OutputError("WORKTREE_QUARANTINE_RETRY_MISMATCH")
+                if native_binding is not None:
+                    _verify_native_worktree_source(
+                        moved, repository, native_binding, owner_record=owner_record,
+                        durable_evidence=durable_evidence,
+                    )
+                else:
+                    _verify_prepared_worktree_source(moved, repository, current_head, binding["head"])
                 return {**previous, "status": "already_quarantined", "newly_removed_bytes": 0}
             source_exists = os.path.lexists(original)
             destination_exists = os.path.lexists(destination)
@@ -1209,23 +1403,35 @@ def execute_registered_worktree_quarantine(
                 moved_stat = destination.lstat()
                 moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                                  "parent_node": _node(parent_stat)}
-                moved, moved_stat, _ = _registered_worktree(moved_receipt, repository)
+                moved, moved_stat, _ = _registered_worktree(moved_receipt, repository, expected_head)
                 if (_node(moved_stat) != pending["source_node"]
                         or _worktree_tree(moved, moved_stat.st_dev)[1] != entries):
                     raise OutputError("WORKTREE_QUARANTINE_RECONCILIATION_MISMATCH")
+                if native_binding is not None:
+                    _verify_native_worktree_source(
+                        moved, repository, native_binding, owner_record=owner_record,
+                        durable_evidence=durable_evidence,
+                    )
+                else:
+                    _verify_prepared_worktree_source(moved, repository, current_head, binding["head"])
                 previous.update(status="complete", destination_node=_node(moved_stat),
                                 result_persisted=True)
                 _atomic_json(operation_path, previous)
                 return {**previous, "status": "already_quarantined", "newly_removed_bytes": 0}
         else:
             _write_exclusive(operation_path, pending)
-        checked, checked_stat, checked_binding = _registered_worktree(receipt, repository)
+        checked, checked_stat, checked_binding = _registered_worktree(receipt, repository, expected_head)
         if (_node(checked_stat) != pending["source_node"] or checked_binding != binding
                 or _node(quarantine_parent.lstat()) != pending["quarantine_parent_node"]
                 or os.path.lexists(destination)):
             raise OutputError("WORKTREE_QUARANTINE_IDENTITY_CHANGED")
         if native_binding is not None:
-            _verify_native_worktree_source(checked, repository, native_binding)
+            _verify_native_worktree_source(
+                checked, repository, native_binding, owner_record=owner_record,
+                durable_evidence=durable_evidence,
+            )
+        else:
+            _verify_prepared_worktree_source(checked, repository, current_head, binding["head"])
         if before_move is not None:
             before_move()
         moved_cmd = subprocess.run(["git", "-C", str(repository), "worktree", "move",
@@ -1236,10 +1442,17 @@ def execute_registered_worktree_quarantine(
         moved_stat = destination.lstat()
         moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                          "parent_node": _node(parent_stat)}
-        moved, moved_stat, _ = _registered_worktree(moved_receipt, repository)
+        moved, moved_stat, _ = _registered_worktree(moved_receipt, repository, expected_head)
         if (os.path.lexists(original) or _node(moved_stat) != pending["source_node"]
                 or _worktree_tree(moved, moved_stat.st_dev)[1] != entries):
             raise OutputError("WORKTREE_QUARANTINE_READBACK_FAILED")
+        if native_binding is not None:
+            _verify_native_worktree_source(
+                moved, repository, native_binding, owner_record=owner_record,
+                durable_evidence=durable_evidence,
+            )
+        else:
+            _verify_prepared_worktree_source(moved, repository, current_head, binding["head"])
         pending.update(status="complete", destination_node=_node(moved_stat), result_persisted=True)
         _atomic_json(operation_path, pending)
         return {**pending, "status": "quarantined", "newly_removed_bytes": total}
@@ -1305,6 +1518,14 @@ def execute_native_quarantine(
             if source_exists == destination_exists:
                 raise OutputError("QUARANTINE_RETRY_LOCATIONS_AMBIGUOUS")
             if not source_exists:
+                _no_symlinks(output_path.parent)
+                try:
+                    source_parent_node = _node(output_path.parent.lstat())
+                except OSError as error:
+                    raise OutputError("QUARANTINE_RETRY_SOURCE_PARENT_UNREADABLE") from error
+                if (source_parent_node != known[0].get("parent_node")
+                        or previous.get("source_parent_node") != source_parent_node):
+                    raise OutputError("QUARANTINE_RETRY_SOURCE_PARENT_MISMATCH")
                 moved = destination.lstat()
                 entries = previous.get("evidence_entries")
                 retained = Path(previous.get("retained_evidence", ""))
@@ -1340,6 +1561,7 @@ def execute_native_quarantine(
         retained = Path(retention["path"])
         intent = {"schema_version": SCHEMA_VERSION, "operation": "native-quarantine", "task": task,
                   "attempt": attempt, "source": str(root), "source_node": plan["node"],
+                  "source_parent_node": _node(root.parent.lstat()),
                   "destination": str(destination), "retained_evidence": str(retained),
                   "destination_parent": str(destination_parent),
                   "destination_parent_node": _node(parent_stat),
@@ -1350,6 +1572,7 @@ def execute_native_quarantine(
         if intent_path.exists():
             previous = _json(intent_path)
             if (previous.get("source_node") != plan["node"] or previous.get("source") != str(root)
+                    or previous.get("source_parent_node") != intent.get("source_parent_node")
                     or previous.get("destination") != str(destination)
                     or previous.get("retained_evidence") != str(retained)
                     or previous.get("destination_parent") != str(destination_parent)
@@ -1446,6 +1669,247 @@ def _native_owner_phase(owner: dict[str, Any], invocation_record: Path) -> tuple
             or phase["producer_exit_code"] < 0 or phase["signal_status"] < 0):
         raise OutputError("NATIVE_PRODUCER_TERMINAL_PHASE_INVALID")
     return binding, phase, phase_path
+
+
+def _native_expo_context(owner_record: Path, invocation_record: Path) -> tuple[dict[str, Any], dict[str, Any], Path, Path]:
+    owner = _json(owner_record)
+    invocation_path = Path(os.path.abspath(invocation_record))
+    invocation_identity = file_binding(invocation_path)
+    binding = _json(invocation_path)
+    invocation = binding.get("invocation")
+    source = binding.get("source")
+    roots = binding.get("roots")
+    if (binding.get("schema_version") != 1 or not isinstance(invocation, dict)
+            or not isinstance(source, dict) or not isinstance(roots, dict)
+            or invocation.get("root") != str(invocation_path.parent)
+            or invocation.get("records") != str(invocation_path.parent / "records")):
+        raise OutputError("NATIVE_EXPO_INVOCATION_BINDING_INVALID")
+    worktree_value = roots.get("worktree")
+    qualifier = source.get("qualifier")
+    if (not isinstance(worktree_value, str) or not Path(worktree_value).is_absolute()
+            or not isinstance(qualifier, dict) or set(qualifier) != {"path", "sha256"}
+            or file_binding(Path(qualifier["path"])) != qualifier):
+        raise OutputError("NATIVE_EXPO_PRODUCER_BINDING_INVALID")
+    worktree = Path(worktree_value)
+    output = worktree / "apps/mobile/.expo"
+    if output != Path(os.path.normpath(output)):
+        raise OutputError("NATIVE_EXPO_OUTPUT_PATH_INVALID")
+    expected_definition = {"path": invocation_identity["path"], "sha256": invocation_identity["sha256"]}
+    matches = [item for item in owner.get("owned_outputs", [])
+               if isinstance(item, dict) and item.get("path") == str(worktree)]
+    if (owner.get("task") != owner.get("attempt") or len(matches) != 1
+            or matches[0].get("definition") != expected_definition
+            or matches[0].get("git_worktree", {}).get("repository") != source.get("root")
+            or matches[0].get("git_worktree", {}).get("head") != source.get("commit")):
+        raise OutputError("NATIVE_EXPO_WORKTREE_OWNER_MISMATCH")
+    evidence_root = invocation_path.parent.parent
+    return owner, binding, output, evidence_root
+
+
+def _native_prebuild_stage(stage_file: Path) -> dict[str, Any] | None:
+    if stage_file.is_symlink() or not stage_file.is_file():
+        return None
+    try:
+        matches = [json.loads(line) for line in stage_file.read_text(encoding="utf-8").splitlines()
+                   if line.strip()]
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    selected = [item for item in matches if isinstance(item, dict)
+                and item.get("stage") == "prebuild_plugins"]
+    if len(selected) != 1 or type(selected[0].get("exit_code")) is not int:
+        return None
+    if selected[0].get("status") not in {"PASS", "FAILURE", "SIGNAL"}:
+        return None
+    return selected[0]
+
+
+def _native_prebuild_stage_matches(stage_file: Path, producer_exit_code: int) -> bool:
+    stage = _native_prebuild_stage(stage_file)
+    if stage is None:
+        return False
+    if producer_exit_code != 0:
+        return (stage["status"] in {"FAILURE", "SIGNAL"}
+                and stage["exit_code"] == producer_exit_code)
+    if stage["status"] == "PASS":
+        return stage["exit_code"] == 0
+    if stage["status"] == "FAILURE":
+        return stage["exit_code"] != 0
+    return stage["exit_code"] >= 128
+
+
+def _verify_native_expo_receipt(
+    owner_record: Path,
+    binding: dict[str, Any],
+    worktree: Path,
+    *,
+    receipt_binding: dict[str, str] | None = None,
+    stage_binding: dict[str, str] | None = None,
+    invocation_record: Path | None = None,
+) -> tuple[dict[str, Any], Path, Path, dict[str, str], dict[str, str]]:
+    owner = _json(owner_record)
+    invocation_binding = None
+    if invocation_record is not None:
+        invocation_binding = file_binding(invocation_record)
+    else:
+        invocation_binding = owner.get("quarantine_parent", {}).get("invocation") \
+            if isinstance(owner.get("quarantine_parent"), dict) else None
+    if not isinstance(invocation_binding, dict) or set(invocation_binding) != {"path", "sha256"}:
+        raise OutputError("NATIVE_EXPO_INVOCATION_OWNER_BINDING_MISSING")
+    invocation_path = Path(invocation_binding["path"])
+    if file_binding(invocation_path) != invocation_binding:
+        raise OutputError("NATIVE_EXPO_INVOCATION_OWNER_BINDING_CHANGED")
+    _, observed_binding, original_output, evidence_root = _native_expo_context(owner_record, invocation_path)
+    original_worktree = Path(binding.get("roots", {}).get("worktree", ""))
+    try:
+        output_relative = original_output.relative_to(original_worktree)
+    except ValueError as error:
+        raise OutputError("NATIVE_EXPO_SOURCE_OR_WORKTREE_CHANGED") from error
+    output = worktree / output_relative
+    if observed_binding != binding or output_relative != Path("apps/mobile/.expo"):
+        raise OutputError("NATIVE_EXPO_SOURCE_OR_WORKTREE_CHANGED")
+    receipt_path = invocation_path.parent / "nutrition-expo-output.json"
+    stage_file = evidence_root / "stages.jsonl"
+    if receipt_binding is None or stage_binding is None:
+        generated = owner.get("nutrition_generated_outputs")
+        if not isinstance(generated, list) or len(generated) != 1 or not isinstance(generated[0], dict):
+            raise OutputError("NATIVE_EXPO_OUTPUT_OWNER_BINDING_MISSING")
+        row = generated[0]
+        if set(row) != {"receipt", "stages"}:
+            raise OutputError("NATIVE_EXPO_OUTPUT_OWNER_BINDING_INVALID")
+        receipt_binding = row["receipt"]
+        stage_binding = row["stages"]
+    if (receipt_binding != file_binding(receipt_path) or stage_binding != file_binding(stage_file)):
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+    receipt = _json(receipt_path)
+    expected_command = ["npm", "exec", "--", "expo", "prebuild", "--clean", "--platform", "ios", "--no-install"]
+    qualifier = binding.get("source", {}).get("qualifier")
+    prebuild_log = evidence_root / "prebuild.log"
+    dependency_file = evidence_root / "dependency-versions.env"
+    producer_exit_code = receipt.get("producer_exit_code")
+    if (type(producer_exit_code) is not int
+            or not _native_prebuild_stage_matches(stage_file, producer_exit_code)
+            or receipt.get("schema_version") != 1
+            or receipt.get("status") not in {"observed", "absent"}
+            or receipt.get("kind") != "expo-prebuild-output"
+            or receipt.get("task") != owner.get("task") or receipt.get("attempt") != owner.get("attempt")
+            or receipt.get("invocation") != invocation_binding
+            or receipt.get("source_commit") != binding.get("source", {}).get("commit")
+            or receipt.get("invocation_nonce") != binding.get("invocation", {}).get("nonce")
+            or receipt.get("worktree") != str(original_worktree)
+            or receipt.get("output_path") != str(original_output)
+            or receipt.get("producer_command") != expected_command
+            or receipt.get("qualifier") != qualifier
+            or receipt.get("prebuild_log") != file_binding(prebuild_log)
+            or receipt.get("dependency_versions") != file_binding(dependency_file)
+            or receipt.get("intent_dependency_versions") != receipt.get("dependency_versions")
+            or receipt.get("output_parent_node") != _node(output.parent.lstat())):
+        raise OutputError("NATIVE_EXPO_OUTPUT_PRODUCER_BINDING_INVALID")
+    expected_receipt_fields = {
+        "schema_version", "kind", "status", "task", "attempt", "invocation", "source_commit",
+        "invocation_nonce", "worktree", "output_path", "output_parent_node", "producer_command",
+        "intent_dependency_versions", "qualifier", "producer_exit_code", "prebuild_log",
+        "dependency_versions",
+    }
+    if receipt.get("status") == "observed":
+        expected_receipt_fields.update({"output_node", "logical_bytes", "output_entries"})
+    if set(receipt) != expected_receipt_fields:
+        raise OutputError("NATIVE_EXPO_OUTPUT_RECEIPT_FIELDS_INVALID")
+    versions = dependency_file.read_text(encoding="utf-8").splitlines()
+    if (len(versions) != 2 or not versions[0].startswith("expo=")
+            or not versions[1].startswith("react_native=")
+            or not all(line.split("=", 1)[1] for line in versions)):
+        raise OutputError("NATIVE_EXPO_DEPENDENCY_BINDING_INVALID")
+    return receipt, output, stage_file, receipt_binding, stage_binding
+
+
+def _verify_native_expo_output(
+    owner_record: Path,
+    binding: dict[str, Any],
+    worktree: Path,
+    *,
+    receipt_binding: dict[str, str] | None = None,
+    stage_binding: dict[str, str] | None = None,
+    invocation_record: Path | None = None,
+) -> dict[str, Any]:
+    receipt, output, _, _, _ = _verify_native_expo_receipt(
+        owner_record, binding, worktree, receipt_binding=receipt_binding,
+        stage_binding=stage_binding, invocation_record=invocation_record,
+    )
+    if receipt.get("status") != "observed":
+        raise OutputError("NATIVE_EXPO_OUTPUT_RECEIPT_NOT_OBSERVED")
+    try:
+        output_stat = output.lstat()
+    except OSError as error:
+        raise OutputError("NATIVE_EXPO_OUTPUT_UNREADABLE") from error
+    logical, entries = _walk_native_tree(output, output_stat.st_dev)
+    if (_node(output_stat) != receipt.get("output_node")
+            or logical != receipt.get("logical_bytes") or entries != receipt.get("output_entries")):
+        raise OutputError("NATIVE_EXPO_OUTPUT_CONTENT_CHANGED")
+    return receipt
+
+
+def begin_native_generated_output(owner_record: Path, invocation_record: Path) -> dict[str, Any]:
+    owner, binding, output, evidence_root = _native_expo_context(owner_record, invocation_record)
+    if (owner.get("active_owner") is None or owner.get("native_terminal") is not None
+            or owner.get("status") not in {"created", "running", "in_progress"}):
+        raise OutputError("NATIVE_EXPO_OWNER_NOT_ACTIVE")
+    _no_symlinks(output.parent)
+    if output.exists() or output.is_symlink():
+        raise OutputError("NATIVE_EXPO_OUTPUT_PREEXISTS")
+    parent_stat = output.parent.lstat()
+    receipt_path = Path(binding["invocation"]["root"]) / "nutrition-expo-output.json"
+    value = {"schema_version": 1, "kind": "expo-prebuild-output", "status": "intent",
+             "task": owner["task"], "attempt": owner["attempt"],
+             "invocation": file_binding(Path(invocation_record)),
+             "source_commit": binding["source"]["commit"],
+             "invocation_nonce": binding["invocation"]["nonce"],
+             "worktree": str(binding["roots"]["worktree"]), "output_path": str(output),
+             "output_parent_node": _node(parent_stat),
+             "producer_command": ["npm", "exec", "--", "expo", "prebuild", "--clean",
+                                  "--platform", "ios", "--no-install"],
+             "intent_dependency_versions": file_binding(evidence_root / "dependency-versions.env"),
+             "qualifier": binding["source"]["qualifier"]}
+    _write_exclusive(receipt_path, value)
+    return {"status": "intent", "path": str(receipt_path), "sha256": file_binding(receipt_path)["sha256"],
+            "evidence_root": str(evidence_root)}
+
+
+def finish_native_generated_output(
+    owner_record: Path, invocation_record: Path, *, producer_exit_code: int,
+) -> dict[str, Any]:
+    owner, binding, output, evidence_root = _native_expo_context(owner_record, invocation_record)
+    if (owner.get("active_owner") is None or owner.get("native_terminal") is not None
+            or type(producer_exit_code) is not int or producer_exit_code < 0):
+        raise OutputError("NATIVE_EXPO_OWNER_NOT_ACTIVE")
+    receipt_path = Path(binding["invocation"]["root"]) / "nutrition-expo-output.json"
+    receipt = _json(receipt_path)
+    log_path = evidence_root / "prebuild.log"
+    dependency_file = evidence_root / "dependency-versions.env"
+    dependency_binding = file_binding(dependency_file)
+    if (receipt.get("status") != "intent"
+            or receipt.get("invocation") != file_binding(Path(invocation_record))
+            or receipt.get("output_path") != str(output)
+            or receipt.get("output_parent_node") != _node(output.parent.lstat())
+            or not log_path.is_file() or log_path.is_symlink()
+            or not dependency_file.is_file() or dependency_file.is_symlink()
+            or receipt.get("intent_dependency_versions") != dependency_binding):
+        raise OutputError("NATIVE_EXPO_OUTPUT_INTENT_INVALID")
+    if os.path.lexists(output):
+        output_stat = output.lstat()
+        if not stat.S_ISDIR(output_stat.st_mode):
+            raise OutputError("NATIVE_EXPO_OUTPUT_NOT_DIRECTORY")
+        logical, entries = _walk_native_tree(output, output_stat.st_dev)
+        receipt.update(status="observed", output_node=_node(output_stat),
+                       logical_bytes=logical, output_entries=entries)
+        result = {"status": "observed", "path": str(output), "node": _node(output_stat),
+                  "logical_bytes": logical, "entry_count": len(entries)}
+    else:
+        receipt.update(status="absent")
+        result = {"status": "absent", "path": str(output)}
+    receipt.update(producer_exit_code=producer_exit_code, prebuild_log=file_binding(log_path),
+                   dependency_versions=dependency_binding)
+    _atomic_json(receipt_path, receipt)
+    return result
 
 
 def _native_terminal(owner: dict[str, Any], phase: dict[str, Any], phase_path: Path) -> dict[str, Any]:
@@ -1917,7 +2381,45 @@ def finish_native_owner(owner_record: Path, *, invocation_record: Path, hold_pid
                 raise OutputError("NATIVE_TERMINAL_RESULT_ALREADY_EXISTS")
         else:
             _write_exclusive(result_path, result)
-        if status == "complete":
+        _, invocation, expo_output, evidence_root = _native_expo_context(
+            owner_record, invocation_record,
+        )
+        worktree = Path(invocation["roots"]["worktree"])
+        stage_file = evidence_root / "stages.jsonl"
+        receipt_path = Path(invocation["invocation"]["root"]) / "nutrition-expo-output.json"
+        if os.path.lexists(receipt_path):
+            receipt_binding = file_binding(receipt_path)
+            stage_binding = file_binding(stage_file)
+            expo_receipt, _, _, _, _ = _verify_native_expo_receipt(
+                owner_record, invocation, worktree, receipt_binding=receipt_binding,
+                stage_binding=stage_binding, invocation_record=invocation_record,
+            )
+            if expo_receipt.get("status") == "observed":
+                if not os.path.lexists(expo_output):
+                    raise OutputError("NATIVE_EXPO_OUTPUT_MISSING_AFTER_PREBUILD")
+                owner["nutrition_generated_outputs"] = [{"receipt": receipt_binding,
+                                                           "stages": stage_binding}]
+                _verify_native_expo_output(
+                    owner_record, invocation, worktree, receipt_binding=receipt_binding,
+                    stage_binding=stage_binding, invocation_record=invocation_record,
+                )
+            elif expo_receipt.get("status") == "absent":
+                if os.path.lexists(expo_output):
+                    raise OutputError("NATIVE_EXPO_OUTPUT_APPEARED_AFTER_ABSENT_RECEIPT")
+                owner.pop("nutrition_generated_outputs", None)
+            else:
+                raise OutputError("NATIVE_EXPO_OUTPUT_RECEIPT_INCOMPLETE")
+        elif os.path.lexists(expo_output):
+            # Output without an authenticated post-producer receipt is unknown.
+            owner.pop("nutrition_generated_outputs", None)
+            raise OutputError("NATIVE_EXPO_OUTPUT_RECEIPT_MISSING")
+        else:
+            owner.pop("nutrition_generated_outputs", None)
+        proof_path = Path(invocation["invocation"]["root"]) / "full-build-proof.json"
+        xcode_finished = Path(invocation["invocation"]["root"]) / "phases" / "xcode-build-finished.json"
+        proof_origin = Path(invocation["invocation"]["root"]) / "nutrition-native-proof-origin.json"
+        if (status == "complete" or os.path.lexists(proof_path)
+                or os.path.lexists(xcode_finished) or os.path.lexists(proof_origin)):
             _capture_native_proof_origin(owner, Path(invocation_record), binding)
         else:
             owner.pop("native_proof_origin", None)
@@ -1985,6 +2487,97 @@ def owner_hold(owner_record: Path, ready_file: Path | None = None) -> None:
         os.close(descriptor)
 
 
+def reconcile_owner_exit(owner_record: Path, *, ready_file: Path, holder_pid: int) -> dict[str, Any]:
+    """Reconcile the exact lock holder only after its process has exited."""
+    lock = _open_owner_lock(owner_record, blocking=False)
+    try:
+        owner = _json(owner_record)
+        ready = _json(ready_file)
+        if (set(ready) != {"pid", "start_monotonic_ns"}
+                or type(ready.get("pid")) is not int or ready["pid"] != holder_pid
+                or type(ready.get("start_monotonic_ns")) is not int
+                or ready["start_monotonic_ns"] <= 0):
+            raise OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_INVALID")
+        active = owner.get("active_owner")
+        prior_exit = owner.get("owner_exit")
+        if active is None and isinstance(prior_exit, dict):
+            if (prior_exit.get("pid") != ready["pid"]
+                    or prior_exit.get("start_monotonic_ns") != ready["start_monotonic_ns"]):
+                raise OutputError("OUTPUT_OWNER_EXIT_PRIOR_BINDING_CHANGED")
+            repeated = True
+        else:
+            if active != ready:
+                raise OutputError("OUTPUT_OWNER_EXIT_ACTIVE_BINDING_CHANGED")
+            try:
+                os.kill(holder_pid, 0)
+            except ProcessLookupError:
+                pass
+            except OSError as error:
+                raise OutputError("OUTPUT_OWNER_EXIT_PROCESS_OBSERVATION_FAILED") from error
+            else:
+                raise OutputError("OUTPUT_OWNER_STILL_LIVE")
+            repeated = False
+
+        attempt_root = Path(os.path.abspath(owner_record.parent))
+        complete_path = attempt_root / "complete.json"
+        results_path = attempt_root / "results.json"
+        complete_binding = None
+        terminal_result = None
+        owner_status = "incomplete"
+        if os.path.lexists(complete_path):
+            complete_binding = file_binding(complete_path)
+            complete = _json(complete_path)
+            results_binding = file_binding(results_path)
+            results = _json(results_path)
+            definitions = [item.get("definition") for item in owner.get("owned_outputs", [])
+                           if isinstance(item, dict)]
+            unique_definitions = {json.dumps(value, sort_keys=True) for value in definitions}
+            authored = results.get("authored_commands")
+            request_identity = authored.get("request_identity") if isinstance(authored, dict) else None
+            if (len(unique_definitions) != 1 or not definitions
+                    or not isinstance(definitions[0], dict)
+                    or set(definitions[0]) != {"path", "sha256"}
+                    or file_binding(Path(definitions[0]["path"]))["sha256"] != definitions[0]["sha256"]
+                    or not isinstance(request_identity, dict)
+                    or complete.get("attempt") != owner.get("attempt")
+                    or complete.get("request_sha256") != request_identity.get("sha256")
+                    or complete.get("results_sha256") != results_binding["sha256"]
+                    or complete.get("status") != results.get("status")
+                    or results.get("status") not in {"passed", "failed"}
+                    or complete.get("repository") != authored.get("repository")
+                    or complete.get("expected_head") != authored.get("expected_head")):
+                raise OutputError("OUTPUT_OWNER_EXIT_TERMINAL_RESULT_INVALID")
+            bundle_path = Path(complete.get("bundle_path", ""))
+            if (not bundle_path.is_absolute() or not bundle_path.is_relative_to(attempt_root)
+                    or file_binding(bundle_path)["sha256"] != complete.get("bundle_sha256")):
+                raise OutputError("OUTPUT_OWNER_EXIT_BUNDLE_INVALID")
+            owner_status = "complete" if results["status"] == "passed" else "failed"
+            terminal_result = results_binding
+
+        owner["attempt_directory"] = str(attempt_root)
+        owner["status"] = owner_status
+        owner["terminal_result"] = terminal_result
+        owner["native_result_ready"] = owner_status == "complete"
+        owner["owner_exit"] = {
+            "pid": ready["pid"],
+            "start_monotonic_ns": ready["start_monotonic_ns"],
+            "ready_file": file_binding(ready_file),
+            "complete_record": complete_binding,
+            "reconciled_monotonic_ns": (
+                prior_exit.get("reconciled_monotonic_ns") if repeated else time.monotonic_ns()
+            ),
+            "result": owner_status,
+        }
+        owner.pop("active_owner", None)
+        owner["updated_monotonic_ns"] = time.monotonic_ns()
+        _atomic_json(owner_record, owner)
+        return {"status": owner_status, "attempt": owner.get("attempt"),
+                "holder_pid": holder_pid, "complete_record": complete_binding,
+                "result": terminal_result, "reconciled": not repeated}
+    finally:
+        os.close(lock)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -2015,6 +2608,12 @@ def main(argv: list[str] | None = None) -> int:
     terminal.add_argument("--owner-record", type=Path, required=True)
     terminal.add_argument("--invocation-record", type=Path, required=True)
     terminal.add_argument("--hold-pid", type=int)
+    for name in ("begin-native-generated-output", "finish-native-generated-output"):
+        generated = commands.add_parser(name)
+        generated.add_argument("--owner-record", type=Path, required=True)
+        generated.add_argument("--invocation-record", type=Path, required=True)
+        if name == "finish-native-generated-output":
+            generated.add_argument("--producer-exit-code", type=int, required=True)
     quarantine_parent = commands.add_parser("native-quarantine-parent-create")
     quarantine_parent.add_argument("--owner-record", type=Path, required=True)
     quarantine_parent.add_argument("--path", type=Path, required=True)
@@ -2037,6 +2636,10 @@ def main(argv: list[str] | None = None) -> int:
     hold = commands.add_parser("owner-hold")
     hold.add_argument("--owner-record", type=Path, required=True)
     hold.add_argument("--ready-file", type=Path)
+    reconcile = commands.add_parser("reconcile-owner-exit")
+    reconcile.add_argument("--owner-record", type=Path, required=True)
+    reconcile.add_argument("--ready-file", type=Path, required=True)
+    reconcile.add_argument("--holder-pid", type=int, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "create-owned":
@@ -2065,6 +2668,15 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(finish_native_owner(
                 args.owner_record, invocation_record=args.invocation_record, hold_pid=args.hold_pid,
             ), sort_keys=True))
+        elif args.command == "begin-native-generated-output":
+            print(json.dumps(begin_native_generated_output(
+                args.owner_record, args.invocation_record,
+            ), sort_keys=True))
+        elif args.command == "finish-native-generated-output":
+            print(json.dumps(finish_native_generated_output(
+                args.owner_record, args.invocation_record,
+                producer_exit_code=args.producer_exit_code,
+            ), sort_keys=True))
         elif args.command == "native-quarantine-parent-create":
             print(json.dumps(create_native_quarantine_parent(
                 args.owner_record, path=args.path, same_device_as=args.same_device_as,
@@ -2084,6 +2696,10 @@ def main(argv: list[str] | None = None) -> int:
                                                destination=args.destination, durable_evidence=args.durable_evidence,
                                                task=args.task, attempt=args.attempt)
             print(json.dumps(result, sort_keys=True))
+        elif args.command == "reconcile-owner-exit":
+            print(json.dumps(reconcile_owner_exit(
+                args.owner_record, ready_file=args.ready_file, holder_pid=args.holder_pid,
+            ), sort_keys=True))
         else:
             owner_hold(args.owner_record, args.ready_file)
         return 0

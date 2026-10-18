@@ -309,6 +309,11 @@ class IosNativeQualificationTests(
         self.assertEqual(owner["status"], "complete")
         self.assertTrue(owner["native_result_ready"])
         self.assertEqual(len(owner["owned_outputs"]), 3)
+        generated = owner["nutrition_generated_outputs"]
+        self.assertEqual(len(generated), 1)
+        expo_receipt = Path(generated[0]["receipt"]["path"])
+        self.assertEqual(expo_receipt.name, "nutrition-expo-output.json")
+        self.assertEqual(json.loads(expo_receipt.read_text(encoding="utf-8"))["status"], "observed")
         quarantine = Path(owner["quarantine_parent"]["path"])
         self.assertEqual(cleanup["quarantined_roots"], [
             str(quarantine / "Nutrition App Native"),
@@ -424,6 +429,31 @@ class IosNativeQualificationTests(
                                 "fixture-unique-"),
             2,
         )
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_authenticates_expo_output_and_retains_unique_sibling(self):
+        result, evidence, _ = self._run_fixture_qualification(
+            "expo-unique-sibling", return_evidence_parent=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("fixture-expo-sibling.bin", manifest["cleanup_disposition"]["reason"])
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        receipt = owner["nutrition_generated_outputs"][0]["receipt"]
+        output_record = json.loads(Path(receipt["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(output_record["producer_command"], [
+            "npm", "exec", "--", "expo", "prebuild", "--clean", "--platform", "ios", "--no-install",
+        ])
+        self.assertEqual(output_record["status"], "observed")
+        worktree_receipt = next(item for item in owner["owned_outputs"] if "git_worktree" in item)
+        self.assertEqual(output_record["source_commit"], worktree_receipt["git_worktree"]["head"])
+        worktree = Path(worktree_receipt["path"])
+        self.assertEqual((worktree / "apps/mobile/fixture-expo-sibling.bin").read_bytes(),
+                         b"unique sibling source stays in place\n")
+        self.assertTrue((worktree / "apps/mobile/.expo/settings.json").is_file())
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_native_proof_readback_precedes_uncertain_process_observation(self):
@@ -817,6 +847,15 @@ class IosNativeQualificationTests(
         self.assertEqual(statuses["cleanup"], "PASS")
         self.assertFalse((evidence / "Nutrition App Native").exists())
         self.assertFalse((evidence / "DerivedData").exists())
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        generated = owner["nutrition_generated_outputs"]
+        self.assertEqual(len(generated), 1)
+        receipt = json.loads(Path(generated[0]["receipt"]["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt["status"], "observed")
+        self.assertEqual(receipt["producer_exit_code"], 17)
+        quarantine = Path(owner["quarantine_parent"]["path"])
+        self.assertTrue((quarantine / "Nutrition App Native/apps/mobile/.expo/settings.json").is_file())
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_retains_signal_and_cleanup(self):
@@ -825,9 +864,34 @@ class IosNativeQualificationTests(
         manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["result"], "SIGNAL")
         statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
-        self.assertEqual(statuses["prebuild_plugins"], "SIGNAL")
+        self.assertEqual(statuses["xcode_build"], "PASS")
+        self.assertEqual(statuses["swift_harnesses"], "SIGNAL")
         self.assertEqual(statuses["cleanup"], "PASS")
         self.assertFalse((evidence / "Nutrition App Native").exists())
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(owner["status"], "failed")
+        self.assertIn("native_proof_origin", owner)
+        self.assertEqual(manifest["native_process_lifecycle"]["full_build_proof"]["status"], "PASS")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_retains_valid_fullbuild_proof_after_harness_failure(self):
+        result, evidence = self._run_fixture_qualification("harness-failure")
+        self.assertEqual(result.returncode, 17, result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
+        self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+        self.assertEqual(statuses["xcode_build"], "PASS")
+        self.assertEqual(statuses["swift_harnesses"], "FAILURE")
+        self.assertEqual(statuses["cleanup"], "PASS")
+        self.assertEqual(manifest["native_process_lifecycle"]["full_build_proof"]["status"], "PASS")
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(owner["status"], "failed")
+        origin = json.loads(Path(owner["native_proof_origin"]["path"]).read_text(encoding="utf-8"))
+        proof = Path(origin["proof"]["path"])
+        self.assertEqual(hashlib.sha256(proof.read_bytes()).hexdigest(), origin["proof"]["sha256"])
+        self.assertTrue(origin["outputs"])
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_parent_signal_runs_cleanup(self):
@@ -2316,7 +2380,17 @@ EOF
         ;;
     esac
     ;;
-  exec) mkdir -p "$(pwd)/ios/Nutrition App.xcodeproj"; printf '%s\n' 'Expo Constants generates a CocoaPods script phase through' 'Nutrition App iOS path portability: React Native Info.plist discovery' 'Nutrition App iOS path portability: CocoaPods XCFramework diagnostics' 'Find.find(project_folder_path)' '::NewArchitectureHelper.define_singleton_method' 'basename "$basepath"' > "$(pwd)/ios/Podfile"; printf '%s\n' '<document type="storyboard"/>' > "$(pwd)/ios/SplashScreen.storyboard"; echo 'REACT_NATIVE_XCODE_SCRIPT=' > "$(pwd)/ios/Nutrition App.xcodeproj/project.pbxproj"; case "${IOS_NATIVE_FIXTURE_MODE-}" in failure) exit 17 ;; signal) kill -TERM $$ ;; esac ;;
+  exec)
+    mkdir -p "$(pwd)/ios/Nutrition App.xcodeproj" "$(pwd)/.expo"
+    printf '%s\n' 'fixture Expo generated settings' > "$(pwd)/.expo/settings.json"
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "expo-unique-sibling" ]; then
+      printf '%s\n' 'unique sibling source stays in place' > "$(pwd)/fixture-expo-sibling.bin"
+    fi
+    printf '%s\n' 'Expo Constants generates a CocoaPods script phase through' 'Nutrition App iOS path portability: React Native Info.plist discovery' 'Nutrition App iOS path portability: CocoaPods XCFramework diagnostics' 'Find.find(project_folder_path)' '::NewArchitectureHelper.define_singleton_method' 'basename "$basepath"' > "$(pwd)/ios/Podfile"
+    printf '%s\n' '<document type="storyboard"/>' > "$(pwd)/ios/SplashScreen.storyboard"
+    echo 'REACT_NATIVE_XCODE_SCRIPT=' > "$(pwd)/ios/Nutrition App.xcodeproj/project.pbxproj"
+    case "${IOS_NATIVE_FIXTURE_MODE-}" in failure) exit 17 ;; esac
+    ;;
 esac
 """)
         write("ruby", 'echo ruby 3.4.0\n')
@@ -2680,6 +2754,7 @@ case "$0" in
     if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "harness-failure" ]; then exit 17; fi
     if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "missing-full-proof" ]; then rm -f "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/native-lifecycle/full-build-proof.json"; fi
     if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "corrupt-capability-proof" ]; then printf '{broken' > "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/native-lifecycle/capability-proof.json"; fi
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "signal" ]; then kill -TERM "${IOS_NATIVE_QUALIFIER_PID:?}"; fi
     echo "NutritionOcrGeometryTests passed" ;;
   *image-quality) echo "NutritionImageQualityTests passed" ;;
   *vision-runtime) echo "NutritionOcrVisionRuntimeTests passed" ;;
@@ -3394,6 +3469,8 @@ exec /bin/rm "$@"
             subprocess.run([shutil.which("git") or "/usr/bin/git", "config", "--file",
                             str(git_config), "core.excludesFile", str(ignore_file)], check=True)
             environment["GIT_CONFIG_GLOBAL"] = str(git_config)
+        if mode == "expo-unique-sibling":
+            environment["IOS_NATIVE_FIXTURE_EXPO_SIBLING"] = "1"
         if mode in {"known-writer", "known-writer-detached", "known-writer-retained"}:
             (evidence / "movement-events.jsonl").write_text("", encoding="utf-8")
         environment["IOS_NATIVE_FIXTURE_LIPO"] = str(fake_bin / "lipo")
