@@ -1939,6 +1939,148 @@ def _native_prebuild_stage_matches(stage_file: Path, producer_exit_code: int) ->
     return stage["exit_code"] >= 128
 
 
+def _read_native_stage_bytes(path: Path) -> bytes:
+    """Read one unique regular stage file without following links or accepting races."""
+    _no_symlinks(path)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE") from error
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or not before.st_mode & 0o444:
+            raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE")
+        chunks = []
+        while True:
+            block = os.read(descriptor, 1024 * 1024)
+            if not block:
+                break
+            chunks.append(block)
+        after = os.fstat(descriptor)
+        try:
+            current = path.lstat()
+        except OSError as error:
+            raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_IDENTITY_CHANGED") from error
+
+        def identity(item: os.stat_result) -> tuple[int, int, int, int, int, int]:
+            return (item.st_dev, item.st_ino, item.st_size,
+                    item.st_mtime_ns, item.st_ctime_ns, item.st_nlink)
+
+        if identity(before) != identity(after) or identity(after) != identity(current):
+            raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_IDENTITY_CHANGED")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def _write_native_stage_snapshot(path: Path, content: bytes) -> dict[str, str]:
+    _no_symlinks(path.parent)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except FileExistsError as error:
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_ALREADY_EXISTS") from error
+    except OSError as error:
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_WRITE_FAILED") from error
+    try:
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    _fsync_directory(path.parent)
+    if _read_native_stage_bytes(path) != content:
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_READBACK_FAILED")
+    try:
+        binding = file_binding(path)
+    except (OSError, OutputError) as error:
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_READBACK_FAILED") from error
+    if binding["sha256"] != hashlib.sha256(content).hexdigest():
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_READBACK_FAILED")
+    return binding
+
+
+def _native_stage_snapshot_binding(
+    path: Path, binding: Any, *, expected_path: Path,
+) -> dict[str, str]:
+    if (not isinstance(binding, dict) or set(binding) != {"path", "sha256"}
+            or binding.get("path") != str(expected_path) or path != expected_path):
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+    try:
+        observed = file_binding(path)
+    except (OSError, OutputError) as error:
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED") from error
+    if observed != binding:
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+    return observed
+
+
+def _verify_native_stage_snapshot(
+    snapshot: Path, stage_file: Path, binding: Any, *, expected_path: Path,
+) -> dict[str, str]:
+    observed = _native_stage_snapshot_binding(snapshot, binding, expected_path=expected_path)
+    snapshot_bytes = _read_native_stage_bytes(snapshot)
+    current_bytes = _read_native_stage_bytes(stage_file)
+    if not current_bytes.startswith(snapshot_bytes):
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+    suffix = current_bytes[len(snapshot_bytes):]
+    if suffix:
+        if not suffix.endswith(b"\n"):
+            raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+        try:
+            rows = [json.loads(line) for line in suffix.decode("utf-8").splitlines() if line.strip()]
+        except (UnicodeError, json.JSONDecodeError) as error:
+            raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED") from error
+        if (len(rows) != 1 or not isinstance(rows[0], dict)
+                or set(rows[0]) != {"stage", "elapsed_seconds", "status", "exit_code"}
+                or rows[0].get("stage") != "cleanup"
+                or type(rows[0].get("elapsed_seconds")) is not int
+                or rows[0]["elapsed_seconds"] < 0
+                or type(rows[0].get("exit_code")) is not int
+                or not isinstance(rows[0].get("status"), str)
+                or rows[0]["status"] not in {"PASS", "INCOMPLETE", "FAILURE", "SIGNAL"}
+                or (rows[0]["status"] == "PASS" and rows[0]["exit_code"] != 0)
+                or (rows[0]["status"] == "SIGNAL" and rows[0]["exit_code"] < 128)
+                or (rows[0]["status"] == "FAILURE"
+                    and (rows[0]["exit_code"] == 0 or rows[0]["exit_code"] >= 128))):
+            raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+    return observed
+
+
+def _create_native_producer_stage_snapshot(
+    owner: dict[str, Any], *, invocation_record: Path, stage_file: Path,
+) -> dict[str, str]:
+    invocation_record = Path(os.path.abspath(invocation_record))
+    stage_file = Path(os.path.abspath(stage_file))
+    snapshot = invocation_record.parent / "producer-stages.jsonl"
+    generated = owner.get("nutrition_generated_outputs")
+    if generated is not None:
+        if (not isinstance(generated, list) or len(generated) != 1
+                or not isinstance(generated[0], dict)
+                or set(generated[0]) != {"receipt", "stages"}):
+            raise OutputError("NATIVE_EXPO_OUTPUT_OWNER_BINDING_INVALID")
+        return _native_stage_snapshot_binding(
+            snapshot, generated[0]["stages"], expected_path=snapshot,
+        )
+    if os.path.lexists(snapshot):
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_ALREADY_EXISTS")
+    producer_stages = _read_native_stage_bytes(stage_file)
+    if not producer_stages or not producer_stages.endswith(b"\n"):
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_SOURCE_INVALID")
+    return _write_native_stage_snapshot(snapshot, producer_stages)
+
+
 def _verify_native_expo_receipt(
     owner_record: Path,
     binding: dict[str, Any],
@@ -1971,6 +2113,7 @@ def _verify_native_expo_receipt(
         raise OutputError("NATIVE_EXPO_SOURCE_OR_WORKTREE_CHANGED")
     receipt_path = invocation_path.parent / "nutrition-expo-output.json"
     stage_file = evidence_root / "stages.jsonl"
+    snapshot_file = invocation_path.parent / "producer-stages.jsonl"
     if receipt_binding is None or stage_binding is None:
         generated = owner.get("nutrition_generated_outputs")
         if not isinstance(generated, list) or len(generated) != 1 or not isinstance(generated[0], dict):
@@ -1980,16 +2123,28 @@ def _verify_native_expo_receipt(
             raise OutputError("NATIVE_EXPO_OUTPUT_OWNER_BINDING_INVALID")
         receipt_binding = row["receipt"]
         stage_binding = row["stages"]
-    if (receipt_binding != file_binding(receipt_path) or stage_binding != file_binding(stage_file)):
-        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
     receipt = _json(receipt_path)
+    producer_stage_file = snapshot_file if receipt.get("status") == "observed" else stage_file
+    if receipt.get("status") == "observed":
+        _verify_native_stage_snapshot(
+            snapshot_file, stage_file, stage_binding, expected_path=snapshot_file,
+        )
+    else:
+        try:
+            observed_stage_binding = file_binding(stage_file)
+        except (OSError, OutputError) as error:
+            raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED") from error
+        if stage_binding != observed_stage_binding:
+            raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+    if receipt_binding != file_binding(receipt_path):
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
     expected_command = ["npm", "exec", "--", "expo", "prebuild", "--clean", "--platform", "ios", "--no-install"]
     qualifier = binding.get("source", {}).get("qualifier")
     prebuild_log = evidence_root / "prebuild.log"
     dependency_file = evidence_root / "dependency-versions.env"
     producer_exit_code = receipt.get("producer_exit_code")
     if (type(producer_exit_code) is not int
-            or not _native_prebuild_stage_matches(stage_file, producer_exit_code)
+            or not _native_prebuild_stage_matches(producer_stage_file, producer_exit_code)
             or receipt.get("schema_version") != 1
             or receipt.get("status") not in {"observed", "absent"}
             or receipt.get("kind") != "expo-prebuild-output"
@@ -2021,7 +2176,7 @@ def _verify_native_expo_receipt(
             or not versions[1].startswith("react_native=")
             or not all(line.split("=", 1)[1] for line in versions)):
         raise OutputError("NATIVE_EXPO_DEPENDENCY_BINDING_INVALID")
-    return receipt, output, stage_file, receipt_binding, stage_binding
+    return receipt, output, producer_stage_file, receipt_binding, stage_binding
 
 
 def _verify_native_expo_output(
@@ -2997,7 +3152,13 @@ def finish_native_owner(owner_record: Path, *, invocation_record: Path, hold_pid
         receipt_path = Path(invocation["invocation"]["root"]) / "nutrition-expo-output.json"
         if os.path.lexists(receipt_path):
             receipt_binding = file_binding(receipt_path)
-            stage_binding = file_binding(stage_file)
+            receipt = _json(receipt_path)
+            if receipt.get("status") == "observed":
+                stage_binding = _create_native_producer_stage_snapshot(
+                    owner, invocation_record=Path(invocation_record), stage_file=stage_file,
+                )
+            else:
+                stage_binding = file_binding(stage_file)
             expo_receipt, _, _, _, _ = _verify_native_expo_receipt(
                 owner_record, invocation, worktree, receipt_binding=receipt_binding,
                 stage_binding=stage_binding, invocation_record=invocation_record,

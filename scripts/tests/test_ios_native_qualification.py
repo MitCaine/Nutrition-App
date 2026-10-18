@@ -488,6 +488,108 @@ class IosNativeQualificationTests(
             self.assertEqual(json.loads(operation_path.read_text(encoding="utf-8"))["status"], "complete")
 
     @MACOS_NATIVE_FIXTURE_ONLY
+    def test_finalized_native_stage_snapshot_survives_complete_readback(self):
+        result, evidence = self._run_fixture_qualification("success")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+
+        stage_path = evidence / "stages.jsonl"
+        stage_bytes = stage_path.read_bytes()
+        stages = [json.loads(line) for line in stage_bytes.decode("utf-8").splitlines() if line.strip()]
+        self.assertEqual(stages[-1]["stage"], "cleanup")
+        self.assertEqual(stages[-1]["status"], "PASS")
+        self.assertEqual(stages[-1]["exit_code"], 0)
+        self.assertEqual(manifest["stages"], stages)
+
+        owner_path = evidence / "native-lifecycle" / "output-owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        generated = owner["nutrition_generated_outputs"]
+        self.assertEqual(len(generated), 1)
+        expected_snapshot = evidence / "native-lifecycle" / "producer-stages.jsonl"
+        for row in generated:
+            binding = row["stages"]
+            snapshot_path = Path(binding["path"])
+            self.assertEqual(snapshot_path, expected_snapshot)
+            self.assertEqual(hashlib.sha256(snapshot_path.read_bytes()).hexdigest(), binding["sha256"])
+
+        command = [
+            sys.executable,
+            str(SCRIPTS / "lib" / "task_output_cleanup.py"),
+            "native-quarantine-verify",
+            "--owner-record", str(owner_path),
+            "--invocation-record", str(evidence / "native-lifecycle" / "invocation.json"),
+            "--durable-evidence", str(evidence / "native-lifecycle" / "retained-outputs"),
+            "--require-complete",
+        ]
+        environment = os.environ.copy()
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        environment["TMPDIR"] = "/private/tmp"
+        def verify_complete():
+            return subprocess.run(command, cwd=ROOT, env=environment, capture_output=True, text=True, check=False)
+
+        readback = verify_complete()
+        self.assertEqual(readback.returncode, 0, readback.stdout + readback.stderr)
+        self.assertEqual(json.loads(readback.stdout)["status"], "PASS")
+
+        snapshot_bytes = expected_snapshot.read_bytes()
+        snapshot_mode = stat.S_IMODE(expected_snapshot.stat().st_mode)
+        owner_bytes = owner_path.read_bytes()
+
+        def assert_refusal(expected_reason: str):
+            refused = verify_complete()
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+            self.assertEqual(json.loads(refused.stderr)["reason"], expected_reason)
+
+        with self.subTest(snapshot_fault="tampered"):
+            expected_snapshot.write_bytes(snapshot_bytes + b"tampered\n")
+            tampered = expected_snapshot.read_bytes()
+            assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+            self.assertEqual(expected_snapshot.read_bytes(), tampered)
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            expected_snapshot.write_bytes(snapshot_bytes)
+
+        with self.subTest(snapshot_fault="missing"):
+            expected_snapshot.unlink()
+            assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+            self.assertFalse(expected_snapshot.exists())
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            expected_snapshot.write_bytes(snapshot_bytes)
+            expected_snapshot.chmod(snapshot_mode)
+
+        with self.subTest(snapshot_fault="unreadable"):
+            expected_snapshot.chmod(0)
+            assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+            self.assertEqual(stat.S_IMODE(expected_snapshot.stat().st_mode), 0)
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            expected_snapshot.chmod(snapshot_mode)
+
+        with self.subTest(snapshot_fault="changed-producer-prefix"):
+            final_stage_bytes = stage_path.read_bytes()
+            changed_stage_bytes = b"X" + final_stage_bytes[1:]
+            stage_path.write_bytes(changed_stage_bytes)
+            assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+            self.assertEqual(stage_path.read_bytes(), changed_stage_bytes)
+            self.assertEqual(expected_snapshot.read_bytes(), snapshot_bytes)
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            stage_path.write_bytes(final_stage_bytes)
+
+        for field, replacement in (
+            ("path", str(evidence / "stages.jsonl")),
+            ("sha256", "0" * 64),
+        ):
+            with self.subTest(snapshot_fault=f"wrong-{field}"):
+                changed_owner = json.loads(owner_bytes)
+                changed_owner["nutrition_generated_outputs"][0]["stages"][field] = replacement
+                changed_owner_bytes = (json.dumps(changed_owner, sort_keys=True, indent=2) + "\n").encode()
+                owner_path.write_bytes(changed_owner_bytes)
+                assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+                self.assertEqual(owner_path.read_bytes(), changed_owner_bytes)
+                self.assertEqual(expected_snapshot.read_bytes(), snapshot_bytes)
+                owner_path.write_bytes(owner_bytes)
+
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_native_complete_worktree_verification_reuses_one_observation(self):
         result, evidence = self._run_fixture_qualification("success", trace_worktree_walks=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1092,6 +1194,7 @@ class IosNativeQualificationTests(
             encoding="utf-8"))
         generated = owner["nutrition_generated_outputs"]
         self.assertEqual(len(generated), 1)
+        self._assert_finalized_producer_stage_snapshot(evidence, owner)
         receipt = json.loads(Path(generated[0]["receipt"]["path"]).read_text(encoding="utf-8"))
         self.assertEqual(receipt["status"], "observed")
         self.assertEqual(receipt["producer_exit_code"], 17)
@@ -1113,6 +1216,7 @@ class IosNativeQualificationTests(
             encoding="utf-8"))
         self.assertEqual(owner["status"], "failed")
         self.assertIn("native_proof_origin", owner)
+        self._assert_finalized_producer_stage_snapshot(evidence, owner)
         self.assertEqual(manifest["native_process_lifecycle"]["full_build_proof"]["status"], "PASS")
 
     @MACOS_NATIVE_FIXTURE_ONLY
@@ -1129,10 +1233,26 @@ class IosNativeQualificationTests(
         owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
             encoding="utf-8"))
         self.assertEqual(owner["status"], "failed")
+        self._assert_finalized_producer_stage_snapshot(evidence, owner)
         origin = json.loads(Path(owner["native_proof_origin"]["path"]).read_text(encoding="utf-8"))
         proof = Path(origin["proof"]["path"])
         self.assertEqual(hashlib.sha256(proof.read_bytes()).hexdigest(), origin["proof"]["sha256"])
         self.assertTrue(origin["outputs"])
+
+    def _assert_finalized_producer_stage_snapshot(self, evidence: Path, owner: dict) -> None:
+        generated = owner["nutrition_generated_outputs"]
+        self.assertEqual(len(generated), 1)
+        snapshot = evidence / "native-lifecycle" / "producer-stages.jsonl"
+        for output in generated:
+            binding = output["stages"]
+            self.assertEqual(binding["path"], str(snapshot))
+            self.assertEqual(hashlib.sha256(snapshot.read_bytes()).hexdigest(), binding["sha256"])
+        final_stages = [
+            json.loads(line)
+            for line in (evidence / "stages.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertEqual(final_stages[-1]["stage"], "cleanup")
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_parent_signal_runs_cleanup(self):
@@ -1160,6 +1280,7 @@ class IosNativeQualificationTests(
         self.assertEqual(manifest["cleanup_disposition"]["quarantined_roots"], [])
         owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(encoding="utf-8"))
         self.assertEqual(owner["status"], "complete")
+        self._assert_finalized_producer_stage_snapshot(evidence, owner)
         statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
         self.assertEqual(statuses["xcode_build"], "PASS")
         self.assertEqual(statuses["cleanup"], "INCOMPLETE")
