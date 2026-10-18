@@ -107,15 +107,34 @@ def _node(st: os.stat_result) -> list[int]:
 
 def _sha_file(path: Path) -> str:
     digest = hashlib.sha256()
+    try:
+        path_before = path.lstat()
+    except OSError as error:
+        raise OutputError("FILE_IDENTITY_CHANGED_DURING_HASH") from error
+    if (not stat.S_ISREG(path_before.st_mode) or path_before.st_nlink != 1
+            or not path_before.st_mode & 0o444):
+        raise OutputError("FILE_IDENTITY_CHANGED_DURING_HASH")
+
+    def identity(item: os.stat_result) -> tuple[int, int, int, int, int, int, int]:
+        return (item.st_dev, item.st_ino, item.st_mode, item.st_size,
+                item.st_mtime_ns, item.st_ctime_ns, item.st_nlink)
+
     flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    nonblocking = getattr(os, "O_NONBLOCK", None)
+    if no_follow is None or nonblocking is None:
+        raise OutputError("FILE_IDENTITY_CHANGED_DURING_HASH")
+    flags |= no_follow | nonblocking
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
-    descriptor = os.open(path, flags)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise OutputError("FILE_IDENTITY_CHANGED_DURING_HASH") from error
     try:
         before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or not before.st_mode & 0o444 or identity(path_before) != identity(before)):
             raise OutputError("FILE_IDENTITY_CHANGED_DURING_HASH")
         while True:
             block = os.read(descriptor, 1024 * 1024)
@@ -127,9 +146,6 @@ def _sha_file(path: Path) -> str:
             current = path.lstat()
         except OSError as error:
             raise OutputError("FILE_IDENTITY_CHANGED_DURING_HASH") from error
-        def identity(item: os.stat_result) -> tuple[int, int, int, int, int, int]:
-            return (item.st_dev, item.st_ino, item.st_size,
-                    item.st_mtime_ns, item.st_ctime_ns, item.st_nlink)
         if identity(before) != identity(after) or identity(after) != identity(current):
             raise OutputError("FILE_IDENTITY_CHANGED_DURING_HASH")
     finally:
@@ -1908,13 +1924,11 @@ def _native_expo_context(owner_record: Path, invocation_record: Path) -> tuple[d
     return owner, binding, output, evidence_root
 
 
-def _native_prebuild_stage(stage_file: Path) -> dict[str, Any] | None:
-    if stage_file.is_symlink() or not stage_file.is_file():
-        return None
+def _native_prebuild_stage(stage_bytes: bytes) -> dict[str, Any] | None:
     try:
-        matches = [json.loads(line) for line in stage_file.read_text(encoding="utf-8").splitlines()
+        matches = [json.loads(line) for line in stage_bytes.decode("utf-8").splitlines()
                    if line.strip()]
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except (UnicodeError, json.JSONDecodeError):
         return None
     selected = [item for item in matches if isinstance(item, dict)
                 and item.get("stage") == "prebuild_plugins"]
@@ -1925,8 +1939,8 @@ def _native_prebuild_stage(stage_file: Path) -> dict[str, Any] | None:
     return selected[0]
 
 
-def _native_prebuild_stage_matches(stage_file: Path, producer_exit_code: int) -> bool:
-    stage = _native_prebuild_stage(stage_file)
+def _native_prebuild_stage_matches(stage_bytes: bytes, producer_exit_code: int) -> bool:
+    stage = _native_prebuild_stage(stage_bytes)
     if stage is None:
         return False
     if producer_exit_code != 0:
@@ -2013,37 +2027,34 @@ def _write_native_stage_snapshot(path: Path, content: bytes) -> dict[str, str]:
     finally:
         os.close(descriptor)
     _fsync_directory(path.parent)
-    if _read_native_stage_bytes(path) != content:
+    readback = _read_native_stage_bytes(path)
+    if readback != content:
         raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_READBACK_FAILED")
-    try:
-        binding = file_binding(path)
-    except (OSError, OutputError) as error:
-        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_READBACK_FAILED") from error
-    if binding["sha256"] != hashlib.sha256(content).hexdigest():
-        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_READBACK_FAILED")
-    return binding
+    return {"path": str(path), "sha256": hashlib.sha256(readback).hexdigest()}
 
 
 def _native_stage_snapshot_binding(
     path: Path, binding: Any, *, expected_path: Path,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], bytes]:
     if (not isinstance(binding, dict) or set(binding) != {"path", "sha256"}
             or binding.get("path") != str(expected_path) or path != expected_path):
         raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
     try:
-        observed = file_binding(path)
+        content = _read_native_stage_bytes(path)
     except (OSError, OutputError) as error:
         raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED") from error
+    observed = {"path": str(path), "sha256": hashlib.sha256(content).hexdigest()}
     if observed != binding:
         raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
-    return observed
+    return observed, content
 
 
 def _verify_native_stage_snapshot(
     snapshot: Path, stage_file: Path, binding: Any, *, expected_path: Path,
-) -> dict[str, str]:
-    observed = _native_stage_snapshot_binding(snapshot, binding, expected_path=expected_path)
-    snapshot_bytes = _read_native_stage_bytes(snapshot)
+) -> tuple[dict[str, str], bytes]:
+    observed, snapshot_bytes = _native_stage_snapshot_binding(
+        snapshot, binding, expected_path=expected_path,
+    )
     current_bytes = _read_native_stage_bytes(stage_file)
     if not current_bytes.startswith(snapshot_bytes):
         raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
@@ -2068,7 +2079,7 @@ def _verify_native_stage_snapshot(
                 or (rows[0]["status"] == "FAILURE"
                     and (rows[0]["exit_code"] == 0 or rows[0]["exit_code"] >= 128))):
             raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
-    return observed
+    return observed, snapshot_bytes
 
 
 def _create_native_producer_stage_snapshot(
@@ -2083,9 +2094,10 @@ def _create_native_producer_stage_snapshot(
                 or not isinstance(generated[0], dict)
                 or set(generated[0]) != {"receipt", "stages"}):
             raise OutputError("NATIVE_EXPO_OUTPUT_OWNER_BINDING_INVALID")
-        return _native_stage_snapshot_binding(
+        observed, _ = _native_stage_snapshot_binding(
             snapshot, generated[0]["stages"], expected_path=snapshot,
         )
+        return observed
     if os.path.lexists(snapshot):
         raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_ALREADY_EXISTS")
     producer_stages = _read_native_stage_bytes(stage_file)
@@ -2139,14 +2151,18 @@ def _verify_native_expo_receipt(
     receipt = _json(receipt_path)
     producer_stage_file = snapshot_file if receipt.get("status") == "observed" else stage_file
     if receipt.get("status") == "observed":
-        _verify_native_stage_snapshot(
+        _, producer_stage_bytes = _verify_native_stage_snapshot(
             snapshot_file, stage_file, stage_binding, expected_path=snapshot_file,
         )
     else:
         try:
-            observed_stage_binding = file_binding(stage_file)
+            producer_stage_bytes = _read_native_stage_bytes(stage_file)
         except (OSError, OutputError) as error:
             raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED") from error
+        observed_stage_binding = {
+            "path": str(stage_file),
+            "sha256": hashlib.sha256(producer_stage_bytes).hexdigest(),
+        }
         if stage_binding != observed_stage_binding:
             raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
     if receipt_binding != file_binding(receipt_path):
@@ -2157,7 +2173,7 @@ def _verify_native_expo_receipt(
     dependency_file = evidence_root / "dependency-versions.env"
     producer_exit_code = receipt.get("producer_exit_code")
     if (type(producer_exit_code) is not int
-            or not _native_prebuild_stage_matches(producer_stage_file, producer_exit_code)
+            or not _native_prebuild_stage_matches(producer_stage_bytes, producer_exit_code)
             or receipt.get("schema_version") != 1
             or receipt.get("status") not in {"observed", "absent"}
             or receipt.get("kind") != "expo-prebuild-output"
@@ -3171,7 +3187,11 @@ def finish_native_owner(owner_record: Path, *, invocation_record: Path, hold_pid
                     owner, invocation_record=Path(invocation_record), stage_file=stage_file,
                 )
             else:
-                stage_binding = file_binding(stage_file)
+                stage_bytes = _read_native_stage_bytes(stage_file)
+                stage_binding = {
+                    "path": str(stage_file),
+                    "sha256": hashlib.sha256(stage_bytes).hexdigest(),
+                }
             expo_receipt, _, _, _, _ = _verify_native_expo_receipt(
                 owner_record, invocation, worktree, receipt_binding=receipt_binding,
                 stage_binding=stage_binding, invocation_record=invocation_record,

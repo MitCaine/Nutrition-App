@@ -628,9 +628,118 @@ class IosNativeQualificationTests(
         saved_stage_bytes = stage_path.read_bytes()
         saved_stage_hash = hashlib.sha256(saved_stage_bytes).hexdigest()
         saved_stage_mode = stat.S_IMODE(stage_path.stat(follow_symlinks=False).st_mode)
+        saved_snapshot_mode = stat.S_IMODE(expected_snapshot.stat(follow_symlinks=False).st_mode)
         recovery_copy = evidence.parent / "a15-original-stages.jsonl"
         recovery_copy.write_bytes(saved_stage_bytes)
         self.assertEqual(hashlib.sha256(recovery_copy.read_bytes()).hexdigest(), saved_stage_hash)
+        snapshot_recovery_copy = evidence.parent / "a16-original-producer-stages.jsonl"
+        snapshot_recovery_copy.write_bytes(snapshot_bytes)
+        snapshot_sha256 = hashlib.sha256(snapshot_bytes).hexdigest()
+
+        def restore_snapshot() -> None:
+            if os.path.lexists(expected_snapshot):
+                expected_snapshot.unlink()
+            expected_snapshot.write_bytes(snapshot_recovery_copy.read_bytes())
+            expected_snapshot.chmod(saved_snapshot_mode)
+
+        def assert_preserved() -> None:
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            self.assertEqual(expected_snapshot.read_bytes(), snapshot_bytes)
+            self.assertEqual(hashlib.sha256(expected_snapshot.read_bytes()).hexdigest(), snapshot_sha256)
+            self.assertEqual(snapshot_recovery_copy.read_bytes(), snapshot_bytes)
+            self.assertEqual(stage_path.read_bytes(), saved_stage_bytes)
+            self.assertEqual(recovery_copy.read_bytes(), saved_stage_bytes)
+            self.assertEqual(
+                {
+                    str(path): (path.read_bytes(), hashlib.sha256(path.read_bytes()).hexdigest(),
+                                path.stat(follow_symlinks=False).st_ino)
+                    for path in record_paths
+                },
+                record_state,
+            )
+            self.assertEqual(snapshot_tree(quarantine_root), quarantine_state)
+
+        def run_injected_cli(name: str, source: str, target: Path):
+            injection_directory = evidence.parent / name
+            injection_directory.mkdir()
+            (injection_directory / "sitecustomize.py").write_text(source, encoding="utf-8")
+            marker = evidence.parent / f"{name}-triggered"
+            fault_environment = dict(environment)
+            fault_environment["PYTHONPATH"] = (
+                str(injection_directory) + os.pathsep + fault_environment.get("PYTHONPATH", "")
+            )
+            fault_environment["GH420_A16_FAULT_TARGET"] = str(target)
+            fault_environment["GH420_A16_FAULT_MARKER"] = str(marker)
+            try:
+                return subprocess.run(
+                    command, cwd=ROOT, env=fault_environment, capture_output=True, text=True,
+                    check=False, timeout=5,
+                ), False, marker
+            except subprocess.TimeoutExpired:
+                return None, True, marker
+
+        fifo_open_injection = "\n".join((
+            "import os",
+            "from pathlib import Path",
+            "target = os.environ['GH420_A16_FAULT_TARGET']",
+            "marker = Path(os.environ['GH420_A16_FAULT_MARKER'])",
+            "real_open = os.open",
+            "def swap_at_open(path, flags, *args, **kwargs):",
+            "    if os.fspath(path) == target and not marker.exists():",
+            "        marker.write_text('snapshot os.open reached\\n', encoding='utf-8')",
+            "        Path(target).unlink()",
+            "        os.mkfifo(target)",
+            "    return real_open(path, flags, *args, **kwargs)",
+            "os.open = swap_at_open",
+        ))
+        with self.subTest(snapshot_fault="snapshot-fifo-at-first-hash-open"):
+            refused = None
+            timed_out = False
+            try:
+                refused, timed_out, marker = run_injected_cli(
+                    "a16-snapshot-open-fault", fifo_open_injection, expected_snapshot,
+                )
+            finally:
+                restore_snapshot()
+            self.assertTrue(marker.is_file())
+            assert_preserved()
+            self.assertFalse(timed_out, "snapshot hash acquisition blocked on a substituted FIFO")
+            self.assertIsNotNone(refused)
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+            self.assertEqual(
+                json.loads(refused.stderr)["reason"],
+                "NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED",
+            )
+
+        parser_reopen_injection = "\n".join((
+            "import os",
+            "from pathlib import Path",
+            "target = os.environ['GH420_A16_FAULT_TARGET']",
+            "marker = Path(os.environ['GH420_A16_FAULT_MARKER'])",
+            "real_read_text = Path.read_text",
+            "def replace_before_read_text(path, *args, **kwargs):",
+            "    if os.fspath(path) == target and not marker.exists():",
+            "        marker.write_text('snapshot parser reopen reached\\n', encoding='utf-8')",
+            "        path.unlink()",
+            "        os.mkfifo(path)",
+            "    return real_read_text(path, *args, **kwargs)",
+            "Path.read_text = replace_before_read_text",
+        ))
+        with self.subTest(snapshot_fault="parser-reopen-boundary"):
+            refused = None
+            timed_out = False
+            try:
+                refused, timed_out, marker = run_injected_cli(
+                    "a16-parser-reopen-fault", parser_reopen_injection, expected_snapshot,
+                )
+            finally:
+                restore_snapshot()
+            assert_preserved()
+            self.assertFalse(timed_out, "snapshot parser reopened a substituted FIFO")
+            self.assertFalse(marker.exists(), "stage parser bypassed authenticated snapshot bytes")
+            self.assertIsNotNone(refused)
+            self.assertEqual(refused.returncode, 0, refused.stdout + refused.stderr)
+            self.assertEqual(json.loads(refused.stdout)["status"], "PASS")
 
         with self.subTest(snapshot_fault="current-stage-fifo"):
             stage_path.unlink()
@@ -729,6 +838,100 @@ class IosNativeQualificationTests(
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
             self.assertEqual(result.stdout.strip(), "NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE")
             self.assertEqual(stage_path.read_bytes(), original)
+
+    @unittest.skipUnless(
+        hasattr(os, "mkfifo") and hasattr(os, "O_NONBLOCK"),
+        "FIFO open-race control requires POSIX nonblocking FIFOs",
+    )
+    def test_generic_sha_file_refuses_fifo_substitution_during_open(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a16-sha-open-race-") as temporary:
+            path = Path(temporary) / "definition.json"
+            original = b"authenticated definition bytes\n"
+            path.write_bytes(original)
+            script = "\n".join((
+                "import os, sys",
+                "from pathlib import Path",
+                "sys.path.insert(0, sys.argv[1])",
+                "from lib import task_output_cleanup as cleanup",
+                "target = Path(sys.argv[2])",
+                "real_open = os.open",
+                "swapped = False",
+                "def race_open(path, flags, *args, **kwargs):",
+                "    global swapped",
+                "    if os.fspath(path) == str(target) and not swapped:",
+                "        swapped = True",
+                "        target.unlink()",
+                "        os.mkfifo(target)",
+                "    return real_open(path, flags, *args, **kwargs)",
+                "os.open = race_open",
+                "try:",
+                "    cleanup._sha_file(target)",
+                "except cleanup.OutputError as error:",
+                "    print(str(error))",
+                "    raise SystemExit(2)",
+                "raise SystemExit(0)",
+            ))
+            timed_out = False
+            try:
+                try:
+                    result = subprocess.run(
+                        [sys.executable, "-c", script, str(SCRIPTS), str(path)],
+                        cwd=ROOT, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                        capture_output=True, text=True, check=False, timeout=5,
+                    )
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    result = None
+            finally:
+                if os.path.lexists(path):
+                    path.unlink()
+                path.write_bytes(original)
+
+            self.assertFalse(timed_out, "generic _sha_file blocked after FIFO substitution")
+            self.assertIsNotNone(result)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), "FILE_IDENTITY_CHANGED_DURING_HASH")
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_native_stage_snapshot_final_binding_uses_authenticated_readback_bytes(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a16-snapshot-final-binding-") as temporary:
+            snapshot = Path(temporary) / "native-lifecycle" / "producer-stages.jsonl"
+            snapshot.parent.mkdir()
+            producer_bytes = b'{"stage":"prebuild_plugins","status":"PASS","exit_code":0}\n'
+            with patch.object(
+                output_cleanup,
+                "_sha_file",
+                side_effect=AssertionError("stage snapshot binding reopened by generic hash"),
+            ):
+                binding = output_cleanup._write_native_stage_snapshot(snapshot, producer_bytes)
+            self.assertEqual(snapshot.read_bytes(), producer_bytes)
+            self.assertEqual(binding, {
+                "path": str(snapshot), "sha256": hashlib.sha256(producer_bytes).hexdigest(),
+            })
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_authenticates_absent_expo_stage_without_path_reopen(self):
+        result, evidence, evidence_parent = self._run_fixture_qualification(
+            "expo-absent", return_evidence_parent=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+        self.assertFalse((evidence_parent / "a16-absent-stage-readtext-attempt").exists())
+        owner_path = evidence / "native-lifecycle" / "output-owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        self.assertFalse(owner.get("nutrition_generated_outputs"))
+        invocation_path = evidence / "native-lifecycle" / "invocation.json"
+        receipt_path = invocation_path.parent / "nutrition-expo-output.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipt["status"], "absent")
+        stage_rows = [json.loads(line) for line in (evidence / "stages.jsonl").read_text(
+            encoding="utf-8").splitlines() if line.strip()]
+        producer_rows = [row for row in stage_rows if row.get("stage") == "prebuild_plugins"]
+        self.assertEqual(len(producer_rows), 1)
+        self.assertEqual(producer_rows[0]["status"], "PASS")
+        self.assertEqual(stage_rows[-1]["stage"], "cleanup")
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_native_complete_worktree_verification_reuses_one_observation(self):
@@ -2973,8 +3176,11 @@ EOF
     esac
     ;;
   exec)
-    mkdir -p "$(pwd)/ios/Nutrition App.xcodeproj" "$(pwd)/.expo"
-    printf '%s\n' 'fixture Expo generated settings' > "$(pwd)/.expo/settings.json"
+    mkdir -p "$(pwd)/ios/Nutrition App.xcodeproj"
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" != "expo-absent" ]; then
+      mkdir -p "$(pwd)/.expo"
+      printf '%s\n' 'fixture Expo generated settings' > "$(pwd)/.expo/settings.json"
+    fi
     if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "expo-unique-sibling" ]; then
       printf '%s\n' 'unique sibling source stays in place' > "$(pwd)/fixture-expo-sibling.bin"
     fi
@@ -4062,6 +4268,33 @@ exec /bin/rm "$@"
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
         environment["IOS_NATIVE_FIXTURE_EVENTS"] = str(evidence / "movement-events.jsonl")
+        if mode == "expo-absent":
+            stage_readtext_guard = evidence_parent / "stage-readtext-guard"
+            stage_readtext_guard.mkdir()
+            (stage_readtext_guard / "sitecustomize.py").write_text(
+                "import os\n"
+                "import inspect\n"
+                "from pathlib import Path\n"
+                "target = os.environ['IOS_NATIVE_FIXTURE_STAGE_READTEXT_TARGET']\n"
+                "marker = Path(os.environ['IOS_NATIVE_FIXTURE_STAGE_READTEXT_MARKER'])\n"
+                "original_read_text = Path.read_text\n"
+                "def guarded_read_text(path, *args, **kwargs):\n"
+                "    if os.fspath(path) == target and any(\n"
+                "            frame.function == '_native_prebuild_stage'\n"
+                "            for frame in inspect.stack()):\n"
+                "        marker.write_text('stage path reopened for parsing\\n', encoding='utf-8')\n"
+                "        raise RuntimeError('stage parser must consume authenticated bytes')\n"
+                "    return original_read_text(path, *args, **kwargs)\n"
+                "Path.read_text = guarded_read_text\n",
+                encoding="utf-8",
+            )
+            environment["IOS_NATIVE_FIXTURE_STAGE_READTEXT_TARGET"] = str(evidence / "stages.jsonl")
+            environment["IOS_NATIVE_FIXTURE_STAGE_READTEXT_MARKER"] = str(
+                evidence_parent / "a16-absent-stage-readtext-attempt"
+            )
+            environment["PYTHONPATH"] = (
+                str(stage_readtext_guard) + os.pathsep + environment.get("PYTHONPATH", "")
+            )
         if trace_worktree_walks:
             trace_runtime = evidence_parent / "walk-trace-runtime"
             trace_runtime.mkdir()
