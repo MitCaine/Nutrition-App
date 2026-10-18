@@ -431,6 +431,36 @@ class IosNativeQualificationTests(
         )
 
     @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_revalidates_moved_worktree_before_derived_data_cleanup(self):
+        result, evidence, _ = self._run_fixture_qualification(
+            "native-worktree-unregistered-during-derived-readback", return_evidence_parent=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("IOS_NATIVE_QUALIFICATION=PASS", result.stdout)
+        self.assertIn("IOS_NATIVE_CLEANUP=INCOMPLETE", result.stdout)
+        self.assertNotIn("IOS_NATIVE_CLEANUP=PASS", result.stdout)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("NATIVE_QUARANTINE_COMPLETED_LOCATIONS_NOT_EXCLUSIVE",
+                      manifest["cleanup_disposition"]["reason"], manifest["cleanup_disposition"])
+        marker = evidence / "fixture-worktree-unregistered.json"
+        self.assertTrue(marker.is_file(), manifest["cleanup_disposition"])
+        moved_worktree = Path(marker.read_text(encoding="utf-8").strip())
+        self.assertFalse(moved_worktree.exists())
+        self.assertTrue((evidence / "DerivedData").is_dir())
+        self.assertTrue((evidence / "harness-bin").is_dir())
+        events = (evidence / "movement-events.jsonl").read_text(encoding="utf-8")
+        self.assertEqual(events.count("WORKTREE_MOVE:"), 1)
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        derived_receipt = next(item for item in owner["owned_outputs"]
+                               if Path(item["path"]).name == "DerivedData")
+        derived_operation = (evidence / "native-lifecycle" / "retained-outputs" /
+                             f"output-quarantine-{derived_receipt['node'][1]}.json")
+        self.assertFalse(derived_operation.exists())
+
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_authenticates_expo_output_and_retains_unique_sibling(self):
         result, evidence, _ = self._run_fixture_qualification(
             "expo-unique-sibling", return_evidence_parent=True,
@@ -2783,6 +2813,15 @@ fi
 """)
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
         write("python3", r'''
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "native-worktree-unregistered-during-derived-readback" ] &&
+  [ "${1-}" = "-" ] && [ "${11-}" = "derived-data" ]; then
+  moved_worktree="$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/native-lifecycle/quarantine/Nutrition App Native"
+  marker="$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/fixture-worktree-unregistered.json"
+  if [ -d "$moved_worktree" ] && [ ! -e "$marker" ]; then
+    printf '%s\n' "$moved_worktree" > "$marker"
+    "$REAL_GIT" -C "$IOS_NATIVE_FIXTURE_REPO_ROOT" worktree remove --force "$moved_worktree"
+  fi
+fi
 case "$IOS_NATIVE_FIXTURE_MODE" in
   proof-fault-tampered-observation-unavailable|proof-fault-unreadable-observation-unavailable)
     case "$1" in

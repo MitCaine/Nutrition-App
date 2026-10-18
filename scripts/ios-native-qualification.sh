@@ -379,7 +379,48 @@ verify_before_disposal() {
   fi
   if test "$operation" != output-owner-terminal && test "$proof_readback_done" -eq 0
   then
-    verify_native_proof_readback_before_operation "$operation"
+    if ! verify_native_proof_readback_before_operation "$operation"
+    then
+      return 1
+    fi
+  fi
+
+  if test "$operation" != output-owner-terminal
+  then
+    local operations_stdout="$native_lifecycle_dir/cleanup-operations-verify-$operation.stdout.log"
+    local operations_stderr="$native_lifecycle_dir/cleanup-operations-verify-$operation.stderr.log"
+    local operations_status=0
+    local -a operations_args
+    operations_args=(
+      "$native_output_cleanup" native-quarantine-verify
+      --owner-record "$native_output_owner"
+      --invocation-record "$native_lifecycle_binding"
+      --durable-evidence "$native_output_durable"
+    )
+    case "$operation" in
+      worktree-quarantine)
+        operations_args+=(--allow-current-path "$probe_root")
+        ;;
+      derived-data-quarantine)
+        operations_args+=(--allow-current-path "$derived_data")
+        ;;
+      harness-bin-quarantine)
+        operations_args+=(--allow-current-path "$harness_bin")
+        ;;
+      cleanup-pass)
+        operations_args+=(--require-complete)
+        ;;
+    esac
+    "$native_lifecycle_python" "${operations_args[@]}" \
+      > "$operations_stdout" 2> "$operations_stderr" || operations_status="$?"
+    if test "$operations_status" -ne 0
+    then
+      local operations_detail
+      operations_detail="$(tail -n 1 "$operations_stderr" 2>/dev/null || true)"
+      mark_cleanup_incomplete \
+        "prior native output operation readback failed before $operation: ${operations_detail:-no adapter detail}"
+      return 1
+    fi
   fi
 }
 
@@ -1739,17 +1780,29 @@ def verify_native_proofs():
         raise SystemExit(2) from error
 
 def verify_producer_before_move():
+    def verify_prior_operations():
+        try:
+            cleanup.verify_native_quarantine_operations(
+                Path(owner_path), invocation_record=Path(binding_path),
+                durable_evidence=Path(durable), allow_current_path=Path(output_path),
+            )
+        except cleanup.OutputError as error:
+            print(f"NATIVE_PRIOR_OUTPUT_READBACK_REQUIRED_FAILURE:{error}", file=sys.stderr)
+            raise SystemExit(1) from error
+
     derived_phase = Path(binding_path).parent / "phases" / "derived-data-removed.json"
     if derived_phase.exists() or derived_phase.is_symlink():
         verify_native_proofs()
         status = verifier.verify_command(binding_path, [])
         if status:
             raise SystemExit(status)
+        verify_prior_operations()
         return
     status = verifier.verify_command(binding_path, [])
     if status:
         raise SystemExit(status)
     verify_native_proofs()
+    verify_prior_operations()
 
 verify_producer_before_move()
 

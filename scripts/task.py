@@ -6592,7 +6592,7 @@ def _output_terminal_candidate(
 
 
 def _verify_plain_quarantine_repeat(
-    *, state: dict[str, Any], receipt: dict[str, Any], operation: dict[str, Any],
+    *, state: dict[str, Any], owner_record: Path, receipt: dict[str, Any], operation: dict[str, Any],
     reference: dict[str, Any] | None, durable: Path, disposition: str | None,
 ) -> Path:
     """Authenticate both locations, parent, content, retention and current references."""
@@ -6659,9 +6659,166 @@ def _verify_plain_quarantine_repeat(
         raise output_cleanup.OutputError("QUARANTINE_REPEAT_ADAPTER_INTENT_INVALID")
     moved_entries = output_cleanup._walk_native_tree(destination, moved.st_dev)[1]
     retained_entries = output_cleanup._walk_native_tree(retained, retained.stat().st_dev)[1]
-    if moved_entries != intent["evidence_entries"] or retained_entries != intent["evidence_entries"]:
+    if moved_entries != intent["evidence_entries"]:
+        raise output_cleanup.OutputError("QUARANTINE_REPEAT_CONTENT_OR_RETENTION_CHANGED")
+    if (retained_entries != intent["evidence_entries"]
+            and not output_cleanup._known_nested_worktree_move_matches_retained_snapshot(
+                owner_record, original, moved_entries,
+                retained, durable,
+            )):
         raise output_cleanup.OutputError("QUARANTINE_REPEAT_CONTENT_OR_RETENTION_CHANGED")
     return destination
+
+
+def _output_closeout_prior_operation(
+    state: dict[str, Any] | None, *, original: Path, node: Any,
+) -> dict[str, Any] | None:
+    closeout = state.get("output_closeout") if isinstance(state, dict) else None
+    operations = closeout.get("operations", []) if isinstance(closeout, dict) else []
+    if not isinstance(operations, list):
+        raise output_cleanup.OutputError("OUTPUT_CLOSEOUT_OPERATION_HISTORY_INVALID")
+    matches = [entry for entry in operations if isinstance(entry, dict)
+               and entry.get("original") == str(original)
+               and entry.get("original_node") == node]
+    if len(matches) > 1:
+        raise output_cleanup.OutputError("OUTPUT_CLOSEOUT_OPERATION_AMBIGUOUS")
+    return matches[0] if matches else None
+
+
+def _verify_output_closeout_mode(
+    operation: dict[str, Any], *, helper_source: Path | None, helper_revision: str | None,
+) -> None:
+    expected_mode = "shared-helper" if helper_source is not None else "consumer-only"
+    expected_source = ({"root": str(helper_source), "revision": helper_revision}
+                       if helper_source is not None else None)
+    if operation.get("mode") != expected_mode or operation.get("shared_source") != expected_source:
+        raise output_cleanup.OutputError("QUARANTINE_REPEAT_MODE_OR_SOURCE_CHANGED")
+
+
+def _verify_relocated_prepared_parent(
+    *, state: dict[str, Any], owner_record: Path, child_receipt: dict[str, Any],
+    reference: dict[str, Any] | None, durable: Path, disposition: str | None,
+    helper_source: Path | None, helper_revision: str | None,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    original_parent = Path(child_receipt["path"]).parent
+    owner = output_cleanup._json(owner_record)
+    matches = [item for item in owner.get("owned_outputs", [])
+               if isinstance(item, dict) and item.get("path") == str(original_parent)
+               and "git_worktree" not in item]
+    if len(matches) != 1:
+        raise output_cleanup.OutputError("WORKTREE_RELOCATED_PARENT_RECEIPT_INVALID")
+    parent_receipt = matches[0]
+    parent_operation = _output_closeout_prior_operation(
+        state, original=original_parent, node=parent_receipt.get("node"),
+    )
+    if parent_operation is None:
+        raise output_cleanup.OutputError("WORKTREE_RELOCATED_PARENT_OPERATION_MISSING")
+    _verify_output_closeout_mode(
+        parent_operation, helper_source=helper_source, helper_revision=helper_revision,
+    )
+    if parent_operation.get("status") == "complete":
+        _verify_plain_quarantine_repeat(
+            state=state, owner_record=owner_record, receipt=parent_receipt, operation=parent_operation,
+            reference=reference, durable=durable, disposition=disposition,
+        )
+    elif parent_operation.get("status") in {"pending", "incomplete"}:
+        binding = parent_operation.get("adapter_operation")
+        output_cleanup.verify_relocated_plain_parent(
+            owner_record, original=original_parent,
+            expected_node=parent_receipt.get("node"), durable_evidence=durable,
+            adapter_operation=binding, current_reference=reference,
+        )
+    else:
+        raise output_cleanup.OutputError("WORKTREE_RELOCATED_PARENT_DISPOSITION_INVALID")
+    binding = parent_operation.get("adapter_operation")
+    if not isinstance(binding, dict):
+        raise output_cleanup.OutputError("WORKTREE_RELOCATED_PARENT_OPERATION_UNBOUND")
+    return parent_operation, binding
+
+
+def _verify_registered_worktree_quarantine_repeat(
+    *, state: dict[str, Any], owner_record: Path, receipt: dict[str, Any],
+    operation: dict[str, Any], reference: dict[str, Any] | None, durable: Path,
+    disposition: str | None, candidate: str | None, helper_source: Path | None,
+    helper_revision: str | None,
+) -> tuple[Path, dict[str, Any]]:
+    if disposition not in {"completed", "superseded_terminal"} or reference is None:
+        raise output_cleanup.OutputError("WORKTREE_REPEAT_CURRENT_DISPOSITION_OR_REFERENCE_UNVERIFIED")
+    _verify_output_closeout_mode(
+        operation, helper_source=helper_source, helper_revision=helper_revision,
+    )
+    closeout = state.get("output_closeout")
+    reference_binding = closeout.get("current_reference") if isinstance(closeout, dict) else None
+    if (not isinstance(reference_binding, dict)
+            or output_cleanup.file_binding(Path(reference_binding.get("path", ""))) != reference_binding
+            or output_cleanup.read_current_reference(Path(reference_binding["path"])) != reference
+            or operation.get("current_reference") != reference_binding):
+        raise output_cleanup.OutputError("WORKTREE_REPEAT_CURRENT_REFERENCE_MISMATCH")
+    binding = operation.get("adapter_operation")
+    expected_path = durable / f"worktree-quarantine-{receipt['node'][1]}.json"
+    if (not isinstance(binding, dict) or set(binding) != {"path", "sha256"}
+            or binding.get("path") != str(expected_path)
+            or output_cleanup.file_binding(expected_path) != binding):
+        raise output_cleanup.OutputError("WORKTREE_REPEAT_ADAPTER_OPERATION_UNBOUND")
+    intent = output_cleanup._json(expected_path)
+    original = Path(receipt["path"])
+    destination = Path(operation.get("destination", ""))
+    repository = Path(receipt.get("git_worktree", {}).get("repository", ""))
+    expected_head = candidate
+    if not isinstance(expected_head, str) or not re.fullmatch(r"[0-9a-f]{40}", expected_head):
+        raise output_cleanup.OutputError("WORKTREE_REPEAT_CURRENT_CANDIDATE_UNVERIFIED")
+    if (operation.get("status") != "complete"
+            or operation.get("original") != str(original)
+            or operation.get("original_node") != receipt.get("node")
+            or operation.get("destination") != str(destination)
+            or operation.get("physical_bytes_reclaimed") != 0
+            or intent.get("schema_version") != output_cleanup.SCHEMA_VERSION
+            or intent.get("operation") != "registered-worktree-quarantine"
+            or intent.get("task") != receipt.get("task")
+            or intent.get("attempt") != receipt.get("attempt")
+            or intent.get("source") != str(original)
+            or intent.get("source_node") != receipt.get("node")
+            or intent.get("source_parent_node") != receipt.get("parent_node")
+            or intent.get("repository") != str(repository)
+            or intent.get("head") != receipt.get("git_worktree", {}).get("head")
+            or intent.get("current_head") != expected_head
+            or intent.get("destination") != str(destination)
+            or intent.get("quarantine_parent") != str(destination.parent)
+            or intent.get("quarantine_parent_node") != output_cleanup._node(destination.parent.lstat())
+            or intent.get("status") != "complete"
+            or intent.get("result_persisted") is not True
+            or intent.get("destination_node") != receipt.get("node")
+            or not isinstance(intent.get("evidence_entries"), list)
+            or not os.path.lexists(destination)
+            or os.path.lexists(original)):
+        raise output_cleanup.OutputError("WORKTREE_REPEAT_OPERATION_INVALID")
+    if not os.path.lexists(original.parent):
+        _verify_relocated_prepared_parent(
+            state=state, owner_record=owner_record, child_receipt=receipt,
+            reference=reference, durable=durable, disposition=disposition,
+            helper_source=helper_source, helper_revision=helper_revision,
+        )
+    else:
+        output_cleanup._no_symlinks(original.parent)
+        if output_cleanup._node(original.parent.lstat()) != receipt.get("parent_node"):
+            raise output_cleanup.OutputError("WORKTREE_REPEAT_SOURCE_PARENT_IDENTITY_CHANGED")
+    output_cleanup._no_symlinks(destination.parent)
+    moved_receipt = {**receipt, "path": str(destination),
+                     "node": output_cleanup._node(destination.lstat()),
+                     "parent_node": output_cleanup._node(destination.parent.lstat())}
+    moved, moved_stat, registered = output_cleanup._registered_worktree(
+        moved_receipt, repository, expected_head,
+    )
+    if (output_cleanup._node(moved_stat) != receipt.get("node")
+            or registered.get("head") != receipt.get("git_worktree", {}).get("head")
+            or output_cleanup._worktree_tree(moved, moved_stat.st_dev)[1]
+            != intent["evidence_entries"]):
+        raise output_cleanup.OutputError("WORKTREE_REPEAT_READBACK_MISMATCH")
+    source_observation = output_cleanup.verify_registered_worktree_source(
+        owner_record, receipt, repository=repository, expected_head=expected_head,
+        durable_evidence=durable, current_path=destination,
+    )
+    return destination, source_observation
 
 
 def _output_closeout_disposition(
@@ -6888,43 +7045,37 @@ def command_output_closeout(args: argparse.Namespace) -> int:
             "reason": protection_error or "current task completion and source recovery are unverified",
         }
         try:
-            if reference is not None:
-                previous = [operation for operation in state.get("output_closeout", {}).get("operations", [])
-                            if isinstance(operation, dict) and operation.get("original") == str(path)
-                            and operation.get("original_node") == receipt.get("node")]
-            else:
-                previous = []
-            if previous and previous[-1].get("status") == "complete":
-                destination = Path(previous[-1].get("destination", ""))
+            prior_operation = _output_closeout_prior_operation(
+                state, original=path, node=receipt.get("node"),
+            )
+            if prior_operation is not None:
+                _verify_output_closeout_mode(
+                    prior_operation, helper_source=helper_source, helper_revision=helper_revision,
+                )
+            if prior_operation is not None and prior_operation.get("status") == "complete":
+                destination = Path(prior_operation.get("destination", ""))
                 if disposition is None or protection_error is not None:
                     raise output_cleanup.OutputError(
                         "QUARANTINE_REPEAT_CURRENT_DISPOSITION_UNVERIFIED")
                 if "git_worktree" in receipt:
-                    moved, moved_stat, binding = output_cleanup._registered_worktree(
-                        {**receipt, "path": str(destination),
-                         "node": output_cleanup._node(destination.lstat()),
-                         "parent_node": output_cleanup._node(destination.parent.lstat())},
-                        Path(receipt["git_worktree"]["repository"]),
-                        candidate,
-                    )
-                    source_observation = output_cleanup.verify_registered_worktree_source(
-                        record_path, receipt, repository=Path(receipt["git_worktree"]["repository"]),
-                        expected_head=candidate, durable_evidence=durable, current_path=destination,
-                    )
-                    if (output_cleanup._node(moved_stat) != receipt.get("node")
-                            or binding.get("head") != receipt.get("git_worktree", {}).get("head")
-                            or previous[-1].get("current_head") != candidate
-                            or source_observation.get("current_head") != candidate):
+                    if prior_operation.get("current_head") != candidate:
                         raise output_cleanup.OutputError("WORKTREE_CURRENT_REFERENCE_NODE_MISMATCH")
+                    destination, source_observation = _verify_registered_worktree_quarantine_repeat(
+                        state=state, owner_record=record_path, receipt=receipt,
+                        operation=prior_operation, reference=reference, durable=durable,
+                        disposition=disposition, candidate=candidate,
+                        helper_source=helper_source, helper_revision=helper_revision,
+                    )
                     item.update(status="eligible", destination=str(destination),
-                                logical_bytes=previous[-1].get("logical_bytes"),
+                                logical_bytes=prior_operation.get("logical_bytes"),
                                 reason="registered worktree requires adapter-authenticated repeat readback",
                                 task_state=disposition, source_observation=source_observation)
                     reports.append(item)
                     receipt_rows.append((receipt, item))
                     continue
                 destination = _verify_plain_quarantine_repeat(
-                    state=state, receipt=receipt, operation=previous[-1], reference=reference,
+                    state=state, owner_record=record_path, receipt=receipt,
+                    operation=prior_operation, reference=reference,
                     durable=durable, disposition=disposition,
                 )
                 item.update(status="eligible", destination=str(destination),
@@ -6933,12 +7084,19 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                 reports.append(item)
                 receipt_rows.append((receipt, item))
                 continue
-            if previous and previous[-1].get("status") in {"pending", "incomplete"}:
-                destination = Path(previous[-1].get("destination", ""))
+            if prior_operation is not None and prior_operation.get("status") in {"pending", "incomplete"}:
+                destination = Path(prior_operation.get("destination", ""))
                 intent_prefix = "worktree-quarantine-" if "git_worktree" in receipt else "output-quarantine-"
                 intent_path = durable / (intent_prefix + str(receipt["node"][1]) + ".json")
                 if (not os.path.lexists(path) and os.path.lexists(destination)
                         and intent_path.is_file() and not intent_path.is_symlink()):
+                    adapter_binding = prior_operation.get("adapter_operation")
+                    if (not isinstance(adapter_binding, dict)
+                            or set(adapter_binding) != {"path", "sha256"}
+                            or adapter_binding.get("path") != str(intent_path)
+                            or output_cleanup.file_binding(intent_path) != adapter_binding):
+                        raise output_cleanup.OutputError(
+                            "QUARANTINE_INTERRUPTION_ADAPTER_INTENT_UNBOUND")
                     intent = output_cleanup._json(intent_path)
                     moved = destination.lstat()
                     if "git_worktree" in receipt:
@@ -6955,6 +7113,15 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                             expected_head=candidate, durable_evidence=durable,
                             current_path=destination,
                         )
+                        if not os.path.lexists(path.parent):
+                            _verify_relocated_prepared_parent(
+                                state=state, owner_record=record_path, child_receipt=receipt,
+                                reference=reference, durable=durable, disposition=disposition,
+                                helper_source=helper_source, helper_revision=helper_revision,
+                            )
+                        elif output_cleanup._node(path.parent.lstat()) != receipt.get("parent_node"):
+                            raise output_cleanup.OutputError(
+                                "WORKTREE_REPEAT_SOURCE_PARENT_IDENTITY_CHANGED")
                         observed_entries = output_cleanup._worktree_tree(
                             destination, registered_stat.st_dev,
                         )[1]
@@ -6972,11 +7139,26 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                             == output_cleanup._node(destination.parent.lstat())
                         )
                         registration_matches = True
+                        retained_root = Path(intent.get("retained_evidence", ""))
+                        retained_matches = (
+                            retained_root.is_absolute() and retained_root.is_dir()
+                            and not retained_root.is_symlink()
+                        )
+                        if retained_matches:
+                            retained_entries = output_cleanup._walk_native_tree(
+                                retained_root, retained_root.stat().st_dev,
+                            )[1]
+                            retained_matches = (retained_entries == intent.get("evidence_entries")
+                                or output_cleanup._known_nested_worktree_move_matches_retained_snapshot(
+                                    record_path, path, observed_entries, retained_root, durable,
+                                ))
                     if (intent.get("source") != str(path) or intent.get("source_node") != receipt.get("node")
+                            or intent.get("source_parent_node") != receipt.get("parent_node")
                             or intent.get("destination") != str(destination)
                             or output_cleanup._node(moved) != receipt.get("node")
                             or not parent_binding_matches or not registration_matches
-                            or observed_entries != intent.get("evidence_entries")):
+                            or observed_entries != intent.get("evidence_entries")
+                            or ("git_worktree" not in receipt and not retained_matches)):
                         raise output_cleanup.OutputError("QUARANTINE_INTERRUPTION_RECONCILIATION_MISMATCH")
                     item.update(status="eligible", path=str(path), destination=str(destination),
                                 logical_bytes=intent.get("logical_bytes"), reconciliation_required=True,
@@ -7097,6 +7279,10 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                 destination_parent = durable / f"quarantine-{attempt}-{op_key}"
                 destination = destination_parent / output_path.name
                 operation_id = op_key
+                adapter_operation_path = durable / (
+                    ("worktree-quarantine-" if "git_worktree" in receipt
+                     else "output-quarantine-") + str(node[1]) + ".json"
+                )
                 try:
                     def save_intent(current: dict[str, Any]) -> dict[str, Any]:
                         current_disposition = _output_closeout_disposition(
@@ -7187,6 +7373,16 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                         )
                         if latest_disposition != disposition:
                             raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_DISPOSITION_CHANGED")
+                        prior_operation = _output_closeout_prior_operation(
+                            latest_state, original=output_path, node=node,
+                        )
+                        if prior_operation is not None:
+                            if prior_operation.get("operation_id") != operation_id:
+                                raise TaskControllerError("OUTPUT_CLOSEOUT_OPERATION_BINDING_CHANGED")
+                            _verify_output_closeout_mode(
+                                prior_operation, helper_source=helper_source,
+                                helper_revision=helper_revision,
+                            )
                         latest_execution = output_cleanup._json(record_path)
                         latest_request, latest_protected = output_cleanup.derive_protected_inputs(
                             record_path, latest_execution,
@@ -7212,16 +7408,21 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                         current_reference = output_cleanup.read_current_reference(
                             Path(latest_reference["current_reference_path"]),
                         )
-                        if previous and previous[-1].get("status") == "complete" and "git_worktree" not in receipt:
+                        if (prior_operation is not None
+                                and prior_operation.get("status") == "complete"
+                                and "git_worktree" not in receipt):
                             _verify_plain_quarantine_repeat(
-                                state=latest_state, receipt=receipt, operation=previous[-1],
+                                state=latest_state, owner_record=record_path, receipt=receipt,
+                                operation=prior_operation,
                                 reference=current_reference, durable=durable,
                                 disposition=latest_disposition,
                             )
                         request, protected = latest_request, latest_protected
 
                         shared_disposer = None
-                        if helper_source is not None:
+                        if (helper_source is not None
+                                and not (prior_operation is not None
+                                         and not os.path.lexists(output_path))):
                             current_owner = output_cleanup._json(record_path)
                             _, current_output_stat = output_cleanup.verify_receipt(receipt)
                             owner_is_terminal = current_owner.get("status") in {
@@ -7268,6 +7469,46 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                                     raise output_cleanup.OutputError("SELECTED_HELPER_DID_NOT_QUARANTINE")
                                 return {"status": "quarantined", "selected": selected}
 
+                        def bind_adapter_intent() -> None:
+                            intent_binding = output_cleanup.file_binding(adapter_operation_path)
+
+                            def persist_adapter_intent(current: dict[str, Any]) -> dict[str, Any]:
+                                if _output_closeout_disposition(
+                                        current, args.issue_number, attempt, execution, request or {}) != disposition:
+                                    raise TaskControllerError(
+                                        "OUTPUT_CLOSEOUT_CURRENT_DISPOSITION_CHANGED")
+                                if _output_current_reference(current) != current_reference:
+                                    raise TaskControllerError(
+                                        "OUTPUT_CLOSEOUT_CURRENT_REFERENCE_CHANGED")
+                                closeout = dict(current.get("output_closeout", {}))
+                                operations = list(closeout.get("operations", []))
+                                matches = [entry for entry in operations if isinstance(entry, dict)
+                                           and entry.get("operation_id") == operation_id]
+                                if (len(matches) != 1
+                                        or matches[0].get("status") not in {"pending", "incomplete"}):
+                                    raise TaskControllerError(
+                                        "OUTPUT_CLOSEOUT_OPERATION_INTENT_MISSING")
+                                existing = matches[0].get("adapter_operation")
+                                if existing is not None and existing != intent_binding:
+                                    raise TaskControllerError(
+                                        "OUTPUT_CLOSEOUT_ADAPTER_INTENT_CHANGED")
+                                matches[0]["adapter_operation"] = intent_binding
+                                closeout["operations"] = operations
+                                current["output_closeout"] = closeout
+                                return current
+
+                            checkpoint_transaction_locked(
+                                args.state_dir, args.issue_number, persist_adapter_intent,
+                            )
+
+                        relocated_parent_binding = None
+                        if "git_worktree" in receipt and not os.path.lexists(output_path.parent):
+                            _, relocated_parent_binding = _verify_relocated_prepared_parent(
+                                state=latest_state, owner_record=record_path,
+                                child_receipt=receipt, reference=current_reference,
+                                durable=durable, disposition=latest_disposition,
+                                helper_source=helper_source, helper_revision=helper_revision,
+                            )
                         if "git_worktree" in receipt:
                             result = output_cleanup.execute_registered_worktree_quarantine(
                                 record_path, output_path=output_path,
@@ -7276,12 +7517,16 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                                 durable_evidence=durable, task=task, attempt=attempt,
                                 expected_head=candidate,
                                 owner_lock_held=True,
+                                before_move=bind_adapter_intent,
+                                relocated_parent_operation=relocated_parent_binding,
+                                current_reference=current_reference,
                             )
                         else:
                             result = output_cleanup.execute_native_quarantine(
                                 record_path, output_path=output_path, destination=destination,
                                 durable_evidence=durable, task=task, attempt=attempt,
                                 owner_lock_held=True, dispose=shared_disposer,
+                                before_move=bind_adapter_intent,
                             )
                         def persist_result(current: dict[str, Any]) -> dict[str, Any]:
                             if _output_closeout_disposition(
@@ -7328,6 +7573,11 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                                     if entry.get("status") == "pending":
                                         entry.update(status="incomplete", last_error=message,
                                                      physical_bytes_reclaimed=0)
+                                    if (adapter_operation_path.is_file()
+                                            and not adapter_operation_path.is_symlink()):
+                                        entry["adapter_operation"] = output_cleanup.file_binding(
+                                            adapter_operation_path,
+                                        )
                             closeout["operations"] = operations
                             current["output_closeout"] = closeout
                             return current
