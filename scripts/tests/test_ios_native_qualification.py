@@ -488,8 +488,44 @@ class IosNativeQualificationTests(
             self.assertEqual(json.loads(operation_path.read_text(encoding="utf-8"))["status"], "complete")
 
     @MACOS_NATIVE_FIXTURE_ONLY
+    def test_native_complete_worktree_verification_reuses_one_observation(self):
+        result, evidence = self._run_fixture_qualification("success", trace_worktree_walks=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+        owner_path = evidence / "native-lifecycle" / "output-owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        receipt = next(item for item in owner["owned_outputs"] if "git_worktree" in item)
+        destination = Path(owner["quarantine_parent"]["path"]) / Path(receipt["path"]).name
+        operation_path = evidence / "native-lifecycle" / "retained-outputs" / (
+            f"worktree-quarantine-{receipt['node'][1]}.json")
+        operation = json.loads(operation_path.read_text(encoding="utf-8"))
+        self.assertEqual(operation["status"], "complete")
+        self.assertTrue(operation["result_persisted"])
+        expected_hash_bytes = sum(
+            item.get("bytes", 0) for item in operation["evidence_entries"]
+            if item["kind"] == "file"
+        ) + destination.joinpath(".git").stat().st_size
+        walk_trace = [json.loads(line) for line in (evidence / "adapter-walk-trace.jsonl").read_text(
+            encoding="utf-8").splitlines()]
+        complete_invocations = {
+            item["pid"] for item in walk_trace
+            if "native-quarantine-verify" in item["argv"]
+            and "--require-complete" in item["argv"]
+        }
+        self.assertTrue(complete_invocations, walk_trace)
+        for pid in complete_invocations:
+            worktree_walks = [item for item in walk_trace
+                              if item["pid"] == pid and item["root"] == str(destination)]
+            self.assertEqual(len(worktree_walks), 1, worktree_walks)
+            self.assertEqual(worktree_walks[0]["hash_bytes"], expected_hash_bytes)
+
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_recovers_native_worktree_move_before_adapter_result_and_phase(self):
-        result, evidence = self._run_fixture_qualification("native-worktree-move-result-interrupted")
+        result, evidence = self._run_fixture_qualification(
+            "native-worktree-move-result-interrupted", trace_worktree_walks=True,
+        )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["result"], "PASS")
@@ -524,6 +560,12 @@ class IosNativeQualificationTests(
         self.assertEqual(reconciliation["node"], receipt["node"])
         self.assertEqual(reconciliation["operation"]["sha256"], hashlib.sha256(
             operation_path.read_bytes()).hexdigest())
+        walk_trace = [json.loads(line) for line in (evidence / "adapter-walk-trace.jsonl").read_text(
+            encoding="utf-8").splitlines()]
+        recovery_walks = [item for item in walk_trace
+                          if item["root"] == str(destination)
+                          and "native-worktree-phase-reconcile" in item["argv"]]
+        self.assertEqual(len(recovery_walks), 1, recovery_walks)
         fresh_verify = evidence / "native-lifecycle" / "cleanup-verify-derived-data-quarantine.stdout.log"
         self.assertEqual(json.loads(fresh_verify.read_text(encoding="utf-8"))["status"], "PASS")
 
@@ -3717,6 +3759,7 @@ exec /bin/rm "$@"
         versioned_python: bool = False,
         interrupt_after_derived_move: bool = False,
         return_evidence_parent: bool = False,
+        trace_worktree_walks: bool = False,
     ):
         evidence_parent = Path(tempfile.mkdtemp(prefix="ios-native-fixture-"))
         evidence = evidence_parent / "evidence"
@@ -3757,6 +3800,46 @@ exec /bin/rm "$@"
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
         environment["IOS_NATIVE_FIXTURE_EVENTS"] = str(evidence / "movement-events.jsonl")
+        if trace_worktree_walks:
+            trace_runtime = evidence_parent / "walk-trace-runtime"
+            trace_runtime.mkdir()
+            (trace_runtime / "sitecustomize.py").write_text(
+                "import json, os, stat, sys, time\n"
+                "_native_original_walk = os.walk\n"
+                "def _native_traced_walk(top, *args, **kwargs):\n"
+                "    started = time.monotonic_ns()\n"
+                "    file_count = 0\n"
+                "    hash_bytes = 0\n"
+                "    failure = None\n"
+                "    try:\n"
+                "        for base, directories, files in _native_original_walk(top, *args, **kwargs):\n"
+                "            for name in files:\n"
+                "                try:\n"
+                "                    observed = os.lstat(os.path.join(base, name))\n"
+                "                except OSError:\n"
+                "                    continue\n"
+                "                if stat.S_ISREG(observed.st_mode) and observed.st_nlink == 1:\n"
+                "                    file_count += 1\n"
+                "                    hash_bytes += observed.st_size\n"
+                "            yield base, directories, files\n"
+                "    except BaseException as error:\n"
+                "        failure = repr(error)\n"
+                "        raise\n"
+                "    finally:\n"
+                "        trace = os.environ.get('IOS_NATIVE_FIXTURE_WALK_TRACE')\n"
+                "        if trace:\n"
+                "            row = {'root': os.fspath(top), 'argv': sys.argv, 'pid': os.getpid(),\n"
+                "                   'file_count': file_count, 'hash_bytes': hash_bytes,\n"
+                "                   'elapsed_ns': time.monotonic_ns() - started, 'error': failure}\n"
+                "            with open(trace, 'a', encoding='utf-8') as stream:\n"
+                "                stream.write(json.dumps(row, sort_keys=True) + '\\n')\n"
+                "os.walk = _native_traced_walk\n",
+                encoding="utf-8",
+            )
+            environment["PYTHONPATH"] = (
+                str(trace_runtime) + os.pathsep + environment.get("PYTHONPATH", "")
+            )
+            environment["IOS_NATIVE_FIXTURE_WALK_TRACE"] = str(evidence / "adapter-walk-trace.jsonl")
         if mode == "symlink-output":
             sentinel = evidence_parent / "outside-native-sentinel"
             sentinel.write_bytes(b"outside native target remains unchanged\n")

@@ -21,10 +21,22 @@ import stat
 import sys
 import subprocess
 import time
+from dataclasses import dataclass
 from typing import Any
 
 
 SCHEMA_VERSION = 1
+
+
+@dataclass(frozen=True)
+class _RegisteredWorktreeObservation:
+    """One invocation's authenticated registration and no-follow tree scan."""
+
+    path: Path
+    stat: os.stat_result
+    binding: dict[str, Any]
+    total_bytes: int
+    entries: tuple[dict[str, Any], ...]
 
 
 class OutputError(RuntimeError):
@@ -934,11 +946,12 @@ def _known_nested_worktree_move_matches_retained_snapshot(
             return False
         moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                          "parent_node": _node(destination.parent.lstat())}
-        moved, moved_stat, moved_binding = _registered_worktree(
+        observed = _registered_worktree_observation(
             moved_receipt, Path(binding["repository"]), current_head,
         )
-        if (_node(moved_stat) != receipt.get("node") or moved_binding.get("head") != binding.get("head")
-                or _worktree_tree(moved, moved_stat.st_dev)[1] != operation["evidence_entries"]):
+        if (_node(observed.stat) != receipt.get("node")
+                or observed.binding.get("head") != binding.get("head")
+                or _worktree_projection_from_observation(observed)[1] != operation["evidence_entries"]):
             return False
         nested_prefix = original.relative_to(root).as_posix()
         retained_entries = _walk_native_tree(retained_root, retained_root.stat().st_dev)[1]
@@ -1106,9 +1119,9 @@ def plan_native_quarantine(owner_record: Path, *, output_path: Path, destination
             "entries": entries, "receipt": receipts[0]}
 
 
-def _registered_worktree(
+def _registered_worktree_observation(
     receipt: dict[str, Any], repository: Path, expected_head: str | None = None,
-) -> tuple[Path, os.stat_result, dict[str, Any]]:
+) -> _RegisteredWorktreeObservation:
     path, st = verify_receipt(receipt)
     binding = receipt.get("git_worktree")
     if not isinstance(binding, dict) or set(binding) != {"repository", "head", "branch"}:
@@ -1133,21 +1146,40 @@ def _registered_worktree(
                                  check=False, timeout=30)
         if ancestor.returncode:
             raise OutputError("WORKTREE_CURRENT_CANDIDATE_NOT_FROM_CREATION_BASE")
-    _walk_native_tree(path, st.st_dev)
-    return path, st, binding
+    total_bytes, entries = _walk_native_tree(path, st.st_dev)
+    return _RegisteredWorktreeObservation(path, st, binding, total_bytes, tuple(entries))
 
 
-def _worktree_tree(root: Path, device: int) -> tuple[int, list[dict[str, Any]]]:
-    total, entries = _walk_native_tree(root, device)
+def _registered_worktree(
+    receipt: dict[str, Any], repository: Path, expected_head: str | None = None,
+) -> tuple[Path, os.stat_result, dict[str, Any]]:
+    """Authenticate a registration and perform its fresh topology scan."""
+    observed = _registered_worktree_observation(receipt, repository, expected_head)
+    return observed.path, observed.stat, observed.binding
+
+
+def _worktree_projection(total: int, entries: Any) -> tuple[int, list[dict[str, Any]]]:
     metadata = [entry for entry in entries if entry["path"] == ".git"]
     return total - sum(item.get("bytes", 0) for item in metadata), [
         entry for entry in entries if entry["path"] != ".git"
     ]
 
 
-def _verify_native_worktree_source(
+def _worktree_projection_from_observation(
+    observed: _RegisteredWorktreeObservation,
+) -> tuple[int, list[dict[str, Any]]]:
+    return _worktree_projection(observed.total_bytes, observed.entries)
+
+
+def _worktree_tree(root: Path, device: int) -> tuple[int, list[dict[str, Any]]]:
+    total, entries = _walk_native_tree(root, device)
+    return _worktree_projection(total, entries)
+
+
+def _verify_native_worktree_source_impl(
     path: Path, repository: Path, binding: dict[str, Any], *, owner_record: Path | None = None,
     durable_evidence: Path | None = None,
+    observation: _RegisteredWorktreeObservation | None = None,
 ) -> None:
     """Refuse a native worktree move when Git observes unique source outside generated roots."""
     roots = binding.get("roots")
@@ -1194,7 +1226,15 @@ def _verify_native_worktree_source(
                     and (operation.get("result_persisted") is not True
                          or operation.get("destination_node") != _node(moved_stat)))
                 or not isinstance(operation.get("evidence_entries"), list)
-                or _worktree_tree(path, moved_stat.st_dev)[1] != operation.get("evidence_entries")):
+                or (observation is not None and (
+                    observation.path != path
+                    or _node(observation.stat) != _node(moved_stat)
+                    or observation.stat.st_dev != moved_stat.st_dev
+                ))
+                or ((
+                    _worktree_projection_from_observation(observation)[1]
+                    if observation is not None else _worktree_tree(path, moved_stat.st_dev)[1]
+                ) != operation.get("evidence_entries"))):
             raise OutputError("NATIVE_WORKTREE_MOVED_SOURCE_OPERATION_INVALID")
     generated_roots = []
     for name in ("ios", "node_modules", "pods"):
@@ -1257,6 +1297,32 @@ def _verify_native_worktree_source(
         raise OutputError("NATIVE_WORKTREE_INDEX_RECOVERY_FLAGS_PRESENT")
 
 
+def _verify_native_worktree_source(
+    path: Path, repository: Path, binding: dict[str, Any], *, owner_record: Path | None = None,
+    durable_evidence: Path | None = None,
+) -> None:
+    """Perform an independent source check with its own fresh content scan."""
+    _verify_native_worktree_source_impl(
+        path, repository, binding, owner_record=owner_record,
+        durable_evidence=durable_evidence,
+    )
+
+
+def _verify_native_worktree_source_observed(
+    observation: _RegisteredWorktreeObservation,
+    repository: Path,
+    binding: dict[str, Any],
+    *,
+    owner_record: Path | None = None,
+    durable_evidence: Path | None = None,
+) -> None:
+    """Use only this action's immediately preceding registered observation."""
+    _verify_native_worktree_source_impl(
+        observation.path, repository, binding, owner_record=owner_record,
+        durable_evidence=durable_evidence, observation=observation,
+    )
+
+
 def _verify_prepared_worktree_source(
     path: Path, repository: Path, expected_head: str, creation_head: str,
 ) -> None:
@@ -1301,7 +1367,8 @@ def verify_registered_worktree_source(
         observed = current_path.lstat()
         selected_receipt = {**receipt, "path": str(current_path), "node": _node(observed),
                             "parent_node": _node(current_path.parent.lstat())}
-    path, st, immutable = _registered_worktree(selected_receipt, repository, expected_head)
+    observed = _registered_worktree_observation(selected_receipt, repository, expected_head)
+    path, st, immutable = observed.path, observed.stat, observed.binding
     if owner.get("native_terminal") is not None:
         parent_binding = owner.get("quarantine_parent")
         invocation_binding = parent_binding.get("invocation") if isinstance(parent_binding, dict) else None
@@ -1315,8 +1382,12 @@ def verify_registered_worktree_source(
         verify_native_proof_readback(
             owner_record, invocation_record=invocation_record, durable_evidence=durable_evidence,
         )
+        # Proof readback is an independent trust boundary. A moved-path source
+        # check after it takes its own current scan rather than reusing the
+        # registration observation captured before proof verification.
         _verify_native_worktree_source(
-            path, repository, binding, owner_record=owner_record, durable_evidence=durable_evidence,
+            path, repository, binding, owner_record=owner_record,
+            durable_evidence=durable_evidence,
         )
     else:
         _verify_prepared_worktree_source(path, repository, expected_head, immutable["head"])
@@ -1435,15 +1506,17 @@ def execute_registered_worktree_quarantine(
             moved_stat = destination.lstat()
             moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                              "parent_node": _node(parent_stat)}
-            moved, moved_stat, binding = _registered_worktree(moved_receipt, repository, expected_head)
+            observed = _registered_worktree_observation(moved_receipt, repository, expected_head)
+            moved, moved_stat, binding = observed.path, observed.stat, observed.binding
             if (_node(moved_stat) != receipt_node
                     or binding["head"] != previous.get("head")
                     or previous.get("current_head") != expected_head
-                    or _worktree_tree(moved, moved_stat.st_dev)[1] != previous.get("evidence_entries")):
+                    or _worktree_projection_from_observation(observed)[1]
+                    != previous.get("evidence_entries")):
                 raise OutputError("WORKTREE_QUARANTINE_RECONCILIATION_MISMATCH")
             if native_binding is not None:
-                _verify_native_worktree_source(
-                    moved, repository, native_binding, owner_record=owner_record,
+                _verify_native_worktree_source_observed(
+                    observed, repository, native_binding, owner_record=owner_record,
                     durable_evidence=durable_evidence,
                 )
             else:
@@ -1454,7 +1527,10 @@ def execute_registered_worktree_quarantine(
                             head=binding["head"])
             _atomic_json(operation_path, previous)
             return {**previous, "status": "already_quarantined", "newly_removed_bytes": 0}
-        original, original_stat, binding = _registered_worktree(receipt, repository, expected_head)
+        original_observation = _registered_worktree_observation(receipt, repository, expected_head)
+        original = original_observation.path
+        original_stat = original_observation.stat
+        binding = original_observation.binding
         current_head = expected_head or binding["head"]
         if (destination.parent != quarantine_parent or paths_overlap(original, destination)
                 or paths_overlap(original, quarantine_parent)):
@@ -1469,7 +1545,7 @@ def execute_registered_worktree_quarantine(
             raise OutputError("WORKTREE_QUARANTINE_CROSS_DEVICE")
         if os.path.lexists(destination):
             raise OutputError("WORKTREE_QUARANTINE_DESTINATION_EXISTS")
-        total, entries = _worktree_tree(original, original_stat.st_dev)
+        total, entries = _worktree_projection_from_observation(original_observation)
         operation_path = durable_evidence / f"worktree-quarantine-{original_stat.st_ino}.json"
         source_parent_node = _node(original.parent.lstat())
         pending = {"schema_version": SCHEMA_VERSION, "operation": "registered-worktree-quarantine",
@@ -1493,13 +1569,14 @@ def execute_registered_worktree_quarantine(
                 moved_stat = destination.lstat()
                 moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                                  "parent_node": _node(parent_stat)}
-                moved, moved_stat, _ = _registered_worktree(moved_receipt, repository, expected_head)
+                observed = _registered_worktree_observation(moved_receipt, repository, expected_head)
+                moved, moved_stat = observed.path, observed.stat
                 if (os.path.lexists(original) or _node(moved_stat) != pending["source_node"]
-                        or _worktree_tree(moved, moved_stat.st_dev)[1] != entries):
+                        or _worktree_projection_from_observation(observed)[1] != entries):
                     raise OutputError("WORKTREE_QUARANTINE_RETRY_MISMATCH")
                 if native_binding is not None:
-                    _verify_native_worktree_source(
-                        moved, repository, native_binding, owner_record=owner_record,
+                    _verify_native_worktree_source_observed(
+                        observed, repository, native_binding, owner_record=owner_record,
                         durable_evidence=durable_evidence,
                     )
                 else:
@@ -1513,13 +1590,14 @@ def execute_registered_worktree_quarantine(
                 moved_stat = destination.lstat()
                 moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                                  "parent_node": _node(parent_stat)}
-                moved, moved_stat, _ = _registered_worktree(moved_receipt, repository, expected_head)
+                observed = _registered_worktree_observation(moved_receipt, repository, expected_head)
+                moved, moved_stat = observed.path, observed.stat
                 if (_node(moved_stat) != pending["source_node"]
-                        or _worktree_tree(moved, moved_stat.st_dev)[1] != entries):
+                        or _worktree_projection_from_observation(observed)[1] != entries):
                     raise OutputError("WORKTREE_QUARANTINE_RECONCILIATION_MISMATCH")
                 if native_binding is not None:
-                    _verify_native_worktree_source(
-                        moved, repository, native_binding, owner_record=owner_record,
+                    _verify_native_worktree_source_observed(
+                        observed, repository, native_binding, owner_record=owner_record,
                         durable_evidence=durable_evidence,
                     )
                 else:
@@ -1530,14 +1608,17 @@ def execute_registered_worktree_quarantine(
                 return {**previous, "status": "already_quarantined", "newly_removed_bytes": 0}
         else:
             _write_exclusive(operation_path, pending)
-        checked, checked_stat, checked_binding = _registered_worktree(receipt, repository, expected_head)
+        checked_observation = _registered_worktree_observation(receipt, repository, expected_head)
+        checked = checked_observation.path
+        checked_stat = checked_observation.stat
+        checked_binding = checked_observation.binding
         if (_node(checked_stat) != pending["source_node"] or checked_binding != binding
                 or _node(quarantine_parent.lstat()) != pending["quarantine_parent_node"]
                 or os.path.lexists(destination)):
             raise OutputError("WORKTREE_QUARANTINE_IDENTITY_CHANGED")
         if native_binding is not None:
-            _verify_native_worktree_source(
-                checked, repository, native_binding, owner_record=owner_record,
+            _verify_native_worktree_source_observed(
+                checked_observation, repository, native_binding, owner_record=owner_record,
                 durable_evidence=durable_evidence,
             )
         else:
@@ -1552,13 +1633,14 @@ def execute_registered_worktree_quarantine(
         moved_stat = destination.lstat()
         moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                          "parent_node": _node(parent_stat)}
-        moved, moved_stat, _ = _registered_worktree(moved_receipt, repository, expected_head)
+        moved_observation = _registered_worktree_observation(moved_receipt, repository, expected_head)
+        moved, moved_stat = moved_observation.path, moved_observation.stat
         if (os.path.lexists(original) or _node(moved_stat) != pending["source_node"]
-                or _worktree_tree(moved, moved_stat.st_dev)[1] != entries):
+                or _worktree_projection_from_observation(moved_observation)[1] != entries):
             raise OutputError("WORKTREE_QUARANTINE_READBACK_FAILED")
         if native_binding is not None:
-            _verify_native_worktree_source(
-                moved, repository, native_binding, owner_record=owner_record,
+            _verify_native_worktree_source_observed(
+                moved_observation, repository, native_binding, owner_record=owner_record,
                 durable_evidence=durable_evidence,
             )
         else:
@@ -2622,14 +2704,15 @@ def reconcile_native_worktree_quarantine_phase(
             raise OutputError("NATIVE_QUARANTINE_RECOVERY_DESTINATION_CHANGED")
         moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
                          "parent_node": _node(parent_stat)}
-        moved, registered_stat, registered = _registered_worktree(
+        observed = _registered_worktree_observation(
             moved_receipt, Path(git_binding["repository"]), binding["source"].get("commit"),
         )
+        registered_stat, registered = observed.stat, observed.binding
         if (registered.get("head") != git_binding.get("head")
-                or _worktree_tree(moved, registered_stat.st_dev)[1] != operation["evidence_entries"]):
+                or _worktree_projection_from_observation(observed)[1] != operation["evidence_entries"]):
             raise OutputError("NATIVE_QUARANTINE_RECOVERY_DESTINATION_CONTENT_CHANGED")
-        _verify_native_worktree_source(
-            moved, Path(git_binding["repository"]), binding,
+        _verify_native_worktree_source_observed(
+            observed, Path(git_binding["repository"]), binding,
             owner_record=owner_record, durable_evidence=durable,
         )
         if operation.get("status") == "intent":
@@ -2778,10 +2861,10 @@ def verify_native_quarantine_operations(
             if source_exists:
                 if is_worktree:
                     repository = Path(receipt["git_worktree"]["repository"])
-                    _, source_stat, _ = _registered_worktree(
+                    source_observation = _registered_worktree_observation(
                         receipt, repository, binding["source"]["commit"],
                     )
-                    observed_entries = _worktree_tree(original, source_stat.st_dev)[1]
+                    observed_entries = _worktree_projection_from_observation(source_observation)[1]
                 else:
                     _, source_stat = verify_receipt(receipt)
                     observed_entries = _walk_native_tree(original, source_stat.st_dev)[1]
@@ -2796,12 +2879,13 @@ def verify_native_quarantine_operations(
                     repository = Path(receipt["git_worktree"]["repository"])
                     moved_receipt = {**receipt, "path": str(destination),
                                      "parent_node": _node(destination.parent.lstat())}
-                    moved, moved_stat, _ = _registered_worktree(
+                    observation = _registered_worktree_observation(
                         moved_receipt, repository, binding["source"]["commit"],
                     )
-                    observed_entries = _worktree_tree(moved, moved_stat.st_dev)[1]
-                    _verify_native_worktree_source(
-                        moved, repository, binding, owner_record=owner_record,
+                    moved_stat = observation.stat
+                    observed_entries = _worktree_projection_from_observation(observation)[1]
+                    _verify_native_worktree_source_observed(
+                        observation, repository, binding, owner_record=owner_record,
                         durable_evidence=durable,
                     )
                 else:
@@ -2841,12 +2925,13 @@ def verify_native_quarantine_operations(
             repository = Path(receipt["git_worktree"]["repository"])
             moved_receipt = {**receipt, "path": str(destination),
                              "parent_node": destination_parent_node}
-            moved, moved_stat, _ = _registered_worktree(
+            observation = _registered_worktree_observation(
                 moved_receipt, repository, binding["source"]["commit"],
             )
-            observed_entries = _worktree_tree(moved, moved_stat.st_dev)[1]
-            _verify_native_worktree_source(
-                moved, repository, binding, owner_record=owner_record,
+            moved_stat = observation.stat
+            observed_entries = _worktree_projection_from_observation(observation)[1]
+            _verify_native_worktree_source_observed(
+                observation, repository, binding, owner_record=owner_record,
                 durable_evidence=durable,
             )
         else:

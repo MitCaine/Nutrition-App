@@ -205,6 +205,34 @@ def task_cli(
                           capture_output=True, text=True, timeout=timeout, env=env)
 
 
+def install_native_tree_probe(monkeypatch):
+    walks: list[dict] = []
+    hashes: list[dict] = []
+    original_walk = lifecycle._walk_native_tree
+    original_hash = lifecycle._sha_file
+
+    def record_hash(path: Path) -> str:
+        size = path.stat().st_size
+        digest = original_hash(path)
+        hashes.append({"path": str(path), "bytes": size})
+        return digest
+
+    def record_walk(root: Path, device: int, **kwargs):
+        first_hash = len(hashes)
+        started = time.monotonic_ns()
+        try:
+            return original_walk(root, device, **kwargs)
+        finally:
+            observed = hashes[first_hash:]
+            walks.append({"root": str(root), "hash_files": len(observed),
+                          "hash_bytes": sum(item["bytes"] for item in observed),
+                          "elapsed_ns": time.monotonic_ns() - started})
+
+    monkeypatch.setattr(lifecycle, "_sha_file", record_hash)
+    monkeypatch.setattr(lifecycle, "_walk_native_tree", record_walk)
+    return walks, hashes
+
+
 def authored_runner_fixture(tmp_path: Path, *, attempt: str, steps: list[dict]) -> dict:
     repo = tmp_path / "authored-repository"
     repo.mkdir()
@@ -2567,6 +2595,95 @@ def test_gh420_o5_public_closeout_reconciles_interrupted_move_after_intent(tmp_p
     final_operation = next(item for item in final_state["output_closeout"]["operations"]
                            if item.get("original") == str(output))
     assert final_operation["status"] == "complete"
+
+
+def test_gh420_a12_registered_worktree_observation_is_action_local(tmp_path: Path, monkeypatch):
+    case = terminal_authored_fixture(tmp_path, attempt="GH-420-a12-worktree-observation")
+    source, receipt = add_registered_closeout_worktree(case)
+    durable = case["durable"]
+    quarantine = durable / "quarantine"
+    quarantine.mkdir()
+    destination = quarantine / source.name
+    expected_total, expected_entries = lifecycle._worktree_tree(source, source.stat().st_dev)
+    _raw_total, raw_entries = lifecycle._walk_native_tree(source, source.stat().st_dev)
+    expected_hash_bytes = sum(row.get("bytes", 0) for row in raw_entries if row["kind"] == "file")
+    walks, hashes = install_native_tree_probe(monkeypatch)
+
+    moved = lifecycle.execute_registered_worktree_quarantine(
+        case["owner"], output_path=source, repository=case["repo"],
+        quarantine_parent=quarantine, destination=destination, durable_evidence=durable,
+        task="GH-420", attempt=case["attempt"],
+        expected_head=receipt["git_worktree"]["head"],
+    )
+    assert moved["status"] == "quarantined"
+    assert moved["logical_bytes"] == expected_total
+    assert moved["evidence_entries"] == expected_entries
+    assert not source.exists() and destination.is_dir()
+    source_walks = [row for row in walks if row["root"] == str(source)]
+    destination_walks = [row for row in walks if row["root"] == str(destination)]
+    # The original root is observed once for its manifest and once again at the
+    # pre-move boundary. The moved root gets one new post-move readback.
+    assert len(source_walks) == 2, source_walks
+    assert len(destination_walks) == 1, destination_walks
+    assert all(row["hash_bytes"] == expected_hash_bytes for row in source_walks + destination_walks)
+
+    walks.clear()
+    hashes.clear()
+    repeated = lifecycle.execute_registered_worktree_quarantine(
+        case["owner"], output_path=source, repository=case["repo"],
+        quarantine_parent=quarantine, destination=destination, durable_evidence=durable,
+        task="GH-420", attempt=case["attempt"],
+        expected_head=receipt["git_worktree"]["head"],
+    )
+    assert repeated["status"] == "already_quarantined"
+    assert repeated["newly_removed_bytes"] == 0
+    assert [row["root"] for row in walks] == [str(destination)]
+    assert walks[0]["hash_bytes"] == expected_hash_bytes
+
+    interrupted = terminal_authored_fixture(
+        tmp_path / "interrupted", attempt="GH-420-a12-worktree-interrupted",
+    )
+    interrupted_source, interrupted_receipt = add_registered_closeout_worktree(interrupted)
+    interrupted_durable = interrupted["durable"]
+    interrupted_quarantine = interrupted_durable / "quarantine"
+    interrupted_quarantine.mkdir()
+    interrupted_destination = interrupted_quarantine / interrupted_source.name
+    original_run = subprocess.run
+    moved_once = False
+
+    def move_then_interrupt(command, *positional, **options):
+        nonlocal moved_once
+        result = original_run(command, *positional, **options)
+        if (not moved_once and isinstance(command, (list, tuple))
+                and list(command)[-4:-2] == ["worktree", "move"] and result.returncode == 0):
+            moved_once = True
+            raise OSError("injected interruption after Git move before result persistence")
+        return result
+
+    monkeypatch.setattr(lifecycle.subprocess, "run", move_then_interrupt)
+    with pytest.raises(OSError, match="before result persistence"):
+        lifecycle.execute_registered_worktree_quarantine(
+            interrupted["owner"], output_path=interrupted_source,
+            repository=interrupted["repo"], quarantine_parent=interrupted_quarantine,
+            destination=interrupted_destination, durable_evidence=interrupted_durable,
+            task="GH-420", attempt=interrupted["attempt"],
+            expected_head=interrupted_receipt["git_worktree"]["head"],
+        )
+    assert moved_once and not interrupted_source.exists()
+    interrupted_node = lifecycle._node(interrupted_destination.lstat())
+    monkeypatch.setattr(lifecycle.subprocess, "run", original_run)
+    walks.clear()
+    hashes.clear()
+    recovered = lifecycle.execute_registered_worktree_quarantine(
+        interrupted["owner"], output_path=interrupted_source,
+        repository=interrupted["repo"], quarantine_parent=interrupted_quarantine,
+        destination=interrupted_destination, durable_evidence=interrupted_durable,
+        task="GH-420", attempt=interrupted["attempt"],
+        expected_head=interrupted_receipt["git_worktree"]["head"],
+    )
+    assert recovered["status"] == "already_quarantined"
+    assert lifecycle._node(interrupted_destination.lstat()) == interrupted_node
+    assert [row["root"] for row in walks] == [str(interrupted_destination)]
 
 
 def test_gh420_o5_public_registered_worktree_repeat_reauthenticates_move(tmp_path: Path):
