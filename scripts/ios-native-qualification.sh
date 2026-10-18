@@ -288,17 +288,65 @@ mark_cleanup_incomplete() {
   echo "IOS_NATIVE_CLEANUP_INCOMPLETE:$reason" >&2
 }
 
+verify_native_proof_readback_before_operation() {
+  local operation="$1"
+  local proof_status=0
+  local proof_stdout_path="$native_lifecycle_dir/cleanup-proof-verify-$operation.stdout.log"
+  local proof_stderr_path="$native_lifecycle_dir/cleanup-proof-verify-$operation.stderr.log"
+  "$native_lifecycle_python" "$native_output_cleanup" native-proof-verify \
+    --owner-record "$native_output_owner" \
+    --invocation-record "$native_lifecycle_binding" \
+    --durable-evidence "$native_output_durable" \
+    > "$proof_stdout_path" 2> "$proof_stderr_path"
+  proof_status="$?"
+  if test "$proof_status" -ne 0
+  then
+    local proof_detail
+    proof_detail="$(tail -n 1 "$proof_stderr_path" 2>/dev/null || true)"
+    required_proof_failure=1
+    record_outcome \
+      "$propagation_proof_outcome" \
+      propagation_proof \
+      FAILURE \
+      "$proof_status" \
+      "${proof_detail:-relocated compile/link proof readback failed}" || true
+    if test "$qualifier_exit_status" -eq 0
+    then
+      qualifier_exit_status=1
+    fi
+    mark_cleanup_incomplete "required compile/link proof readback refused before $operation: ${proof_detail:-no adapter detail}"
+    return 1
+  fi
+  return 0
+}
+
 verify_before_disposal() {
   local operation="$1"
   local verify_status=0
   local stdout_path="$native_lifecycle_dir/cleanup-verify-$operation.stdout.log"
   local stderr_path="$native_lifecycle_dir/cleanup-verify-$operation.stderr.log"
+  local derived_phase_path="$native_lifecycle_dir/phases/derived-data-removed.json"
+  local derived_phase_exists=0
+  local proof_readback_done=0
 
   if test -z "$native_lifecycle_binding" ||
     ! test -f "$native_lifecycle_binding"
   then
     mark_cleanup_incomplete "invocation binding unavailable before $operation"
     return 1
+  fi
+
+  if test -e "$derived_phase_path" || test -L "$derived_phase_path"
+  then
+    derived_phase_exists=1
+  fi
+  if test "$operation" != output-owner-terminal && test "$derived_phase_exists" -eq 1
+  then
+    if ! verify_native_proof_readback_before_operation "$operation"
+    then
+      return 1
+    fi
+    proof_readback_done=1
   fi
 
   "$native_lifecycle_python" \
@@ -328,6 +376,10 @@ verify_before_disposal() {
     fi
     mark_cleanup_incomplete "verification refused before $operation: ${detail:-no verifier detail}"
     return 1
+  fi
+  if test "$operation" != output-owner-terminal && test "$proof_readback_done" -eq 0
+  then
+    verify_native_proof_readback_before_operation "$operation"
   fi
 }
 
@@ -495,6 +547,11 @@ PY
     printf '%s\n' "probe root remains after cleanup" \
       > "$evidence_dir/generated-cleanup-failure.txt"
     mark_cleanup_incomplete "probe root remains after cleanup: $probe_root"
+    return 1
+  fi
+
+  if ! verify_before_disposal cleanup-pass
+  then
     return 1
   fi
 
@@ -1668,17 +1725,33 @@ sys.path.insert(0, str(helper_path.parent))
 import native_process_lifecycle as verifier
 if Path(verifier.__file__).resolve(strict=True) != helper_path:
     raise SystemExit("NATIVE_HELPER_IMPORT_PATH_MISMATCH")
-status = verifier.verify_command(binding_path, [])
-if status:
-    raise SystemExit(status)
 script_root = Path(repository).resolve(strict=True) / "scripts"
 sys.path.insert(0, str(script_root))
 from lib import task_output_cleanup as cleanup
 
+def verify_native_proofs():
+    try:
+        cleanup.verify_native_proof_readback(
+            Path(owner_path), invocation_record=Path(binding_path), durable_evidence=Path(durable),
+        )
+    except cleanup.OutputError as error:
+        print(f"NATIVE_PROOF_READBACK_REQUIRED_FAILURE:{error}", file=sys.stderr)
+        raise SystemExit(2) from error
+
 def verify_producer_before_move():
+    derived_phase = Path(binding_path).parent / "phases" / "derived-data-removed.json"
+    if derived_phase.exists() or derived_phase.is_symlink():
+        verify_native_proofs()
+        status = verifier.verify_command(binding_path, [])
+        if status:
+            raise SystemExit(status)
+        return
     status = verifier.verify_command(binding_path, [])
     if status:
         raise SystemExit(status)
+    verify_native_proofs()
+
+verify_producer_before_move()
 
 with cleanup.owner_lock(Path(owner_path), blocking=False):
     if kind == "worktree":

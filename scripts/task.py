@@ -6679,6 +6679,23 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                 previous = []
             if previous and previous[-1].get("status") == "complete":
                 destination = Path(previous[-1].get("destination", ""))
+                if "git_worktree" in receipt:
+                    moved, moved_stat, binding = output_cleanup._registered_worktree(
+                        {**receipt, "path": str(destination),
+                         "node": output_cleanup._node(destination.lstat()),
+                         "parent_node": output_cleanup._node(destination.parent.lstat())},
+                        Path(receipt["git_worktree"]["repository"]),
+                    )
+                    if (output_cleanup._node(moved_stat) != receipt.get("node")
+                            or binding.get("head") != receipt.get("git_worktree", {}).get("head")):
+                        raise output_cleanup.OutputError("WORKTREE_CURRENT_REFERENCE_NODE_MISMATCH")
+                    item.update(status="eligible", destination=str(destination),
+                                logical_bytes=previous[-1].get("logical_bytes"),
+                                reason="registered worktree requires adapter-authenticated repeat readback",
+                                task_state=disposition)
+                    reports.append(item)
+                    receipt_rows.append((receipt, item))
+                    continue
                 moved = destination.lstat()
                 if output_cleanup._node(moved) != receipt.get("node"):
                     raise output_cleanup.OutputError("QUARANTINE_CURRENT_REFERENCE_NODE_MISMATCH")
@@ -6690,17 +6707,39 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                 continue
             if previous and previous[-1].get("status") in {"pending", "incomplete"}:
                 destination = Path(previous[-1].get("destination", ""))
-                intent_path = durable / ("output-quarantine-" + str(receipt["node"][1]) + ".json")
+                intent_prefix = "worktree-quarantine-" if "git_worktree" in receipt else "output-quarantine-"
+                intent_path = durable / (intent_prefix + str(receipt["node"][1]) + ".json")
                 if (not os.path.lexists(path) and os.path.lexists(destination)
                         and intent_path.is_file() and not intent_path.is_symlink()):
                     intent = output_cleanup._json(intent_path)
                     moved = destination.lstat()
+                    if "git_worktree" in receipt:
+                        moved_receipt = {**receipt, "path": str(destination),
+                                         "node": output_cleanup._node(moved),
+                                         "parent_node": output_cleanup._node(destination.parent.lstat())}
+                        _, registered_stat, registered = output_cleanup._registered_worktree(
+                            moved_receipt, Path(receipt["git_worktree"]["repository"]),
+                        )
+                        observed_entries = output_cleanup._worktree_tree(
+                            destination, registered_stat.st_dev,
+                        )[1]
+                        parent_binding_matches = (
+                            intent.get("quarantine_parent_node")
+                            == output_cleanup._node(destination.parent.lstat())
+                        )
+                        registration_matches = registered.get("head") == receipt["git_worktree"].get("head")
+                    else:
+                        observed_entries = output_cleanup._walk_native_tree(destination, moved.st_dev)[1]
+                        parent_binding_matches = (
+                            intent.get("destination_parent_node")
+                            == output_cleanup._node(destination.parent.lstat())
+                        )
+                        registration_matches = True
                     if (intent.get("source") != str(path) or intent.get("source_node") != receipt.get("node")
                             or intent.get("destination") != str(destination)
                             or output_cleanup._node(moved) != receipt.get("node")
-                            or intent.get("destination_parent_node") != output_cleanup._node(destination.parent.lstat())
-                            or output_cleanup._walk_native_tree(destination, moved.st_dev)[1]
-                            != intent.get("evidence_entries")):
+                            or not parent_binding_matches or not registration_matches
+                            or observed_entries != intent.get("evidence_entries")):
                         raise output_cleanup.OutputError("QUARANTINE_INTERRUPTION_RECONCILIATION_MISMATCH")
                     item.update(status="eligible", path=str(path), destination=str(destination),
                                 logical_bytes=intent.get("logical_bytes"), reconciliation_required=True,
@@ -6835,6 +6874,8 @@ def command_output_closeout(args: argparse.Namespace) -> int:
                             raise TaskControllerError("OUTPUT_CLOSEOUT_OPERATION_AMBIGUOUS")
                         if matches:
                             for key, value in intended.items():
+                                if key == "status" and matches[0].get(key) == "complete":
+                                    continue
                                 if key == "status" and matches[0].get(key) in {"pending", "incomplete"}:
                                     matches[0][key] = "pending"
                                     continue

@@ -43,9 +43,11 @@ fabricate that authenticated comment or a passed check.
   selects the separately pinned RI949 source; there is no fallback to consumer-only mode when that
   binding is missing or changed. Execution additionally requires `--execute
   --human-owner-authorized`; any output without current terminal, owner, protection, retention and
-  recovery proof remains retained. The current implementation fails closed on every execution
-  request until its retention/reference callback is fully bound. This command does not replace
-  legacy C/R/T closeout or establish task acceptance from an output record.
+  recovery proof remains retained. Eligible plain outputs enter recoverable quarantine by same-filesystem
+  rename; registered worktrees move through Git and retain their registration. The command records
+  intent before movement and reauthenticates contents and retained evidence during retry. Unknown
+  facts or failed readback leave cleanup incomplete. This command does not replace legacy C/R/T
+  closeout or establish task acceptance from an output record.
 - `task rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2`
   handles an authorized corrected candidate under the canonical
   [state, concurrency and recovery rules](#state-concurrency-and-recovery).

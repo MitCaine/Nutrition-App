@@ -303,11 +303,13 @@ optional `--shared-helper` mode authenticates the distinct RI949 checkout from t
 refuses if that selected checkout is unavailable, dirty or at another revision; consumer-only mode
 does not import it. Execution requires both `--execute` and `--human-owner-authorized`, then rechecks
 the current issue state, live owner lock, exact creation identity, protected inputs and retained
-evidence under the issue checkpoint transaction. The current implementation fails closed on all
-execution requests with `OUTPUT_CLOSEOUT_REQUIRES_CONTROLLER_RETENTION_BINDING`; it does not move or
-delete an output. Logical file sizes are not physical reclaimed bytes; recoverable quarantine
-reports zero physical reclamation. Missing controller, source, process or reference observations
-retain the item. The dry-run and its report do not establish cleanup eligibility or issue completion.
+evidence under the issue checkpoint transaction. Eligible plain outputs move by same-filesystem
+rename into a verified quarantine; registered worktrees move through Git so their registrations
+remain coherent. The command records intent before movement and authenticates current contents and
+retained evidence when it reconciles a retry. Unknown assignment, source, process, protected-input
+or reference facts retain that item and leave cleanup incomplete. Logical file sizes are not physical
+reclaimed bytes; recoverable quarantine reports zero physical reclamation. A dry-run reports observed
+receipts and reasons but does not establish cleanup eligibility or issue completion.
 
 ### Authored command review attempts
 

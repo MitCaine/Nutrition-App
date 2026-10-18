@@ -395,6 +395,98 @@ class IosNativeQualificationTests(
             self.assertEqual(json.loads(operation_path.read_text(encoding="utf-8"))["status"], "complete")
 
     @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_retains_unique_untracked_and_ignored_worktree_sources(self):
+        result, evidence, evidence_parent = self._run_fixture_qualification(
+            "native-worktree-unique-source", return_evidence_parent=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("fixture-unique-untracked.txt", manifest["cleanup_disposition"]["reason"])
+        self.assertIn("fixture-unique-ignored.txt", manifest["cleanup_disposition"]["reason"])
+
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        receipt = next(item for item in owner["owned_outputs"] if "git_worktree" in item)
+        worktree = Path(receipt["path"])
+        self.assertTrue(worktree.is_dir())
+        untracked = worktree / "fixture-unique-untracked.txt"
+        ignored = worktree / "fixture-unique-ignored.txt"
+        self.assertEqual(untracked.read_bytes(), b"unique untracked source bytes\n")
+        self.assertEqual(ignored.read_bytes(), b"unique ignored source bytes\n")
+        self.assertEqual(
+            (evidence / "movement-events.jsonl").read_text(encoding="utf-8").count("WORKTREE_MOVE:"),
+            0,
+        )
+        self.assertEqual(
+            subprocess.run(["git", "-C", str(worktree), "status", "--porcelain=v1", "--ignored=matching",
+                            "--untracked-files=normal"], capture_output=True, text=True, check=True).stdout.count(
+                                "fixture-unique-"),
+            2,
+        )
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_native_proof_readback_precedes_uncertain_process_observation(self):
+        for mode, expected_error in (
+            ("proof-fault-tampered-observation-unavailable", "NATIVE_RELOCATED_PROOF_OUTPUT_HASH_MISMATCH"),
+            ("proof-fault-unreadable-observation-unavailable", "NATIVE_PROOF_OUTPUT_UNREADABLE"),
+        ):
+            with self.subTest(mode=mode):
+                result, evidence, _ = self._run_fixture_qualification(mode, return_evidence_parent=True)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+                self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+                self.assertIn("required compile/link proof readback refused",
+                              manifest["cleanup_disposition"]["reason"])
+                proof_error_paths = sorted((evidence / "native-lifecycle").glob(
+                    "cleanup-proof-verify-*.stderr.log"))
+                proof_error = "\n".join(path.read_text(encoding="utf-8") for path in proof_error_paths)
+                self.assertIn(expected_error, proof_error, {
+                    path.name: path.read_text(encoding="utf-8") for path in proof_error_paths
+                })
+                self.assertFalse((evidence / "native-lifecycle" /
+                                  "cleanup-verify-harness-bin-quarantine.stdout.log").exists())
+                self.assertNotIn("harness-bin", manifest["cleanup_disposition"]["quarantined_roots"])
+
+                owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+                    encoding="utf-8"))
+                origin = json.loads(Path(owner["native_proof_origin"]["path"]).read_text(encoding="utf-8"))
+                proof_path = Path(origin["proof"]["path"])
+                self.assertEqual(hashlib.sha256(proof_path.read_bytes()).hexdigest(), origin["proof"]["sha256"])
+                fault = json.loads((evidence / "fixture-post-move-proof-fault.json").read_text(
+                    encoding="utf-8"))
+                self.assertEqual(fault["mode"], mode)
+                self.assertNotEqual(fault["path"], "")
+                if "tampered" in mode:
+                    self.assertNotEqual(fault["after_sha256"], fault["before_sha256"])
+                else:
+                    self.assertEqual(fault["mode_after"] & 0o444, 0)
+
+                invocation = evidence / "native-lifecycle" / "invocation.json"
+                helper = evidence.parent / "repository/scripts/lib/native_process_lifecycle.py"
+                self.assertEqual(helper.read_bytes(), (ROOT / "scripts/lib/native_process_lifecycle.py").read_bytes())
+                helper_environment = os.environ.copy()
+                helper_environment.update({
+                    "IOS_NATIVE_FIXTURE_MODE": mode,
+                    "IOS_NATIVE_FIXTURE_EVIDENCE_DIR": str(evidence),
+                    "IOS_NATIVE_FIXTURE_BIN": str(evidence.parent / "bin"),
+                    "IOS_NATIVE_FIXTURE_DEVELOPER_DIR": str(evidence.parent / "bin" / "Developer"),
+                    "DEVELOPER_DIR": str(evidence.parent / "bin" / "Developer"),
+                    "REAL_PYTHON": str(Path(sys.executable).resolve()),
+                })
+                uncertain = subprocess.run(
+                    [str(evidence.parent / "bin" / "python3"), str(helper), "verify",
+                     "--invocation-record", str(invocation)],
+                    capture_output=True, text=True, check=False, env=helper_environment,
+                )
+                self.assertNotEqual(uncertain.returncode, 0, uncertain.stdout + uncertain.stderr)
+                self.assertIn("PROCESS_EXECUTABLE_UNAVAILABLE", uncertain.stdout + uncertain.stderr)
+                observed = json.loads((evidence / "fixture-observation-uncertainty.json").read_text(
+                    encoding="utf-8"))
+                self.assertNotEqual(observed["status"], 0)
+                self.assertIn("PROCESS_EXECUTABLE_UNAVAILABLE", observed["stderr"])
+
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_reconciles_interrupted_derived_data_quarantine(self):
         result, evidence = self._run_fixture_qualification(
             "symlink-output", interrupt_after_derived_move=True,
@@ -424,6 +516,20 @@ class IosNativeQualificationTests(
         self.assertEqual(operation["status"], "complete")
         self.assertTrue(operation["result_persisted"])
         self.assertEqual(destination.stat().st_ino, receipt["node"][1])
+        phase_path = evidence / "native-lifecycle" / "phases" / "derived-data-removed.json"
+        phase = json.loads(phase_path.read_text(encoding="utf-8"))
+        self.assertEqual(phase["phase"], "derived-data-removed")
+        self.assertEqual(phase["root"], str(source))
+        self.assertEqual(phase["destination"], str(destination))
+        self.assertEqual(phase["quarantine_operation"], output_cleanup.file_binding(operation_path))
+        proof_readback = output_cleanup.verify_native_proof_readback(
+            owner_path,
+            invocation_record=Path(owner["quarantine_parent"]["invocation"]["path"]),
+            durable_evidence=retained,
+        )
+        self.assertTrue(proof_readback)
+        self.assertTrue(all(Path(item["current_path"]).is_relative_to(destination)
+                            for item in proof_readback))
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_selects_exact_versioned_command_when_unconfigured(self):
@@ -2418,11 +2524,11 @@ import native_process_lifecycle as lifecycle
 probe_root = evidence / "Nutrition App Native"
 stop = evidence / "qualifier-writer-stop"
 ready = evidence / "qualifier-writer-ready"
-writes = probe_root / "qualifier-writer.log"
+writes = probe_root / "apps" / "mobile" / "ios" / "qualifier-writer.log"
 writer = (
     "import pathlib,sys,time\\n"
     "root,stop,ready=map(pathlib.Path,sys.argv[1:])\\n"
-    "path=root/'qualifier-writer.log'\\n"
+    "path=root/'apps'/'mobile'/'ios'/'qualifier-writer.log'\\n"
     "with path.open('a',encoding='utf-8') as output:\\n"
     "  while not stop.exists():\\n"
     "    output.write('writer-active\\\\n'); output.flush(); ready.touch(); time.sleep(.02)\\n"
@@ -2603,6 +2709,113 @@ fi
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
         write("python3", r'''
 case "$IOS_NATIVE_FIXTURE_MODE" in
+  proof-fault-tampered-observation-unavailable|proof-fault-unreadable-observation-unavailable)
+    case "$1" in
+      */task_output_cleanup.py)
+        if [ "${2-}" = "native-proof-verify" ] &&
+          ! test -e "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-post-move-proof-fault.json"
+        then
+          "$REAL_PYTHON" - "$@" <<'PY'
+import hashlib
+import json
+import os
+import sys
+from pathlib import Path
+
+arguments = sys.argv[1:]
+owner_path = Path(arguments[arguments.index("--owner-record") + 1])
+durable = Path(arguments[arguments.index("--durable-evidence") + 1])
+owner = json.loads(owner_path.read_text(encoding="utf-8"))
+receipt = next(item for item in owner["owned_outputs"]
+               if Path(item["path"]).name == "DerivedData")
+operation_path = durable / f"output-quarantine-{receipt['node'][1]}.json"
+if not operation_path.is_file():
+    raise SystemExit(0)
+operation = json.loads(operation_path.read_text(encoding="utf-8"))
+if operation.get("status") != "complete" or operation.get("operation") != "native-quarantine":
+    raise SystemExit(0)
+invocation = Path(owner["quarantine_parent"]["invocation"]["path"])
+phase = invocation.parent / "phases" / "derived-data-removed.json"
+if not phase.is_file():
+    raise SystemExit(0)
+origin_path = Path(owner["native_proof_origin"]["path"])
+origin = json.loads(origin_path.read_text(encoding="utf-8"))
+proof_output = origin["outputs"][0]
+directory = Path(operation["destination"]) / proof_output["relative_path"]
+files = sorted(item for item in directory.rglob("*") if item.is_file() and not item.is_symlink())
+if not files:
+    raise SystemExit("fixture proof output has no regular files")
+target = files[0]
+before = target.read_bytes()
+mode = os.environ["IOS_NATIVE_FIXTURE_MODE"]
+if "tampered" in mode:
+    target.write_bytes(before + b"\npost-move proof tamper\n")
+    after_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
+else:
+    target.chmod(target.stat().st_mode & ~0o444)
+    after_sha256 = hashlib.sha256(before).hexdigest()
+evidence = Path(os.environ["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"])
+(evidence / "fixture-post-move-proof-fault.json").write_text(
+    json.dumps({"mode": mode, "path": str(target), "expected_sha256": proof_output["sha256"],
+                "before_sha256": hashlib.sha256(before).hexdigest(),
+                "after_sha256": after_sha256,
+                "mode_after": target.stat().st_mode & 0o777}, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+        fi
+        ;;
+      */native_process_lifecycle.py)
+        if [ "${2-}" = "verify" ] &&
+          test -f "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-post-move-proof-fault.json"
+        then
+          exec "$REAL_PYTHON" - "$@" <<'PY'
+import contextlib
+import io
+import json
+import os
+import sys
+from pathlib import Path
+
+arguments = sys.argv[1:]
+helper = Path(arguments[0]).resolve(strict=True)
+binding = Path(arguments[arguments.index("--invocation-record") + 1]).resolve(strict=True)
+sys.path.insert(0, str(helper.parent))
+import native_process_lifecycle as lifecycle
+
+document = json.loads(binding.read_text(encoding="utf-8"))
+records = [json.loads(path.read_text(encoding="utf-8"))
+           for path in sorted((Path(document["invocation"]["root"]) / "records").glob("*.record.json"))]
+selected = next(record for record in records
+                if record.get("stage") == "compile" and record.get("kind") == "compile")
+selected_pid = selected["process"]["pid"]
+original_identity = lifecycle.process_identity
+
+def unavailable(candidate):
+    if candidate == selected_pid:
+        raise lifecycle.LifecycleError(f"PROCESS_EXECUTABLE_UNAVAILABLE:{candidate}:fixture-injected")
+    return original_identity(candidate)
+
+lifecycle.process_identity = unavailable
+output = io.StringIO()
+errors = io.StringIO()
+with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+    status = lifecycle.verify_command(binding, [])
+result = {"status": status, "stdout": output.getvalue(), "stderr": errors.getvalue(),
+          "injected_observation": "PROCESS_EXECUTABLE_UNAVAILABLE"}
+Path(os.environ["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"], "fixture-observation-uncertainty.json").write_text(
+    json.dumps(result, sort_keys=True) + "\n", encoding="utf-8",
+)
+sys.stdout.write(output.getvalue())
+sys.stderr.write(errors.getvalue())
+raise SystemExit(status)
+PY
+        fi
+        ;;
+    esac
+    ;;
+esac
+case "$IOS_NATIVE_FIXTURE_MODE" in
   post-proof-ib-child-observation-unavailable|post-proof-ib-child-observation-birth-unavailable|post-proof-full-build-*-observation-unavailable|post-proof-full-build-*-known-helper-live)
   case "$1" in
     */native_process_lifecycle.py)
@@ -2763,6 +2976,22 @@ if [ -n "${IOS_NATIVE_FIXTURE_EVENTS-}" ]; then
       last=""
       for argument in "$@"; do previous="$last"; last="$argument"; done
       printf 'WORKTREE_MOVE:%s\n' "$last" >> "$IOS_NATIVE_FIXTURE_EVENTS"
+      ;;
+  esac
+fi
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "native-worktree-unique-source" ]; then
+  case " $* " in
+    *" worktree add "*)
+      previous=""
+      last=""
+      for argument in "$@"; do previous="$last"; last="$argument"; done
+      "$REAL_GIT" "$@"
+      status="$?"
+      if [ "$status" -eq 0 ]; then
+        printf 'unique untracked source bytes\n' > "$previous/fixture-unique-untracked.txt"
+        printf 'unique ignored source bytes\n' > "$previous/fixture-unique-ignored.txt"
+      fi
+      exit "$status"
       ;;
   esac
 fi
@@ -3157,6 +3386,14 @@ exec /bin/rm "$@"
             environment["IOS_NATIVE_FIXTURE_VERIFY_RELEASE"] = str(evidence / "verify-release")
         if mode in {"known-writer", "known-writer-detached", "known-writer-retained"}:
             (evidence / "movement-events.jsonl").write_text("", encoding="utf-8")
+        if mode == "native-worktree-unique-source":
+            (evidence / "movement-events.jsonl").write_text("", encoding="utf-8")
+            ignore_file = evidence_parent / "fixture-git-ignore"
+            ignore_file.write_text("fixture-unique-ignored.txt\n", encoding="utf-8")
+            git_config = evidence_parent / "fixture-git-config"
+            subprocess.run([shutil.which("git") or "/usr/bin/git", "config", "--file",
+                            str(git_config), "core.excludesFile", str(ignore_file)], check=True)
+            environment["GIT_CONFIG_GLOBAL"] = str(git_config)
         if mode in {"known-writer", "known-writer-detached", "known-writer-retained"}:
             (evidence / "movement-events.jsonl").write_text("", encoding="utf-8")
         environment["IOS_NATIVE_FIXTURE_LIPO"] = str(fake_bin / "lipo")

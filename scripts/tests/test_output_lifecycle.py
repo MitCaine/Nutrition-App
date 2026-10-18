@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 
@@ -168,6 +169,20 @@ def terminal_authored_fixture(
             "state_dir": state_dir, "durable": durable, "proof": proof}
 
 
+def add_registered_closeout_worktree(case: dict) -> tuple[Path, dict]:
+    path = case["output"].parents[2] / "registered-closeout-worktree"
+    definition = {"path": str(case["request_path"]), "sha256": sha(case["request_path"])}
+    nonce = lifecycle.begin_registered_worktree(
+        case["owner"], path, task="GH-420", attempt=case["attempt"], definition=definition,
+    )
+    subprocess.run(["git", "-C", str(case["repo"]), "worktree", "add", "--detach",
+                    str(path), case["candidate"]], capture_output=True, text=True, check=True)
+    receipt = lifecycle.finish_registered_worktree(
+        case["owner"], path, nonce=nonce, repository=case["repo"], expected_head=case["candidate"],
+    )
+    return path, receipt
+
+
 def init_repo(root: Path) -> str:
     root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
@@ -280,7 +295,7 @@ def test_gh420_o1_keeps_selected_helper_sources_separate():
     assert "--shared-helper" in (ROOT / "scripts/task.py").read_text(encoding="utf-8")
 
 
-def test_gh420_o1_selected_ri949_conforms_to_the_same_consumer_receipt(tmp_path: Path):
+def selected_ri949_conformance(tmp_path: Path) -> dict:
     case = terminal_authored_fixture(tmp_path, attempt="GH-420-o1-conformance")
     owner = case["owner"]
     output = case["output"]
@@ -371,6 +386,9 @@ def test_gh420_o1_selected_ri949_conforms_to_the_same_consumer_receipt(tmp_path:
     assert linked_item["shared_helper_assessment"]["status"] == "retained"
     assert linked_output.is_dir() and (linked_output / "outside-link").is_symlink()
     assert outside.read_bytes() == b"selected helper must not follow links\n"
+    return {"status": "PASS", "source_root": str(helper_root), "source_revision": revision,
+            "consumer_receipt": receipt, "assessment": result, "consumer_mode": consumer_report["mode"],
+            "selected_mode": shared_report["mode"], "linked_tree_refused": linked_item["status"]}
 
 
 def test_gh420_o1_selected_shared_helper_unavailable_refuses_before_action(tmp_path: Path):
@@ -404,7 +422,7 @@ def test_gh420_o1_selected_shared_helper_unavailable_refuses_before_action(tmp_p
     assert output.is_dir() and sha(output / "raw.log") == before
 
 
-def test_gh420_o2_public_authored_runner_and_workspace_routes_record_creation(tmp_path: Path):
+def selected_e0_prepared_workspace_conformance(tmp_path: Path) -> dict:
     # Exercise the authored runner from the copied public source tree.
     repo = tmp_path / "authored-repository"
     repo.mkdir()
@@ -467,18 +485,20 @@ def test_gh420_o2_public_authored_runner_and_workspace_routes_record_creation(tm
     assignment = "GH-420/implementation"
     worker_attempt = "GH-420-o2-workspace"
     worker_request = tmp_path / "worker-request.json"
+    worker_home = tmp_path / "worker-home"
+    worker_home.mkdir()
     worker_environment = {"PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
-                         "HOME": str(tmp_path), "PYTHONDONTWRITEBYTECODE": "1"}
+                         "HOME": str(worker_home), "PYTHONDONTWRITEBYTECODE": "1"}
     write_json(worker_request, {"assignment": assignment, "attempt": worker_attempt,
                                 "workspace": str(workspace), "ri_source": source,
                                 "protected_repository": str(protected), "base": base,
                                 "inputs": [{"path": str(handoff), "sha256": sha(handoff)}],
                                 "allowed_changes": ["tracked.txt"], "capture_authority": str(handoff),
-                                "environment": worker_environment, "require_new_candidate": True,
+                                "environment": worker_environment, "require_new_candidate": False,
                                 "check_request": {"schema_version": 1, "repository": "{workspace}",
                                                   "expected_head": "{candidate}", "attempt": "{attempt}",
                                                   "steps": [{"id": "check", "argv": [sys.executable, "-c",
-                                                                                       "assert open('tracked.txt').read() == 'after\\n'"],
+                                                                                       "assert open('tracked.txt').read() == 'before\\n'"],
                                                              "cwd": ".", "env": {}, "designation": "mandatory",
                                                              "prerequisites": []}]},
                                 "runner_result": "NUTRITION_RESULT.json",
@@ -501,7 +521,6 @@ def test_gh420_o2_public_authored_runner_and_workspace_routes_record_creation(tm
                                "--evidence", str(evidence)], cwd=ROOT, env=worker_environment,
                               capture_output=True, text=True, timeout=60)
     assert prepared.returncode == 0, prepared.stdout + prepared.stderr
-    (workspace / "tracked.txt").write_text("after\n", encoding="utf-8")
     executed = subprocess.run([sys.executable, str(worker), "run", "--request", str(worker_request),
                                "--evidence", str(evidence)], cwd=ROOT, env=worker_environment,
                              capture_output=True, text=True, timeout=60)
@@ -521,13 +540,118 @@ def test_gh420_o2_public_authored_runner_and_workspace_routes_record_creation(tm
     assert workspace_owner["owned_outputs"][1]["git_worktree"]["head"] == base
     worker_durable = tmp_path / "worker-durable-evidence"
     worker_durable.mkdir()
-    closeout = task_cli("--state-dir", str(tmp_path / "unknown-state"), "output-closeout", "420",
-                        "--execution-record", str(owner_path), "--durable-evidence", str(worker_durable))
+    controller_root = tmp_path / "selected-e0-controller"
+    controller_root.mkdir()
+    controller_fixture = integrated_controller_fixture(
+        controller_root, attempt=worker_attempt, candidate=base,
+    )
+    owner_request, _ = lifecycle.derive_protected_inputs(owner_path, worker_owner)
+    assert controller._output_owner_terminal_evidence(owner_path, worker_owner, owner_request), {
+        "request": owner_request,
+        "terminal_result": json.loads(Path(worker_owner["terminal_result"]["path"]).read_text(
+            encoding="utf-8")),
+    }
+    closeout = task_cli("--repo-root", str(ROOT), "--state-dir", str(controller_fixture["state_dir"]),
+                        "output-closeout", "420", "--execution-record", str(owner_path),
+                        "--durable-evidence", str(worker_durable), "--execute", "--human-owner-authorized")
     assert closeout.returncode == 0, closeout.stdout + closeout.stderr
     report = json.loads(closeout.stdout)
-    assert report["execution"] == "dry-run"
-    assert all(item["status"] == "retained" for item in report["items"])
-    assert workspace.exists() and workspace.parent.exists()
+    assert report["execution"] == "authorized-quarantine"
+    assert all(item["status"] in {"quarantined", "already_quarantined"} for item in report["items"]), report
+    assert not workspace.exists() and not workspace.parent.exists()
+    worktree_item = next(item for item in report["items"] if item.get("owner_node")
+                         == workspace_owner["owned_outputs"][1]["node"])
+    worktree_destination = Path(worktree_item["destination"])
+    registrations = git(protected, "worktree", "list", "--porcelain").splitlines()
+    assert registrations.count("worktree " + str(worktree_destination)) == 1
+    state_after_closeout = controller.load_state(controller_fixture["state_dir"], 420)
+    reference = lifecycle.read_current_reference(Path(
+        state_after_closeout["output_closeout"]["current_reference"]["path"],
+    ))
+    assert all(lifecycle.file_binding(Path(item["path"])) == item for item in reference["retained"])
+    return {"status": "PASS", "source": source, "workspace": str(workspace),
+            "owner_record": str(owner_path), "prepare_exit": prepared.returncode,
+            "run_exit": executed.returncode, "closeout_mode": report["mode"],
+            "closeout_execution": report["execution"], "worktree_destination": str(worktree_destination)}
+
+
+def test_gh420_o2_public_authored_runner_records_creation(tmp_path: Path):
+    repo = tmp_path / "authored-repository"
+    repo.mkdir()
+    for relative in ("scripts/run-review.sh", "scripts/lib/common.sh", "scripts/lib/review_commands.py",
+                     "scripts/lib/task_output_cleanup.py"):
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, target)
+    (repo / "tracked.txt").write_text("fixture\n", encoding="utf-8")
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.name", "Runner fixture")
+    git(repo, "config", "user.email", "runner@example.invalid")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "authored fixture")
+    attempt = "GH-420-o2-authored-public"
+    request_path = tmp_path / "authored-request.json"
+    write_json(request_path, {"schema_version": 1, "repository": str(repo),
+                              "expected_head": git(repo, "rev-parse", "HEAD"), "attempt": attempt,
+                              "steps": [{"id": "lifecycle", "argv": [sys.executable, "-c", "pass"],
+                                         "cwd": ".", "env": {}, "prerequisites": [],
+                                         "designation": "mandatory"}]})
+    output_root = tmp_path / "review-output"
+    environment = dict(os.environ, NUTRITION_REVIEW_OUTPUT_DIR=str(output_root),
+                       PYTHONDONTWRITEBYTECODE="1")
+    runner = subprocess.run(["bash", str(repo / "scripts/run-review.sh"), "--commands", str(request_path),
+                             "--attempt", attempt], cwd=repo, env=environment, capture_output=True,
+                            text=True, timeout=60)
+    assert runner.returncode == 0, runner.stdout + runner.stderr
+    attempt_dir = output_root / "runs" / attempt
+    owner = json.loads((attempt_dir / "attempt-state.json").read_text(encoding="utf-8"))
+    assert owner["status"] == "complete" and len(owner["owned_outputs"]) == 2
+    for receipt in owner["owned_outputs"]:
+        path, observed = lifecycle.verify_receipt(receipt)
+        assert list(receipt["node"]) == [observed.st_dev, observed.st_ino]
+        assert receipt["definition"] == {"path": str(request_path), "sha256": sha(request_path)}
+        assert path.exists()
+
+
+def test_gh420_o2_public_create_workspace_owns_outputs_without_private_source(tmp_path: Path):
+    protected = tmp_path / "protected-repository"
+    init_repo(protected)
+    for relative in ("scripts/run-review.sh", "scripts/lib/common.sh", "scripts/lib/review_commands.py",
+                     "scripts/lib/task_output_cleanup.py"):
+        target = protected / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, target)
+    git(protected, "add", ".")
+    git(protected, "commit", "-qm", "runner tools")
+    base = git(protected, "rev-parse", "HEAD")
+    evidence = tmp_path / "worker-evidence"
+    evidence.mkdir()
+    workspace = tmp_path / "new-workspace-container" / "workspace"
+    worker_request = tmp_path / "worker-request.json"
+    write_json(worker_request, {"assignment": "GH-420/implementation", "attempt": "GH-420-o2-public-workspace",
+                                "workspace": str(workspace), "protected_repository": str(protected),
+                                "base": base})
+    worker_environment = {"PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
+                         "HOME": str(tmp_path), "PYTHONDONTWRITEBYTECODE": "1"}
+    worker = ROOT / "scripts/worker_execution.py"
+    created = subprocess.run([sys.executable, str(worker), "create-workspace", "--request", str(worker_request),
+                              "--evidence", str(evidence)], cwd=ROOT, env=worker_environment,
+                             capture_output=True, text=True, timeout=60)
+    assert created.returncode == 0, created.stdout + created.stderr
+    owner_path = evidence / "workspace-owner.json"
+    owner = json.loads(owner_path.read_text(encoding="utf-8"))
+    assert owner["attempt"] == "GH-420-o2-public-workspace"
+    assert len(owner["owned_outputs"]) == 2
+    container_receipt, worktree_receipt = owner["owned_outputs"]
+    assert container_receipt["definition"] == {"path": str(worker_request), "sha256": sha(worker_request)}
+    assert worktree_receipt["definition"] == container_receipt["definition"]
+    assert worktree_receipt["git_worktree"] == {"repository": str(protected), "head": base,
+                                                 "branch": "detached"}
+    assert lifecycle.verify_receipt(container_receipt)[0] == workspace.parent
+    assert lifecycle.verify_receipt(worktree_receipt)[0] == workspace
+    registered = git(protected, "worktree", "list", "--porcelain")
+    assert registered.splitlines().count("worktree " + str(workspace)) == 1
+    assert "ri_source" not in json.loads(worker_request.read_text(encoding="utf-8"))
 
 
 def test_gh420_o3_live_owner_lock_refuses_public_closeout(tmp_path: Path):
@@ -924,7 +1048,9 @@ def test_gh420_o5_public_closeout_reconciles_interrupted_move_after_intent(tmp_p
     )
     assert retry.returncode == 1, retry.stdout + retry.stderr
     retry_report = json.loads(retry.stdout)
-    retry_item = next(item for item in retry_report["items"] if item.get("destination") == str(destination))
+    retry_item = next((item for item in retry_report["items"]
+                       if item.get("destination") == str(destination)), None)
+    assert retry_item is not None, retry.stdout + retry.stderr
     assert retry_item["status"] == "already_quarantined"
     assert retry_item["newly_removed_bytes"] == 0
     assert not output.exists() and destination.is_dir()
@@ -933,6 +1059,106 @@ def test_gh420_o5_public_closeout_reconciles_interrupted_move_after_intent(tmp_p
     final_operation = next(item for item in final_state["output_closeout"]["operations"]
                            if item.get("original") == str(output))
     assert final_operation["status"] == "complete"
+
+
+def test_gh420_o5_public_registered_worktree_repeat_reauthenticates_move(tmp_path: Path):
+    case = terminal_authored_fixture(tmp_path, attempt="GH-420-o5-worktree-repeat")
+    source, receipt = add_registered_closeout_worktree(case)
+    args = ("--repo-root", str(ROOT), "--state-dir", str(case["state_dir"]), "output-closeout", "420",
+            "--execution-record", str(case["owner"]), "--durable-evidence", str(case["durable"]),
+            "--execute", "--human-owner-authorized")
+
+    first = task_cli(*args)
+    assert first.returncode == 1, first.stdout + first.stderr
+    first_report = json.loads(first.stdout)
+    first_item = next(item for item in first_report["items"] if item.get("path") == str(source))
+    destination = Path(first_item["destination"])
+    assert first_item["status"] == "quarantined"
+    assert not source.exists() and destination.is_dir()
+    operation_path = case["durable"] / f"worktree-quarantine-{receipt['node'][1]}.json"
+    operation = json.loads(operation_path.read_text(encoding="utf-8"))
+    assert operation["status"] == "complete" and operation["result_persisted"] is True
+
+    repeat = task_cli(*args)
+    assert repeat.returncode == 1, repeat.stdout + repeat.stderr
+    repeat_report = json.loads(repeat.stdout)
+    repeated_item = next(item for item in repeat_report["items"]
+                         if item.get("destination") == str(destination))
+    assert repeated_item["status"] == "already_quarantined"
+    assert repeated_item["newly_removed_bytes"] == 0
+    assert lifecycle._node(destination.lstat()) == receipt["node"]
+    listed = git(case["repo"], "worktree", "list", "--porcelain")
+    assert listed.splitlines().count("worktree " + str(destination)) == 1
+    assert listed.splitlines().count("worktree " + str(source)) == 0
+    assert json.loads(operation_path.read_text(encoding="utf-8"))["status"] == "complete"
+
+
+def test_gh420_o5_public_registered_worktree_recovers_interrupted_move(tmp_path: Path, monkeypatch, capsys):
+    case = terminal_authored_fixture(tmp_path, attempt="GH-420-o5-worktree-interrupted")
+    source, receipt = add_registered_closeout_worktree(case)
+    args = controller.build_parser().parse_args([
+        "--repo-root", str(ROOT), "--state-dir", str(case["state_dir"]), "output-closeout", "420",
+        "--execution-record", str(case["owner"]), "--durable-evidence", str(case["durable"]),
+        "--execute", "--human-owner-authorized",
+    ])
+    assert args.handler is controller.command_output_closeout
+    original_run = subprocess.run
+    moved = False
+
+    def move_then_interrupt(command, *positional, **options):
+        nonlocal moved
+        result = original_run(command, *positional, **options)
+        if (not moved and isinstance(command, (list, tuple))
+                and list(command)[-4:-2] == ["worktree", "move"] and result.returncode == 0):
+            moved = True
+            raise OSError("injected interruption after registered Git move before result persistence")
+        return result
+
+    monkeypatch.setattr(lifecycle.subprocess, "run", move_then_interrupt)
+    first_status = controller.command_output_closeout(args)
+    first_report = json.loads(capsys.readouterr().out)
+    assert first_status == 1 and moved
+    first_item = next(item for item in first_report["items"] if item.get("path") == str(source))
+    assert first_item["status"] == "incomplete"
+    state_after_interrupt = controller.load_state(case["state_dir"], 420)
+    interrupted_state = next(item for item in state_after_interrupt["output_closeout"]["operations"]
+                             if item.get("original") == str(source))
+    destination = Path(interrupted_state["destination"])
+    assert not source.exists() and destination.is_dir()
+    operation_path = case["durable"] / f"worktree-quarantine-{receipt['node'][1]}.json"
+    operation = json.loads(operation_path.read_text(encoding="utf-8"))
+    assert operation["status"] == "intent" and operation["result_persisted"] is False
+    assert git(case["repo"], "worktree", "list", "--porcelain").splitlines().count(
+        "worktree " + str(destination)) == 1
+
+    monkeypatch.undo()
+    retry = task_cli(
+        "--repo-root", str(ROOT), "--state-dir", str(case["state_dir"]), "output-closeout", "420",
+        "--execution-record", str(case["owner"]), "--durable-evidence", str(case["durable"]),
+        "--execute", "--human-owner-authorized",
+    )
+    assert retry.returncode == 1, retry.stdout + retry.stderr
+    retry_report = json.loads(retry.stdout)
+    retry_item = next((item for item in retry_report["items"]
+                       if item.get("destination") == str(destination)), None)
+    assert retry_item is not None, retry.stdout + retry.stderr
+    assert retry_item["status"] == "already_quarantined"
+    assert retry_item["newly_removed_bytes"] == 0
+    completed = json.loads(operation_path.read_text(encoding="utf-8"))
+    assert completed["status"] == "complete" and completed["result_persisted"] is True
+    assert git(case["repo"], "worktree", "list", "--porcelain").splitlines().count(
+        "worktree " + str(destination)) == 1
+
+    repeated = task_cli(
+        "--repo-root", str(ROOT), "--state-dir", str(case["state_dir"]), "output-closeout", "420",
+        "--execution-record", str(case["owner"]), "--durable-evidence", str(case["durable"]),
+        "--execute", "--human-owner-authorized",
+    )
+    repeated_report = json.loads(repeated.stdout)
+    repeated_item = next(item for item in repeated_report["items"]
+                         if item.get("destination") == str(destination))
+    assert repeated_item["status"] == "already_quarantined"
+    assert lifecycle._node(destination.lstat()) == receipt["node"]
 
 
 def test_gh420_o5_public_closeout_requires_real_superseded_terminal_record(tmp_path: Path):
@@ -1058,3 +1284,20 @@ def test_gh420_o7_public_guidance_and_cli_are_linked():
     help_result = task_cli("output-closeout", "--help")
     assert help_result.returncode == 0
     assert "--execution-record" in help_result.stdout and "--durable-evidence" in help_result.stdout
+
+
+def _run_selected_conformance(argv: list[str]) -> int:
+    if argv not in (["--selected-ri949"], ["--selected-e0"]):
+        print("usage: test_output_lifecycle.py --selected-ri949|--selected-e0", file=sys.stderr)
+        return 2
+    prefix, selected = ("gh420-ri949-conformance-", selected_ri949_conformance) \
+        if argv[0] == "--selected-ri949" else ("gh420-e0-conformance-", selected_e0_prepared_workspace_conformance)
+    temporary_root = os.environ.get("TMPDIR", "/private/tmp")
+    with tempfile.TemporaryDirectory(prefix=prefix, dir=temporary_root) as directory:
+        evidence = selected(Path(directory))
+    print(json.dumps(evidence, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_run_selected_conformance(sys.argv[1:]))
