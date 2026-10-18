@@ -1849,6 +1849,7 @@ with cleanup.owner_lock(Path(owner_path), blocking=False):
             Path(owner_path), output_path=Path(output_path), destination=Path(destination),
             durable_evidence=Path(durable), task=attempt, attempt=attempt, owner_lock_held=True,
             before_move=verify_producer_before_move,
+            before_move_reauthenticates_native_state=True,
         )
     else:
         raise SystemExit("NATIVE_QUARANTINE_KIND_INVALID")

@@ -2495,6 +2495,81 @@ def test_gh420_o6_plain_tree_adapter_preserves_link_text_and_outside_target(tmp_
     assert sentinel.read_text(encoding="utf-8") == "outside remains\n"
 
 
+def test_gh420_a9_native_quarantine_rechecks_through_callback_only_when_attested(tmp_path: Path, monkeypatch):
+    def make_case(label: str) -> tuple[Path, Path, Path, Path, Path]:
+        case_root = tmp_path / label
+        case_root.mkdir()
+        definition = case_root / "definition.json"
+        definition.write_text("{}\n", encoding="utf-8")
+        owner = case_root / "owner.json"
+        output = case_root / "DerivedData"
+        lifecycle.create_owned_output(
+            output, task="GH-420", attempt="GH-420-a9-" + label,
+            definition={"path": str(definition), "sha256": sha(definition)},
+            owner_record=owner,
+        )
+        (output / "proof.bin").write_bytes(b"producer output\n")
+        quarantine = case_root / "quarantine"
+        quarantine.mkdir()
+        durable = case_root / "durable"
+        durable.mkdir()
+        invocation = case_root / "invocation.json"
+        invocation.write_text("{}\n", encoding="utf-8")
+        record = lifecycle._json(owner)
+        record["status"] = "complete"
+        record["native_terminal"] = {"status": "complete"}
+        record["quarantine_parent"] = {
+            "path": str(quarantine),
+            "node": lifecycle._node(quarantine.lstat()),
+            "invocation": {"path": str(invocation), "sha256": lifecycle.file_binding(invocation)["sha256"]},
+        }
+        lifecycle._atomic_json(owner, record)
+        return owner, output, quarantine / output.name, durable, invocation
+
+    proof_calls: list[str] = []
+    monkeypatch.setattr(lifecycle, "_native_owner_phase", lambda *_: ({"roots": {}}, {}, tmp_path / "phase.json"))
+    monkeypatch.setattr(lifecycle, "_native_terminal", lambda *_: {})
+    monkeypatch.setattr(lifecycle, "verify_native_proof_readback", lambda *_args, **_kwargs: proof_calls.append("proof"))
+
+    owner, output, destination, durable, invocation = make_case("callback")
+    callback_order: list[str] = []
+
+    def guarded_callback() -> None:
+        callback_order.append("proof")
+        lifecycle.verify_native_proof_readback(owner, invocation_record=invocation, durable_evidence=durable)
+        callback_order.append("installed-producer")
+        callback_order.append("fresh-proof")
+        lifecycle.verify_native_proof_readback(owner, invocation_record=invocation, durable_evidence=durable)
+        callback_order.append("prior-operations")
+
+    lifecycle.execute_native_quarantine(
+        owner, output_path=output, destination=destination, durable_evidence=durable,
+        task="GH-420", attempt="GH-420-a9-callback", before_move=guarded_callback,
+        before_move_reauthenticates_native_state=True,
+    )
+    assert callback_order == ["proof", "installed-producer", "fresh-proof", "prior-operations"]
+    assert proof_calls == ["proof", "proof", "proof"]  # entry plus the callback's two boundary reads
+    assert not output.exists() and destination.is_dir()
+
+    owner, output, destination, durable, _invocation = make_case("generic")
+    proof_calls.clear()
+    lifecycle.execute_native_quarantine(
+        owner, output_path=output, destination=destination, durable_evidence=durable,
+        task="GH-420", attempt="GH-420-a9-generic",
+    )
+    assert proof_calls == ["proof", "proof"]  # entry plus the adapter-owned pre-move guard
+    assert not output.exists() and destination.is_dir()
+
+    owner, output, destination, durable, _invocation = make_case("invalid-callback")
+    with pytest.raises(lifecycle.OutputError, match="NATIVE_PRE_MOVE_GUARD_CALLBACK_MISSING"):
+        lifecycle.execute_native_quarantine(
+            owner, output_path=output, destination=destination, durable_evidence=durable,
+            task="GH-420", attempt="GH-420-a9-invalid-callback",
+            before_move_reauthenticates_native_state=True,
+        )
+    assert output.is_dir() and not destination.exists()
+
+
 def test_gh420_o7_public_guidance_and_cli_are_linked():
     result = subprocess.run([sys.executable, str(ROOT / "scripts/validate-docs.py")], cwd=ROOT,
                             capture_output=True, text=True, timeout=60)

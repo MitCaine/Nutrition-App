@@ -44,6 +44,94 @@ MACOS_NATIVE_FIXTURE_ONLY = unittest.skipUnless(
 class IosNativeQualificationTests(
     unittest.TestCase
 ):
+    def test_native_proof_digest_from_scan_matches_independent_producer_digest(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a9-proof-digest-") as directory:
+            root = Path(directory) / "DerivedData"
+            compile_root = root / "Products" / "ZCompile"
+            link_root = compile_root / "nested" / "AApp"
+            (compile_root / "nested" / "ZStoryboard").mkdir(parents=True)
+            link_root.mkdir(parents=True)
+            (root / "Products" / "AOther").mkdir()
+            (root / "Products" / "AOther" / "unrelated.bin").write_bytes(b"unrelated\n")
+            (link_root / "z-last.bin").write_bytes(b"link z\n")
+            (compile_root / "nested" / "ZStoryboard" / "b-last.bin").write_bytes(b"compile b\n")
+            (compile_root / "a-first.bin").write_bytes(b"compile a\n")
+            (link_root / "a-first.bin").write_bytes(b"link a\n")
+            external = Path(directory) / "external-sentinel.bin"
+            external.write_bytes(b"link target remains outside scan\n")
+            (root / "outside-link").symlink_to(external)
+
+            expected_compile = output_cleanup._native_directory_sha256(compile_root)
+            expected_link = output_cleanup._native_directory_sha256(link_root)
+            hashed_paths: list[Path] = []
+            original_sha_file = output_cleanup._sha_file
+
+            def record_hash(path: Path) -> str:
+                hashed_paths.append(path)
+                return original_sha_file(path)
+
+            with patch.object(output_cleanup, "_sha_file", side_effect=record_hash):
+                _total, entries = output_cleanup._walk_native_tree(
+                    root, root.stat().st_dev, proof_output_roots=(compile_root, link_root),
+                )
+                observed_compile = output_cleanup._native_directory_sha256_from_entries(
+                    compile_root, root=root, entries=entries,
+                )
+                observed_link = output_cleanup._native_directory_sha256_from_entries(
+                    link_root, root=root, entries=entries,
+                )
+
+            self.assertEqual(observed_compile, expected_compile)
+            self.assertEqual(observed_link, expected_link)
+            self.assertEqual(len(hashed_paths), 5)  # all regular files in one root walk
+            self.assertTrue(any(item.get("path") == "outside-link" and item.get("kind") == "symlink"
+                                for item in entries))
+            self.assertEqual(external.read_bytes(), b"link target remains outside scan\n")
+
+    def test_native_proof_scan_preserves_unreadable_link_and_special_refusals(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a9-proof-refusal-") as directory:
+            root = Path(directory) / "DerivedData"
+            proof = root / "Products" / "App"
+            proof.mkdir(parents=True)
+            unreadable = proof / "unreadable.bin"
+            unreadable.write_bytes(b"required bytes\n")
+            unreadable.chmod(0)
+            try:
+                with self.assertRaisesRegex(output_cleanup.OutputError, "NATIVE_PROOF_OUTPUT_UNREADABLE"):
+                    output_cleanup._walk_native_tree(
+                        root, root.stat().st_dev, proof_output_roots=(proof,),
+                    )
+            finally:
+                unreadable.chmod(0o600)
+
+            unreadable.unlink()
+            target = Path(directory) / "outside-target.bin"
+            target.write_bytes(b"outside\n")
+            (proof / "linked.bin").symlink_to(target)
+            _total, entries = output_cleanup._walk_native_tree(
+                root, root.stat().st_dev, proof_output_roots=(proof,),
+            )
+            with self.assertRaisesRegex(output_cleanup.OutputError, "NATIVE_PROOF_OUTPUT_SYMLINK"):
+                output_cleanup._native_directory_sha256_from_entries(proof, root=root, entries=entries)
+
+            (proof / "linked.bin").unlink()
+            if hasattr(os, "mkfifo"):
+                os.mkfifo(root / "unrelated-fifo")
+                with self.assertRaisesRegex(output_cleanup.OutputError, "OUTPUT_TREE_SPECIAL_OR_HARDLINK"):
+                    output_cleanup._walk_native_tree(
+                        root, root.stat().st_dev, proof_output_roots=(proof,),
+                    )
+                (root / "unrelated-fifo").unlink()
+
+            first = proof / "first.bin"
+            second = proof / "second.bin"
+            first.write_bytes(b"hardlinked bytes\n")
+            os.link(first, second)
+            with self.assertRaisesRegex(output_cleanup.OutputError, "OUTPUT_TREE_SPECIAL_OR_HARDLINK"):
+                output_cleanup._walk_native_tree(
+                    root, root.stat().st_dev, proof_output_roots=(proof,),
+                )
+
     def test_profile_registry(self):
         self.assertEqual(
             PROFILE_CHECKS["ios-native"],
@@ -577,6 +665,14 @@ class IosNativeQualificationTests(
                 self.assertIn(expected_error, proof_error, {
                     path.name: path.read_text(encoding="utf-8") for path in proof_error_paths
                 })
+                for operation in ("worktree-quarantine", "derived-data-quarantine"):
+                    self.assertTrue((evidence / "native-lifecycle" /
+                                     f"cleanup-proof-verify-{operation}.stdout.log").is_file())
+                    self.assertEqual((evidence / "native-lifecycle" /
+                                      f"cleanup-proof-verify-{operation}.stderr.log").read_text(
+                                          encoding="utf-8"), "")
+                self.assertTrue((evidence / "native-lifecycle" /
+                                 "cleanup-proof-verify-harness-bin-quarantine.stderr.log").is_file())
                 self.assertFalse((evidence / "native-lifecycle" /
                                   "cleanup-verify-harness-bin-quarantine.stdout.log").exists())
                 self.assertNotIn("harness-bin", manifest["cleanup_disposition"]["quarantined_roots"])
@@ -1386,14 +1482,30 @@ class IosNativeQualificationTests(
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_post_proof_full_build_path_and_hash_shapes_are_required_failures(self):
         cases = (
-            ("post-proof-full-build-invocation-path-null", "build_invocation"),
-            ("post-proof-full-build-log-path-object", "build_log"),
-            ("post-proof-full-build-output-path-outside", "output"),
-            ("post-proof-full-build-log-hash-invalid", "build_log"),
+            (
+                "post-proof-full-build-invocation-path-null",
+                "build_invocation",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-log-path-object",
+                "build_log",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-output-path-outside",
+                "output",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-log-hash-invalid",
+                "build_log",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
         )
         evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         preserve_root = Path(evidence_root) / "proof-consumers-c8" if evidence_root else None
-        for mode, selected_field in cases:
+        for mode, selected_field, expected_error in cases:
             with self.subTest(mode=mode):
                 result, evidence = self._run_fixture_qualification(mode)
                 preserved = preserve_root / mode if preserve_root is not None else None
@@ -1427,7 +1539,10 @@ class IosNativeQualificationTests(
                 self.assertEqual(manifest["simulator_build"], "PASS")
                 self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
                 self.assertEqual(manifest["propagation_proof"]["exit_code"], 2)
-                self.assertIn("REQUIRED_EVIDENCE_INVALID", manifest["propagation_proof"]["reason"])
+                self.assertEqual(
+                    json.loads(manifest["propagation_proof"]["reason"]),
+                    {"status": "refused", "reason": expected_error},
+                )
                 self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
                 self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
                 movement_events_path = evidence / "movement-events.jsonl"
@@ -1521,24 +1636,48 @@ class IosNativeQualificationTests(
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_post_proof_decoded_call_and_storyboard_output_shapes_are_required_failures(self):
         cases = (
-            "post-proof-call-stage-object",
-            "post-proof-call-stage-null",
-            "post-proof-call-argv-null",
-            "post-proof-call-argv-object",
-            "post-proof-call-argv-nonstring",
-            "post-proof-full-build-storyboard-outputs-null",
-            "post-proof-full-build-storyboard-outputs-object",
-            "post-proof-full-build-storyboard-output-entry-nonobject",
-            "post-proof-full-build-storyboard-output-entry-field-object",
-            "post-proof-full-build-storyboard-outputs-null-observation-unavailable",
-            "post-proof-full-build-storyboard-outputs-null-known-helper-live",
+            ("post-proof-call-stage-object", "call", "CALL_STAGE_SHAPE_INVALID"),
+            ("post-proof-call-stage-null", "call", "CALL_STAGE_SHAPE_INVALID"),
+            ("post-proof-call-argv-null", "call", "CALL_ARGV_SHAPE_INVALID"),
+            ("post-proof-call-argv-object", "call", "CALL_ARGV_SHAPE_INVALID"),
+            ("post-proof-call-argv-nonstring", "call", "CALL_ARGV_SHAPE_INVALID"),
+            (
+                "post-proof-full-build-storyboard-outputs-null",
+                "adapter",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-storyboard-outputs-object",
+                "adapter",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-storyboard-output-entry-nonobject",
+                "adapter",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-storyboard-output-entry-field-object",
+                "adapter",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-storyboard-outputs-null-observation-unavailable",
+                "producer",
+                "FULL_BUILD_PROOF_INVALID:REQUIRED_EVIDENCE_INVALID:FULL_BUILD_PROOF:FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISSING",
+            ),
+            (
+                "post-proof-full-build-storyboard-outputs-null-known-helper-live",
+                "producer",
+                "FULL_BUILD_PROOF_INVALID:REQUIRED_EVIDENCE_INVALID:FULL_BUILD_PROOF:FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISSING",
+            ),
         )
         evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         preserved_root = (
             Path(evidence_root) / "post-proof-decoded-shapes" if evidence_root else None
         )
         observations = []
-        for mode in cases:
+        for mode, expected_owner, expected_error in cases:
             with self.subTest(mode=mode):
                 result, evidence = self._run_fixture_qualification(mode)
                 preserved = preserved_root / mode if preserved_root is not None else None
@@ -1597,11 +1736,26 @@ class IosNativeQualificationTests(
                 self.assertNotEqual(result.returncode, 0, json.dumps(observation, sort_keys=True))
                 self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
                 self.assertEqual(manifest["propagation_proof"]["exit_code"], 2)
-                self.assertIn(
-                    "REQUIRED_EVIDENCE_INVALID",
-                    manifest["propagation_proof"]["reason"],
-                    json.dumps(observation, sort_keys=True),
-                )
+                actual_reason = manifest["propagation_proof"]["reason"]
+                if expected_owner == "call":
+                    call_id = mutation["selected_evidence"]["call_id"]
+                    self.assertEqual(
+                        actual_reason,
+                        f"REQUIRED_EVIDENCE_INVALID:PROCESS_CALL:{expected_error}:{call_id}",
+                        json.dumps(observation, sort_keys=True),
+                    )
+                elif expected_owner == "adapter":
+                    self.assertEqual(
+                        json.loads(actual_reason),
+                        {"status": "refused", "reason": expected_error},
+                        json.dumps(observation, sort_keys=True),
+                    )
+                else:
+                    self.assertEqual(
+                        actual_reason,
+                        expected_error,
+                        json.dumps(observation, sort_keys=True),
+                    )
                 self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
                 self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
                 for name, root_name in (
@@ -1644,20 +1798,35 @@ class IosNativeQualificationTests(
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_post_proof_mandatory_read_errors_are_required_failures(self):
         cases = (
-            ("post-proof-full-build-output-read-denied", "FULL_BUILD_OUTPUT_UNREADABLE"),
+            (
+                "post-proof-full-build-output-read-denied",
+                "adapter",
+                "NATIVE_PROOF_OUTPUT_UNREADABLE",
+            ),
             (
                 "post-proof-full-build-compile-output-read-denied",
-                "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_UNREADABLE",
+                "adapter",
+                "NATIVE_PROOF_OUTPUT_UNREADABLE",
             ),
-            ("post-proof-full-build-build-log-read-denied", "BUILD_LOG_UNREADABLE"),
+            (
+                "post-proof-full-build-build-log-read-denied",
+                "producer-path-error",
+                "FULL_BUILD_PROOF_INVALID:REQUIRED_EVIDENCE_INVALID:FULL_BUILD_PROOF:BUILD_LOG_UNREADABLE",
+            ),
             (
                 "post-proof-capability-storyboard-read-denied",
-                "CAPABILITY_PROOF_STORYBOARD_UNREADABLE",
+                "producer-path-error",
+                "REQUIRED_EVIDENCE_INVALID:CAPABILITY_PROOF:CAPABILITY_PROOF_STORYBOARD_UNREADABLE",
             ),
-            ("post-proof-call-output-read-denied", "PROCESS_OUTPUT_STDOUT_UNREADABLE"),
+            (
+                "post-proof-call-output-read-denied",
+                "producer-path-error",
+                "REQUIRED_EVIDENCE_INVALID:PROCESS_OUTPUT:PROCESS_OUTPUT_STDOUT_UNREADABLE",
+            ),
             (
                 "post-proof-full-build-output-read-denied-observation-unavailable",
-                "FULL_BUILD_OUTPUT_UNREADABLE",
+                "producer-direct",
+                "FULL_BUILD_PROOF_INVALID:REQUIRED_EVIDENCE_INVALID:FULL_BUILD_PROOF:FULL_BUILD_OUTPUT_UNREADABLE",
             ),
         )
         evidence_root = os.environ.get("GH421_IMPL_R12_GREEN_EVIDENCE")
@@ -1678,7 +1847,7 @@ class IosNativeQualificationTests(
                     source.chmod(original_mode)
                     destination.chmod(original_mode)
 
-        for mode, expected_detail in cases:
+        for mode, expected_owner, expected_error in cases:
             with self.subTest(mode=mode):
                 result, evidence = self._run_fixture_qualification(mode)
                 preserved = preserved_root / mode if preserved_root is not None else None
@@ -1712,7 +1881,22 @@ class IosNativeQualificationTests(
                 self.assertEqual(manifest["simulator_build"], "PASS")
                 self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
                 self.assertEqual(manifest["propagation_proof"]["exit_code"], 2)
-                self.assertIn(expected_detail, manifest["propagation_proof"]["reason"])
+                actual_reason = manifest["propagation_proof"]["reason"]
+                if expected_owner == "adapter":
+                    self.assertEqual(
+                        json.loads(actual_reason),
+                        {
+                            "status": "refused",
+                            "reason": f"{expected_error}:{fault['path']}",
+                        },
+                    )
+                elif expected_owner == "producer-path-error":
+                    self.assertEqual(
+                        actual_reason,
+                        f"{expected_error}:{fault['path']}:{fault['error']}",
+                    )
+                else:
+                    self.assertEqual(actual_reason, f"{expected_error}:{fault['error']}")
                 self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
                 self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
                 self.assertNotEqual(result.returncode, 0)
@@ -1752,7 +1936,8 @@ class IosNativeQualificationTests(
                     "xcode_build": mutation["stage_statuses_before_mutation"]["xcode_build"],
                     "swift_harnesses": mutation["stage_statuses_before_mutation"]["swift_harnesses"],
                     "proof": manifest["propagation_proof"],
-                    "expected_detail": expected_detail,
+                    "expected_owner": expected_owner,
+                    "expected_error": expected_error,
                     "required_read_failure": True,
                     "cleanup": manifest["cleanup_disposition"],
                     "aggregate": manifest["result"],

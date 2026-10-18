@@ -452,7 +452,12 @@ def verify_receipt(receipt: dict[str, Any]) -> tuple[Path, os.stat_result]:
     return path, st
 
 
-def _walk_native_tree(root: Path, root_device: int) -> tuple[int, list[dict[str, Any]]]:
+def _walk_native_tree(
+    root: Path,
+    root_device: int,
+    *,
+    proof_output_roots: tuple[Path, ...] = (),
+) -> tuple[int, list[dict[str, Any]]]:
     """Measure an owned native tree without following links or crossing devices."""
     _no_symlinks(root)
     try:
@@ -464,7 +469,16 @@ def _walk_native_tree(root: Path, root_device: int) -> tuple[int, list[dict[str,
         raise OutputError("OUTPUT_ROOT_IDENTITY_INVALID")
     total = 0
     entries: list[dict[str, Any]] = []
+
+    def proof_output_path(path: Path) -> bool:
+        return any(
+            path == proof_root or proof_root in path.parents or path in proof_root.parents
+            for proof_root in proof_output_roots
+        )
+
     def walk_error(error: OSError) -> None:
+        if isinstance(error.filename, str) and proof_output_path(Path(error.filename)):
+            raise OutputError("NATIVE_PROOF_OUTPUT_UNREADABLE:" + error.filename) from error
         raise OutputError("OUTPUT_TREE_UNREADABLE") from error
 
     for base, directories, files in os.walk(root, topdown=True, followlinks=False, onerror=walk_error):
@@ -483,10 +497,15 @@ def _walk_native_tree(root: Path, root_device: int) -> tuple[int, list[dict[str,
                 continue
             if stat.S_ISDIR(st.st_mode):
                 if not st.st_mode & 0o444 or not st.st_mode & 0o111:
+                    if proof_output_path(item):
+                        raise OutputError("NATIVE_PROOF_OUTPUT_UNREADABLE:" + str(item))
                     raise OutputError("OUTPUT_TREE_UNREADABLE:" + str(item))
                 continue
-            if (not stat.S_ISREG(st.st_mode) or st.st_nlink != 1
-                    or not st.st_mode & 0o444):
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+                raise OutputError("OUTPUT_TREE_SPECIAL_OR_HARDLINK")
+            if not st.st_mode & 0o444:
+                if proof_output_path(item):
+                    raise OutputError("NATIVE_PROOF_OUTPUT_UNREADABLE:" + str(item))
                 raise OutputError("OUTPUT_TREE_SPECIAL_OR_HARDLINK")
             total += st.st_size
             entries.append({"path": relative, "kind": "file", "bytes": st.st_size,
@@ -1563,8 +1582,11 @@ def execute_native_quarantine(
     owner_lock_held: bool = False,
     dispose: Any = None,
     before_move: Any = None,
+    before_move_reauthenticates_native_state: bool = False,
 ) -> dict[str, Any]:
     """Recoverably relocate one plain output after durable byte-for-byte retention."""
+    if before_move_reauthenticates_native_state and before_move is None:
+        raise OutputError("NATIVE_PRE_MOVE_GUARD_CALLBACK_MISSING")
     lock = None if owner_lock_held else _open_owner_lock(owner_record, blocking=False)
     try:
         record = _json(owner_record)
@@ -1696,7 +1718,8 @@ def execute_native_quarantine(
         plan_native_quarantine(owner_record, output_path=output_path, destination=destination)
         if _node(destination.parent.lstat()) != intent.get("destination_parent_node"):
             raise OutputError("QUARANTINE_PARENT_CHANGED")
-        if record.get("native_terminal") is not None:
+        if (record.get("native_terminal") is not None
+                and not before_move_reauthenticates_native_state):
             invocation_binding = record.get("quarantine_parent", {}).get("invocation")
             if not isinstance(invocation_binding, dict) or set(invocation_binding) != {"path", "sha256"}:
                 raise OutputError("NATIVE_INVOCATION_OWNER_BINDING_MISSING")
@@ -2059,6 +2082,44 @@ def _native_directory_sha256(directory: Path) -> str:
     return digest.hexdigest()
 
 
+def _native_directory_sha256_from_entries(
+    directory: Path, *, root: Path, entries: list[dict[str, Any]],
+) -> str:
+    """Rebuild the producer digest from one authenticated no-follow tree scan."""
+    _no_symlinks(directory)
+    try:
+        directory_stat = directory.lstat()
+        relative_directory = directory.relative_to(root)
+    except (OSError, ValueError) as error:
+        raise OutputError("NATIVE_PROOF_OUTPUT_NOT_DIRECTORY:" + str(directory)) from error
+    if not stat.S_ISDIR(directory_stat.st_mode) or not relative_directory.parts or ".." in relative_directory.parts:
+        raise OutputError("NATIVE_PROOF_OUTPUT_NOT_DIRECTORY:" + str(directory))
+
+    files: list[tuple[Path, str]] = []
+    for item in entries:
+        relative = Path(item.get("path", ""))
+        try:
+            proof_relative = relative.relative_to(relative_directory)
+        except ValueError:
+            continue
+        if item.get("kind") == "symlink":
+            raise OutputError("NATIVE_PROOF_OUTPUT_SYMLINK_DIRECTORY:" + str(root / relative))
+        if item.get("kind") != "file":
+            continue
+        file_digest = item.get("sha256")
+        if not isinstance(file_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", file_digest):
+            raise OutputError("NATIVE_PROOF_OUTPUT_UNREADABLE:" + str(root / relative))
+        files.append((proof_relative, file_digest))
+    if not files:
+        raise OutputError("NATIVE_PROOF_OUTPUT_EMPTY:" + str(directory))
+
+    digest = hashlib.sha256()
+    for relative, file_digest in sorted(files, key=lambda item: item[0]):
+        digest.update(relative.as_posix().encode())
+        digest.update(bytes.fromhex(file_digest))
+    return digest.hexdigest()
+
+
 def _capture_native_proof_origin(
     owner: dict[str, Any], invocation_record: Path, binding: dict[str, Any],
 ) -> dict[str, str]:
@@ -2321,6 +2382,9 @@ def verify_native_proof_readback(
     operation_path = Path(durable_evidence) / f"output-quarantine-{receipt['node'][1]}.json"
     original_exists = os.path.lexists(original_root)
     destination_exists = os.path.lexists(destination)
+    current_entries: list[dict[str, Any]] | None = None
+    retained_entries: list[dict[str, Any]] | None = None
+    operation_entries: list[dict[str, Any]] | None = None
     if original_exists and destination_exists:
         raise OutputError("NATIVE_PROOF_OUTPUT_LOCATIONS_AMBIGUOUS")
     if original_exists:
@@ -2337,10 +2401,12 @@ def verify_native_proof_readback(
                     or operation.get("result_persisted") is not False
                     or not isinstance(operation.get("evidence_entries"), list)):
                 raise OutputError("NATIVE_DERIVED_DATA_OPERATION_CONFLICT")
-            if _walk_native_tree(original_root, original_root.stat().st_dev)[1] != operation["evidence_entries"]:
-                raise OutputError("NATIVE_DERIVED_DATA_OPERATION_CONTENT_MISMATCH")
+            operation_entries = operation["evidence_entries"]
+            current_entries = _walk_native_tree(
+                original_root, original_root.stat().st_dev,
+                proof_output_roots=tuple(original_root / item["relative_path"] for item in expected),
+            )[1]
         retained_root = None
-        operation_entries = None
     else:
         if not destination_exists or not operation_path.is_file() or operation_path.is_symlink():
             raise OutputError("NATIVE_RELOCATED_DERIVED_DATA_PROOF_UNAVAILABLE")
@@ -2391,25 +2457,38 @@ def verify_native_proof_readback(
                            and operation.get("result_persisted") in {False, True}))):
             raise OutputError("NATIVE_DERIVED_DATA_PHASE_MISSING")
         current_root = destination
+        current_entries = _walk_native_tree(
+            current_root, moved_stat.st_dev,
+            proof_output_roots=tuple(current_root / item["relative_path"] for item in expected),
+        )[1]
+        retained_entries = _walk_native_tree(
+            retained_root, retained_root.stat().st_dev,
+            proof_output_roots=tuple(retained_root / item["relative_path"] for item in expected),
+        )[1]
     verified: list[dict[str, str]] = []
     for item in expected:
         current = current_root / item["relative_path"]
-        observed = _native_directory_sha256(current)
+        observed = (
+            _native_directory_sha256_from_entries(current, root=current_root, entries=current_entries)
+            if current_entries is not None else _native_directory_sha256(current)
+        )
         if observed != item["sha256"]:
             raise OutputError("NATIVE_RELOCATED_PROOF_OUTPUT_HASH_MISMATCH:" + str(current))
         if retained_root is not None:
             retained = retained_root / item["relative_path"]
-            if _native_directory_sha256(retained) != item["sha256"]:
+            retained_digest = (
+                _native_directory_sha256_from_entries(
+                    retained, root=retained_root, entries=retained_entries,
+                ) if retained_entries is not None else _native_directory_sha256(retained)
+            )
+            if retained_digest != item["sha256"]:
                 raise OutputError("NATIVE_RETAINED_PROOF_OUTPUT_HASH_MISMATCH:" + str(retained))
         verified.append({"kind": item["kind"], "original_path": item["original_path"],
                          "current_path": str(current), "sha256": item["sha256"]})
     if operation_entries is not None:
-        try:
-            current_entries = _walk_native_tree(current_root, current_root.stat().st_dev)[1]
-            retained_entries = _walk_native_tree(retained_root, retained_root.stat().st_dev)[1]
-        except OSError as error:
-            raise OutputError("NATIVE_DERIVED_DATA_OPERATION_CONTENT_UNREADABLE") from error
-        if current_entries != operation_entries or retained_entries != operation_entries:
+        if current_entries != operation_entries:
+            raise OutputError("NATIVE_DERIVED_DATA_OPERATION_CONTENT_MISMATCH")
+        if retained_root is not None and retained_entries != operation_entries:
             raise OutputError("NATIVE_DERIVED_DATA_OPERATION_CONTENT_MISMATCH")
     return verified
 
