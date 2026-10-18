@@ -6685,6 +6685,127 @@ def _output_closeout_prior_operation(
     return matches[0] if matches else None
 
 
+def _output_closeout_authenticate_owner_exit(
+    owner_record: Path, owner: dict[str, Any],
+    current_reference: dict[str, Any] | None,
+) -> None:
+    exit_record = owner.get("owner_exit")
+    if exit_record is None:
+        return
+    if (not isinstance(exit_record, dict)
+            or type(exit_record.get("pid")) is not int
+            or exit_record.get("pid", 0) <= 0
+            or type(exit_record.get("start_monotonic_ns")) is not int
+            or exit_record.get("start_monotonic_ns", 0) <= 0
+            or type(exit_record.get("reconciled_monotonic_ns")) is not int
+            or exit_record.get("reconciled_monotonic_ns", 0) <= 0
+            or exit_record.get("result") != owner.get("status")):
+        raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_RECONCILIATION_INVALID")
+    ready_binding = exit_record.get("ready_file")
+    if not isinstance(ready_binding, dict) or set(ready_binding) != {"path", "sha256"}:
+        raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_INVALID")
+    ready_original = Path(ready_binding["path"])
+    try:
+        if os.path.lexists(ready_original):
+            ready_path = ready_original
+            if output_cleanup.file_binding(ready_path) != ready_binding:
+                raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_CHANGED")
+        elif current_reference is not None:
+            ready_path = output_cleanup.resolve_reference_binding(
+                ready_original, ready_binding["sha256"], current_reference,
+            )
+        else:
+            raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_UNAVAILABLE")
+        ready = output_cleanup._json(ready_path)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_UNREADABLE") from error
+    if ready != {"pid": exit_record["pid"],
+                 "start_monotonic_ns": exit_record["start_monotonic_ns"]}:
+        raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_MISMATCH")
+    complete_binding = exit_record.get("complete_record")
+    if owner_record.name == "attempt-state.json" and owner.get("status") in {"complete", "failed"}:
+        if not isinstance(complete_binding, dict) or set(complete_binding) != {"path", "sha256"}:
+            raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_COMPLETE_BINDING_MISSING")
+        complete_original = Path(complete_binding["path"])
+        try:
+            if os.path.lexists(complete_original):
+                complete_path = complete_original
+                if output_cleanup.file_binding(complete_path) != complete_binding:
+                    raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_COMPLETE_BINDING_CHANGED")
+            elif current_reference is not None:
+                complete_path = output_cleanup.resolve_reference_binding(
+                    complete_original, complete_binding["sha256"], current_reference,
+                )
+            else:
+                raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_COMPLETE_BINDING_UNAVAILABLE")
+            output_cleanup._json(complete_path)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_COMPLETE_BINDING_UNREADABLE") from error
+
+
+def _output_closeout_assert_owner_quiescent(
+    owner_record: Path, *, current_reference: dict[str, Any] | None,
+) -> dict[str, Any]:
+    owner = output_cleanup._json(owner_record)
+    if owner.get("active_owner") is not None:
+        raise output_cleanup.OutputError("OUTPUT_OWNER_ACTIVE")
+    pending = [key for key, value in owner.items()
+               if key.startswith("pending_") and value is not None]
+    if pending:
+        raise output_cleanup.OutputError("OUTPUT_OWNER_CURRENT_OPERATION_UNKNOWN")
+    for key in ("owner_operation", "active_operation"):
+        operation = owner.get(key)
+        if operation is not None and (
+            not isinstance(operation, dict)
+            or operation.get("status") not in {"complete", "failed", "cancelled", "reconciled"}
+        ):
+            raise output_cleanup.OutputError("OUTPUT_OWNER_CURRENT_OPERATION_UNKNOWN")
+    if owner.get("status") not in {"complete", "failed", "superseded-terminal"}:
+        raise output_cleanup.OutputError("OUTPUT_OWNER_CURRENT_OPERATION_UNKNOWN")
+    _output_closeout_authenticate_owner_exit(owner_record, owner, current_reference)
+    return owner
+
+
+def _output_closeout_reconcile_departed_owner(
+    owner_record: Path, *, allow_reconciliation: bool,
+    current_reference: dict[str, Any] | None,
+) -> None:
+    active_owner = None
+    ready_path = owner_record.parent / "output-owner-ready.json"
+    try:
+        with output_cleanup.owner_lock(owner_record, blocking=False):
+            owner = output_cleanup._json(owner_record)
+            if owner.get("active_owner") is None:
+                return
+            if not allow_reconciliation:
+                raise output_cleanup.OutputError("OUTPUT_OWNER_ACTIVE")
+            active_owner = owner.get("active_owner")
+            if (not isinstance(active_owner, dict)
+                    or set(active_owner) != {"pid", "start_monotonic_ns"}
+                    or type(active_owner.get("pid")) is not int
+                    or active_owner.get("pid", 0) <= 0
+                    or type(active_owner.get("start_monotonic_ns")) is not int
+                    or active_owner.get("start_monotonic_ns", 0) <= 0):
+                raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_ACTIVE_BINDING_INVALID")
+            if ready_path.is_symlink() or not ready_path.is_file():
+                raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_UNAVAILABLE")
+            if output_cleanup._json(ready_path) != active_owner:
+                raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_MISMATCH")
+    except output_cleanup.OutputError:
+        raise
+
+    if active_owner is not None:
+        output_cleanup.reconcile_owner_exit(
+            owner_record, ready_file=ready_path, holder_pid=active_owner["pid"],
+        )
+        with output_cleanup.owner_lock(owner_record, blocking=False):
+            owner = _output_closeout_assert_owner_quiescent(
+                owner_record, current_reference=current_reference,
+            )
+            if owner.get("owner_exit", {}).get("ready_file") != output_cleanup.file_binding(ready_path):
+                raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_CHANGED")
+
+
 def _verify_output_closeout_mode(
     operation: dict[str, Any], *, helper_source: Path | None, helper_revision: str | None,
 ) -> None:
@@ -6931,6 +7052,15 @@ def command_output_closeout(args: argparse.Namespace) -> int:
     if not record_path.is_file() or record_path.is_symlink():
         raise TaskControllerError("OUTPUT_EXECUTION_RECORD_INVALID")
     try:
+        _output_closeout_reconcile_departed_owner(
+            record_path, allow_reconciliation=args.execute,
+            current_reference=reference,
+        )
+    except output_cleanup.OutputError as error:
+        if str(error) == "OUTPUT_OWNER_ACTIVE":
+            raise TaskControllerError("OUTPUT_OWNER_ACTIVE") from error
+        raise TaskControllerError("OUTPUT_CLOSEOUT_REFUSED: " + str(error)) from error
+    try:
         execution = output_cleanup._json(record_path)
     except (OSError, ValueError, output_cleanup.OutputError) as error:
         raise TaskControllerError("OUTPUT_EXECUTION_RECORD_INVALID") from error
@@ -6960,6 +7090,15 @@ def command_output_closeout(args: argparse.Namespace) -> int:
     helper_source = helper_revision = None
     if args.shared_helper:
         helper_source, helper_revision = _output_helper_selection(repo_root)
+    try:
+        with output_cleanup.owner_lock(record_path, blocking=False):
+            _output_closeout_assert_owner_quiescent(
+                record_path, current_reference=reference,
+            )
+    except output_cleanup.OutputError as error:
+        if str(error) == "OUTPUT_OWNER_ACTIVE":
+            raise TaskControllerError("OUTPUT_OWNER_ACTIVE") from error
+        raise TaskControllerError("OUTPUT_CLOSEOUT_REFUSED: " + str(error)) from error
     request: dict[str, Any] | None = None
     protected: list[str] = []
     protection_error: str | None = None
@@ -7254,7 +7393,9 @@ def command_output_closeout(args: argparse.Namespace) -> int:
     if not args.execute:
         try:
             with output_cleanup.owner_lock(record_path, blocking=False):
-                pass
+                _output_closeout_assert_owner_quiescent(
+                    record_path, current_reference=reference,
+                )
         except output_cleanup.OutputError as error:
             if str(error) == "OUTPUT_OWNER_ACTIVE":
                 raise TaskControllerError("OUTPUT_OWNER_ACTIVE") from error
@@ -7267,6 +7408,9 @@ def command_output_closeout(args: argparse.Namespace) -> int:
 
     try:
         with output_cleanup.owner_lock(record_path, blocking=False):
+            _output_closeout_assert_owner_quiescent(
+                record_path, current_reference=reference,
+            )
             for receipt, report in sorted(
                     receipt_rows,
                     key=lambda pair: (Path(pair[0].get("path", "")).is_relative_to(record_path.parent),
@@ -7368,6 +7512,10 @@ def command_output_closeout(args: argparse.Namespace) -> int:
 
                     with checkpoint_lock(args.state_dir, args.issue_number):
                         latest_state = load_state(args.state_dir, args.issue_number)
+                        latest_reference = _output_current_reference(latest_state)
+                        _output_closeout_assert_owner_quiescent(
+                            record_path, current_reference=latest_reference,
+                        )
                         latest_disposition = _output_closeout_disposition(
                             latest_state, args.issue_number, attempt, execution, request or {},
                         )

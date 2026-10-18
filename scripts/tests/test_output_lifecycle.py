@@ -236,6 +236,75 @@ def authored_runner_fixture(tmp_path: Path, *, attempt: str, steps: list[dict]) 
             "runner": runner, "candidate": git(repo, "rev-parse", "HEAD"), "attempt": attempt}
 
 
+def interrupted_authored_runner_before_reconciliation(tmp_path: Path, *, attempt: str) -> dict:
+    repo = tmp_path / "authored-repository"
+    repo.mkdir()
+    for relative in ("scripts/run-review.sh", "scripts/lib/common.sh", "scripts/lib/review_commands.py",
+                     "scripts/lib/task_output_cleanup.py"):
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, target)
+    (repo / "tracked.txt").write_text("source recovery fixture\n", encoding="utf-8")
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.name", "Runner fixture")
+    git(repo, "config", "user.email", "runner@example.invalid")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "authored fixture")
+    candidate = git(repo, "rev-parse", "HEAD")
+    request_path = tmp_path / "authored-request.json"
+    write_json(request_path, {"schema_version": 1, "repository": str(repo),
+                              "expected_head": candidate, "attempt": attempt,
+                              "steps": [{"id": "proof", "argv": [sys.executable, "-c", "print('proof')"],
+                                         "cwd": ".", "env": {}, "prerequisites": [],
+                                         "designation": "mandatory"}]})
+    output_root = tmp_path / "review-output"
+    runner_tmp = tmp_path / "runner-tmp"
+    runner_tmp.mkdir()
+    marker = tmp_path / "reconciliation-reached"
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    python3 = fake_bin / "python3"
+    python3.write_text(
+        "#!/bin/bash\n"
+        "set -eu\n"
+        "if [[ \"$*\" == *reconcile-owner-exit* ]]; then\n"
+        "  : > \"$GH420_RECONCILIATION_MARKER\"\n"
+        "  while :; do sleep 1; done\n"
+        "fi\n"
+        "exec \"$GH420_REAL_PYTHON\" \"$@\"\n",
+        encoding="utf-8",
+    )
+    python3.chmod(0o755)
+    environment = dict(os.environ, NUTRITION_REVIEW_OUTPUT_DIR=str(output_root),
+                       TMPDIR=str(runner_tmp), PYTHONDONTWRITEBYTECODE="1",
+                       PATH=str(fake_bin) + os.pathsep + os.environ["PATH"],
+                       GH420_REAL_PYTHON=str(Path(sys.executable).resolve()),
+                       GH420_RECONCILIATION_MARKER=str(marker))
+    runner = subprocess.Popen(
+        ["bash", str(repo / "scripts/run-review.sh"), "--commands", str(request_path),
+         "--attempt", attempt], cwd=repo, env=environment, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, start_new_session=True,
+    )
+    deadline = time.monotonic() + 20
+    while not marker.exists() and runner.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert marker.is_file(), "actual authored runner did not reach owner reconciliation"
+    output = output_root / "runs" / attempt
+    owner_path = output / "attempt-state.json"
+    assert (output / "complete.json").is_file()
+    owner = lifecycle._json(owner_path)
+    assert owner["active_owner"] is not None
+    holder_pid = owner["active_owner"]["pid"]
+    with pytest.raises(ProcessLookupError):
+        os.kill(holder_pid, 0)
+    os.killpg(runner.pid, 15)
+    stdout, stderr = runner.communicate(timeout=10)
+    assert runner.returncode == 143, stdout + stderr
+    return {"repo": repo, "request_path": request_path, "output_root": output_root,
+            "output": output, "owner": owner_path, "candidate": candidate,
+            "attempt": attempt, "runner_stdout": stdout, "runner_stderr": stderr}
+
+
 def integrated_controller_fixture(tmp_path: Path, *, attempt: str, candidate: str) -> dict:
     evidence = tmp_path / "controller-evidence"
     evidence.mkdir()
@@ -299,6 +368,125 @@ def test_gh420_o1_keeps_selected_helper_sources_separate():
         source = (ROOT / relative).read_text(encoding="utf-8")
         assert "repository_intelligence.output_cleanup" not in source
     assert "--shared-helper" in (ROOT / "scripts/task.py").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("fault", ["none", "ready-file-mismatch", "terminal-record-tamper"])
+@pytest.mark.parametrize("mode", ["consumer-only", "shared-helper"])
+def test_gh420_a6_closeout_authenticates_departed_authored_holder(tmp_path: Path, fault: str, mode: str):
+    attempt = f"GH-420-a6-departed-owner-{mode}-{fault}"
+    fixture = interrupted_authored_runner_before_reconciliation(tmp_path, attempt=attempt)
+    owner_before = lifecycle._json(fixture["owner"])
+    owner_bytes_before = fixture["owner"].read_bytes()
+    receipt = owner_before["owned_outputs"][0]
+    original = Path(receipt["path"])
+    original_inode = original.lstat().st_ino
+    ready_path = fixture["output"] / "output-owner-ready.json"
+    ready_sha = sha(ready_path)
+    if fault == "ready-file-mismatch":
+        ready = lifecycle._json(ready_path)
+        ready["pid"] += 100000
+        write_json(ready_path, ready)
+    elif fault == "terminal-record-tamper":
+        complete = fixture["output"] / "complete.json"
+        value = lifecycle._json(complete)
+        value["bundle_sha256"] = "0" * 64
+        write_json(complete, value)
+    receipt_snapshots = {}
+    for owned in owner_before["owned_outputs"]:
+        path = Path(owned["path"])
+        receipt_snapshots[path] = (lifecycle._node(path.lstat()),
+                                   lifecycle._walk_native_tree(path, path.stat().st_dev)[1])
+    controller_root = tmp_path / "controller"
+    controller_root.mkdir()
+    state_fixture = integrated_controller_fixture(
+        controller_root, attempt=attempt, candidate=fixture["candidate"],
+    )
+    mode_arguments = ("--shared-helper",) if mode == "shared-helper" else ()
+    result = task_cli(
+        "--repo-root", str(ROOT if mode == "shared-helper" else fixture["repo"]),
+        "--state-dir", str(state_fixture["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(fixture["owner"]),
+        "--durable-evidence", str(state_fixture["durable"]),
+        *mode_arguments,
+        "--execute", "--human-owner-authorized",
+    )
+    if fault == "none":
+        assert result.returncode == 0, result.stdout + result.stderr
+        state_after = controller.load_state(state_fixture["state_dir"], 420)
+        current_reference = lifecycle.read_current_reference(
+            Path(state_after["output_closeout"]["current_reference"]["path"]),
+        )
+        owner_relocation = next(item for item in current_reference["relocations"]
+                                if item.get("original_path") == str(fixture["owner"]))
+        ready_relocation = next(item for item in current_reference["relocations"]
+                                if item.get("original_path") == str(ready_path))
+        current_ready = Path(ready_relocation["current_path"])
+        reconciled = lifecycle._json(Path(owner_relocation["current_path"]))
+        assert reconciled["status"] == "complete"
+        assert reconciled.get("active_owner") is None
+        assert reconciled["owner_exit"]["ready_file"]["sha256"] == ready_sha
+        assert lifecycle._json(current_ready) == {
+            "pid": reconciled["owner_exit"]["pid"],
+            "start_monotonic_ns": reconciled["owner_exit"]["start_monotonic_ns"],
+        }
+        report = json.loads(result.stdout)
+        assert report["mode"] == mode
+        item = next(row for row in report["items"] if row.get("owner_node") == receipt["node"])
+        destination = Path(item["destination"])
+        assert item["status"] == "quarantined"
+        assert not original.exists() and destination.stat().st_ino == original_inode
+    else:
+        assert result.returncode == 1, result.stdout + result.stderr
+        expected_error = ("OUTPUT_OWNER_EXIT_READY_BINDING_MISMATCH" if fault == "ready-file-mismatch"
+                          else "OUTPUT_OWNER_EXIT_BUNDLE_INVALID")
+        assert expected_error in result.stdout
+        assert fixture["owner"].read_bytes() == owner_bytes_before
+        for path, (node, entries) in receipt_snapshots.items():
+            assert path.is_dir() and lifecycle._node(path.lstat()) == node
+            assert lifecycle._walk_native_tree(path, path.stat().st_dev)[1] == entries
+        assert not (state_fixture["durable"] / "current-reference.json").exists()
+
+
+@pytest.mark.parametrize("mode", ["consumer-only", "shared-helper"])
+@pytest.mark.parametrize("operation_field", ["pending_worktree_creation", "owner_operation"])
+def test_gh420_a6_closeout_refuses_unresolved_owner_operation(
+    tmp_path: Path, mode: str, operation_field: str,
+):
+    attempt = f"GH-420-a6-pending-{mode}-{operation_field}"
+    fixture = authored_runner_fixture(tmp_path, attempt=attempt, steps=[
+        {"id": "proof", "argv": [sys.executable, "-c", "print('proof')"],
+         "cwd": ".", "env": {}, "prerequisites": [], "designation": "mandatory"},
+    ])
+    assert fixture["runner"].returncode == 0, fixture["runner"].stdout + fixture["runner"].stderr
+    owner = lifecycle._json(fixture["owner"])
+    if operation_field == "pending_worktree_creation":
+        owner[operation_field] = {"status": "intent", "nonce": "synthetic-pending"}
+    else:
+        owner[operation_field] = {"status": "pending", "operation": "synthetic"}
+    lifecycle._atomic_json(fixture["owner"], owner)
+    owner_bytes = fixture["owner"].read_bytes()
+    receipt_paths = [Path(item["path"]) for item in owner["owned_outputs"]]
+    receipt_nodes = {path: lifecycle._node(path.lstat()) for path in receipt_paths}
+    controller_root = tmp_path / "controller"
+    controller_root.mkdir()
+    state_fixture = integrated_controller_fixture(
+        controller_root, attempt=attempt, candidate=fixture["candidate"],
+    )
+    mode_arguments = ("--shared-helper",) if mode == "shared-helper" else ()
+    result = task_cli(
+        "--repo-root", str(ROOT if mode == "shared-helper" else fixture["repo"]),
+        "--state-dir", str(state_fixture["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(fixture["owner"]),
+        "--durable-evidence", str(state_fixture["durable"]),
+        *mode_arguments,
+        "--execute", "--human-owner-authorized",
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "OUTPUT_OWNER_CURRENT_OPERATION_UNKNOWN" in result.stdout
+    assert fixture["owner"].read_bytes() == owner_bytes
+    assert all(path.is_dir() and lifecycle._node(path.lstat()) == receipt_nodes[path]
+               for path in receipt_paths)
+    assert not (state_fixture["durable"] / "current-reference.json").exists()
 
 
 def test_gh420_o5_public_authored_attempt_and_bundle_repeat_is_receipt_scoped(tmp_path: Path):

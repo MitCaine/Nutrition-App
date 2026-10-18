@@ -2444,6 +2444,139 @@ def _record_reconciled_native_derived_phase(
         raise OutputError("NATIVE_DERIVED_DATA_PHASE_WRITE_FAILED") from error
 
 
+def reconcile_native_worktree_quarantine_phase(
+    owner_record: Path, *, invocation_record: Path, durable_evidence: Path,
+) -> dict[str, Any]:
+    """Reconcile only an authenticated native worktree move whose phase was interrupted."""
+    lock = _open_owner_lock(owner_record, blocking=False)
+    try:
+        owner = _json(owner_record)
+        binding_path = Path(os.path.abspath(invocation_record))
+        invocation_binding = owner.get("quarantine_parent", {}).get("invocation")
+        if (not isinstance(invocation_binding, dict)
+                or set(invocation_binding) != {"path", "sha256"}
+                or invocation_binding.get("path") != str(binding_path)
+                or file_binding(binding_path) != invocation_binding):
+            raise OutputError("NATIVE_QUARANTINE_INVOCATION_BINDING_CHANGED")
+        binding, producer_phase, producer_phase_path = _native_owner_phase(owner, binding_path)
+        _native_terminal(owner, producer_phase, producer_phase_path)
+        # Mandatory build evidence is checked before inspecting a possibly
+        # uncertain moved worktree, so a missing or changed proof stays primary.
+        verify_native_proof_readback(
+            owner_record, invocation_record=binding_path,
+            durable_evidence=durable_evidence,
+        )
+        receipts = [item for item in owner.get("owned_outputs", [])
+                    if isinstance(item, dict) and "git_worktree" in item]
+        if len(receipts) != 1:
+            raise OutputError("NATIVE_WORKTREE_RECEIPT_MISSING_OR_AMBIGUOUS")
+        receipt = receipts[0]
+        original = Path(receipt.get("path", ""))
+        node = receipt.get("node")
+        if not isinstance(node, list) or len(node) != 2:
+            raise OutputError("NATIVE_WORKTREE_RECEIPT_INVALID")
+        durable = Path(os.path.abspath(durable_evidence))
+        _no_symlinks(durable)
+        if not durable.is_dir():
+            raise OutputError("NATIVE_QUARANTINE_DURABLE_ROOT_INVALID")
+        operation_path = durable / f"worktree-quarantine-{node[1]}.json"
+        phase_path = binding_path.parent / "phases" / "worktree-removed.json"
+        source_exists = os.path.lexists(original)
+        if not operation_path.exists() and not operation_path.is_symlink():
+            if not source_exists:
+                raise OutputError("NATIVE_QUARANTINE_OPERATION_MISSING_FOR_ABSENT_OUTPUT")
+            if phase_path.exists() or phase_path.is_symlink():
+                raise OutputError("NATIVE_WORKTREE_PHASE_WITHOUT_OPERATION")
+            return {"status": "not-yet-moved", "path": str(original)}
+        if operation_path.is_symlink() or not operation_path.is_file():
+            raise OutputError("NATIVE_QUARANTINE_OPERATION_UNREADABLE")
+        operation = _json(operation_path)
+        parent_binding = owner.get("quarantine_parent")
+        if not isinstance(parent_binding, dict) or not isinstance(parent_binding.get("path"), str):
+            raise OutputError("NATIVE_QUARANTINE_PARENT_BINDING_MISSING")
+        quarantine_parent = Path(parent_binding["path"])
+        _no_symlinks(quarantine_parent)
+        parent_stat = quarantine_parent.lstat()
+        destination = quarantine_parent / original.name
+        _no_symlinks(original.parent)
+        try:
+            source_parent_node = _node(original.parent.lstat())
+        except OSError as error:
+            raise OutputError("NATIVE_WORKTREE_SOURCE_PARENT_UNREADABLE") from error
+        if source_parent_node != receipt.get("parent_node"):
+            raise OutputError("NATIVE_WORKTREE_SOURCE_PARENT_CHANGED")
+        git_binding = receipt.get("git_worktree")
+        if (not isinstance(git_binding, dict)
+                or operation.get("schema_version") != SCHEMA_VERSION
+                or operation.get("operation") != "registered-worktree-quarantine"
+                or operation.get("task") != owner.get("task")
+                or operation.get("attempt") != owner.get("attempt")
+                or operation.get("source") != str(original)
+                or operation.get("source_node") != node
+                or operation.get("source_parent_node") != receipt.get("parent_node")
+                or operation.get("repository") != git_binding.get("repository")
+                or operation.get("head") != git_binding.get("head")
+                or operation.get("current_head") != binding.get("source", {}).get("commit")
+                or operation.get("destination") != str(destination)
+                or operation.get("quarantine_parent") != str(quarantine_parent)
+                or operation.get("quarantine_parent_node") != parent_binding.get("node")
+                or parent_binding.get("node") != _node(parent_stat)
+                or operation.get("physical_bytes_reclaimed") != 0
+                or not isinstance(operation.get("evidence_entries"), list)):
+            raise OutputError("NATIVE_WORKTREE_QUARANTINE_BINDING_MISMATCH")
+        if operation.get("status") not in {"intent", "complete"}:
+            raise OutputError("NATIVE_QUARANTINE_OPERATION_STATUS_INVALID")
+        if ((operation.get("status") == "complete" and operation.get("result_persisted") is not True)
+                or (operation.get("status") == "intent" and operation.get("result_persisted") is not False)):
+            raise OutputError("NATIVE_QUARANTINE_RESULT_NOT_PERSISTED")
+        if phase_path.exists() or phase_path.is_symlink():
+            return {"status": "phase-present", "path": str(phase_path)}
+        destination_exists = os.path.lexists(destination)
+        if source_exists and not destination_exists and operation.get("status") == "intent":
+            return {"status": "move-not-yet-observed", "path": str(original)}
+        if source_exists or not destination_exists:
+            raise OutputError("NATIVE_QUARANTINE_RECOVERY_LOCATIONS_AMBIGUOUS")
+        _no_symlinks(destination.parent)
+        moved_stat = destination.lstat()
+        if (_node(moved_stat) != node or moved_stat.st_dev != parent_stat.st_dev
+                or operation.get("destination_node") not in (None, _node(moved_stat))):
+            raise OutputError("NATIVE_QUARANTINE_RECOVERY_DESTINATION_CHANGED")
+        moved_receipt = {**receipt, "path": str(destination), "node": _node(moved_stat),
+                         "parent_node": _node(parent_stat)}
+        moved, registered_stat, registered = _registered_worktree(
+            moved_receipt, Path(git_binding["repository"]), binding["source"].get("commit"),
+        )
+        if (registered.get("head") != git_binding.get("head")
+                or _worktree_tree(moved, registered_stat.st_dev)[1] != operation["evidence_entries"]):
+            raise OutputError("NATIVE_QUARANTINE_RECOVERY_DESTINATION_CONTENT_CHANGED")
+        _verify_native_worktree_source(
+            moved, Path(git_binding["repository"]), binding,
+            owner_record=owner_record, durable_evidence=durable,
+        )
+        if operation.get("status") == "intent":
+            operation.update(status="complete", destination_node=_node(registered_stat),
+                             result_persisted=True, head=registered["head"])
+            _atomic_json(operation_path, operation)
+        phase = {
+            "record_type": "native_phase", "phase": "worktree-removed",
+            "root": str(original), "destination": str(destination),
+            "quarantine_operation": file_binding(operation_path),
+            "schema_version": SCHEMA_VERSION,
+            "source_commit": binding["source"].get("commit"),
+            "invocation_nonce": binding["invocation"].get("nonce"),
+            "invocation_root": binding["invocation"].get("root"),
+        }
+        try:
+            _write_exclusive(phase_path, phase)
+        except OSError as error:
+            raise OutputError("NATIVE_WORKTREE_PHASE_RECONCILIATION_WRITE_FAILED") from error
+        return {"status": "reconciled", "path": str(original),
+                "destination": str(destination), "node": _node(registered_stat),
+                "operation": file_binding(operation_path), "phase": file_binding(phase_path)}
+    finally:
+        os.close(lock)
+
+
 def verify_native_quarantine_operations(
     owner_record: Path,
     *,
@@ -2941,6 +3074,10 @@ def main(argv: list[str] | None = None) -> int:
     operation_verify.add_argument("--durable-evidence", type=Path, required=True)
     operation_verify.add_argument("--allow-current-path", type=Path)
     operation_verify.add_argument("--require-complete", action="store_true")
+    native_worktree_reconcile = commands.add_parser("native-worktree-phase-reconcile")
+    native_worktree_reconcile.add_argument("--owner-record", type=Path, required=True)
+    native_worktree_reconcile.add_argument("--invocation-record", type=Path, required=True)
+    native_worktree_reconcile.add_argument("--durable-evidence", type=Path, required=True)
     for name in ("native-quarantine-plan", "native-quarantine-execute"):
         operation = commands.add_parser(name)
         operation.add_argument("--owner-record", type=Path, required=True)
@@ -3013,6 +3150,11 @@ def main(argv: list[str] | None = None) -> int:
                 require_complete=args.require_complete,
             )
             print(json.dumps({"status": "PASS", "operations": operations}, sort_keys=True))
+        elif args.command == "native-worktree-phase-reconcile":
+            print(json.dumps(reconcile_native_worktree_quarantine_phase(
+                args.owner_record, invocation_record=args.invocation_record,
+                durable_evidence=args.durable_evidence,
+            ), sort_keys=True))
         elif args.command == "native-quarantine-plan":
             print(json.dumps(plan_native_quarantine(args.owner_record, output_path=args.path,
                                                     destination=args.destination), sort_keys=True))

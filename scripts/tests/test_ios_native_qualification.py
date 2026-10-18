@@ -400,6 +400,79 @@ class IosNativeQualificationTests(
             self.assertEqual(json.loads(operation_path.read_text(encoding="utf-8"))["status"], "complete")
 
     @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_recovers_native_worktree_move_before_adapter_result_and_phase(self):
+        result, evidence = self._run_fixture_qualification("native-worktree-move-result-interrupted")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+        self.assertEqual((evidence / "movement-events.jsonl").read_text(encoding="utf-8").count("WORKTREE_MOVE:"), 1)
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(encoding="utf-8"))
+        receipt = next(item for item in owner["owned_outputs"] if "git_worktree" in item)
+        original = Path(receipt["path"])
+        destination = Path(owner["quarantine_parent"]["path"]) / original.name
+        self.assertFalse(original.exists())
+        self.assertEqual(destination.stat().st_ino, receipt["node"][1])
+        listed = subprocess.run(
+            ["git", "-C", receipt["git_worktree"]["repository"], "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, check=True,
+        ).stdout.splitlines()
+        self.assertEqual(listed.count("worktree " + str(destination)), 1)
+        operation_path = evidence / "native-lifecycle" / "retained-outputs" / (
+            f"worktree-quarantine-{receipt['node'][1]}.json")
+        operation = json.loads(operation_path.read_text(encoding="utf-8"))
+        self.assertEqual(operation["status"], "complete")
+        self.assertTrue(operation["result_persisted"])
+        phase_path = evidence / "native-lifecycle" / "phases" / "worktree-removed.json"
+        phase = json.loads(phase_path.read_text(encoding="utf-8"))
+        self.assertEqual(phase["quarantine_operation"]["sha256"], hashlib.sha256(
+            operation_path.read_bytes()).hexdigest())
+        reconciliation_records = [json.loads(line) for line in (evidence / "native-lifecycle" /
+                                    "worktree-phase-reconciliation.stdout.log").read_text(
+                                        encoding="utf-8").splitlines()]
+        reconciliation = next(item for item in reconciliation_records
+                              if item.get("status") == "reconciled")
+        self.assertEqual(Path(reconciliation["destination"]), destination)
+        self.assertEqual(reconciliation["node"], receipt["node"])
+        self.assertEqual(reconciliation["operation"]["sha256"], hashlib.sha256(
+            operation_path.read_bytes()).hexdigest())
+        fresh_verify = evidence / "native-lifecycle" / "cleanup-verify-derived-data-quarantine.stdout.log"
+        self.assertEqual(json.loads(fresh_verify.read_text(encoding="utf-8"))["status"], "PASS")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_recovers_native_worktree_result_complete_before_phase(self):
+        result, evidence = self._run_fixture_qualification("native-worktree-phase-write-interrupted")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+        self.assertEqual((evidence / "movement-events.jsonl").read_text(encoding="utf-8").count("WORKTREE_MOVE:"), 1)
+        reconciliation_records = [json.loads(line) for line in (evidence / "native-lifecycle" /
+                                    "worktree-phase-reconciliation.stdout.log").read_text(
+                                        encoding="utf-8").splitlines()]
+        reconciliation = next(item for item in reconciliation_records
+                              if item.get("status") == "reconciled")
+        operation_path = Path(reconciliation["operation"]["path"])
+        operation_before = json.loads(operation_path.read_text(encoding="utf-8"))
+        self.assertEqual(operation_before["status"], "complete")
+        self.assertTrue(operation_before["result_persisted"])
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_refuses_mutated_destination_during_native_worktree_recovery(self):
+        result, evidence = self._run_fixture_qualification("native-worktree-move-destination-mutated")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("NATIVE_QUARANTINE_RECOVERY_DESTINATION_CONTENT_CHANGED",
+                      manifest["cleanup_disposition"]["reason"])
+        self.assertEqual((evidence / "movement-events.jsonl").read_text(encoding="utf-8").count("WORKTREE_MOVE:"), 1)
+        self.assertTrue((evidence / "Nutrition App Native").exists() is False)
+        self.assertTrue((evidence / "DerivedData").is_dir())
+        self.assertTrue((evidence / "harness-bin").is_dir())
+        self.assertFalse((evidence / "native-lifecycle" / "phases" / "worktree-removed.json").exists())
+
+    @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_retains_unique_untracked_and_ignored_worktree_sources(self):
         result, evidence, evidence_parent = self._run_fixture_qualification(
             "native-worktree-unique-source", return_evidence_parent=True,
@@ -2813,6 +2886,13 @@ fi
 """)
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
         write("python3", r'''
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "native-worktree-phase-write-interrupted" ] &&
+  [ "${1-}" = "-" ] && [ "${4-}" = "worktree-removed" ] &&
+  ! test -e "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-worktree-phase-write-interrupted"
+then
+  : > "$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/fixture-worktree-phase-write-interrupted"
+  exit 74
+fi
 if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "native-worktree-unregistered-during-derived-readback" ] &&
   [ "${1-}" = "-" ] && [ "${11-}" = "derived-data" ]; then
   moved_worktree="$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/native-lifecycle/quarantine/Nutrition App Native"
@@ -3093,6 +3173,29 @@ if [ -n "${IOS_NATIVE_FIXTURE_EVENTS-}" ]; then
       ;;
   esac
 fi
+case "${IOS_NATIVE_FIXTURE_MODE-}" in
+  native-worktree-move-result-interrupted|native-worktree-move-destination-mutated)
+    case " $* " in
+      *" worktree move "*)
+        previous=""
+        last=""
+        for argument in "$@"; do previous="$last"; last="$argument"; done
+        "$REAL_GIT" "$@"
+        status="$?"
+        if [ "$status" -eq 0 ] &&
+          ! test -e "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-worktree-move-interrupted"
+        then
+          : > "$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/fixture-worktree-move-interrupted"
+          if [ "$IOS_NATIVE_FIXTURE_MODE" = "native-worktree-move-destination-mutated" ]; then
+            printf 'mutated after native worktree move\n' >> "$last/tracked.txt"
+          fi
+          exit 97
+        fi
+        exit "$status"
+        ;;
+    esac
+    ;;
+esac
 if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "native-worktree-unique-source" ]; then
   case " $* " in
     *" worktree add "*)

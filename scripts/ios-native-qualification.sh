@@ -325,9 +325,6 @@ verify_before_disposal() {
   local verify_status=0
   local stdout_path="$native_lifecycle_dir/cleanup-verify-$operation.stdout.log"
   local stderr_path="$native_lifecycle_dir/cleanup-verify-$operation.stderr.log"
-  local derived_phase_path="$native_lifecycle_dir/phases/derived-data-removed.json"
-  local derived_phase_exists=0
-  local proof_readback_done=0
 
   if test -z "$native_lifecycle_binding" ||
     ! test -f "$native_lifecycle_binding"
@@ -336,17 +333,17 @@ verify_before_disposal() {
     return 1
   fi
 
-  if test -e "$derived_phase_path" || test -L "$derived_phase_path"
-  then
-    derived_phase_exists=1
-  fi
-  if test "$operation" != output-owner-terminal && test "$derived_phase_exists" -eq 1
+  if test "$operation" != output-owner-terminal
   then
     if ! verify_native_proof_readback_before_operation "$operation"
     then
       return 1
     fi
-    proof_readback_done=1
+    if ! reconcile_native_worktree_phase
+    then
+      mark_cleanup_incomplete "native worktree phase reconciliation refused before $operation"
+      return 1
+    fi
   fi
 
   "$native_lifecycle_python" \
@@ -377,7 +374,7 @@ verify_before_disposal() {
     mark_cleanup_incomplete "verification refused before $operation: ${detail:-no verifier detail}"
     return 1
   fi
-  if test "$operation" != output-owner-terminal && test "$proof_readback_done" -eq 0
+  if test "$operation" != output-owner-terminal
   then
     if ! verify_native_proof_readback_before_operation "$operation"
     then
@@ -424,6 +421,36 @@ verify_before_disposal() {
   fi
 }
 
+reconcile_native_worktree_phase() {
+  local status=0
+  local stdout_path="$native_lifecycle_dir/worktree-phase-reconciliation.stdout.log"
+  local stderr_path="$native_lifecycle_dir/worktree-phase-reconciliation.stderr.log"
+  "$native_lifecycle_python" "$native_output_cleanup" native-worktree-phase-reconcile \
+    --owner-record "$native_output_owner" \
+    --invocation-record "$native_lifecycle_binding" \
+    --durable-evidence "$native_output_durable" \
+    >> "$stdout_path" 2>> "$stderr_path" || status="$?"
+  if test "$status" -ne 0
+  then
+    return "$status"
+  fi
+  return 0
+}
+
+recover_native_worktree_quarantine() {
+  if ! verify_native_proof_readback_before_operation worktree-quarantine
+  then
+    return 1
+  fi
+  if ! reconcile_native_worktree_phase
+  then
+    return 1
+  fi
+  # Recheck the installed producer and every native operation after the
+  # adapter has restored the source-bound phase, before continuing cleanup.
+  verify_before_disposal derived-data-quarantine
+}
+
 cleanup_stage() {
   cleanup_disposition="IN_PROGRESS"
   cleanup_reason=""
@@ -454,9 +481,14 @@ cleanup_stage() {
     if ! execute_verified_native_quarantine worktree "$probe_root" "$worktree_destination"
     then
       local detail
+      local recovery_detail
       detail="$(tail -n 1 "$native_lifecycle_dir/quarantine-worktree.stderr.log" 2>/dev/null || true)"
-      mark_cleanup_incomplete "registered worktree quarantine failed; retained $probe_root: ${detail:-no adapter detail}"
-      return 1
+      if ! recover_native_worktree_quarantine
+      then
+        recovery_detail="$(tail -n 1 "$native_lifecycle_dir/worktree-phase-reconciliation.stderr.log" 2>/dev/null || true)"
+        mark_cleanup_incomplete "registered worktree quarantine failed; retained $probe_root: ${recovery_detail:-${detail:-no adapter detail}}"
+        return 1
+      fi
     fi
     cleanup_removed_roots="${cleanup_removed_roots}${probe_root}
 "
@@ -485,8 +517,13 @@ PY
     )" || return 1
     if ! record_native_phase worktree-removed "$worktree_phase_details"
     then
-      mark_cleanup_incomplete "worktree quarantine phase evidence failed after moving $probe_root"
-      return 1
+      if ! recover_native_worktree_quarantine
+      then
+        local recovery_detail
+        recovery_detail="$(tail -n 1 "$native_lifecycle_dir/worktree-phase-reconciliation.stderr.log" 2>/dev/null || true)"
+        mark_cleanup_incomplete "worktree quarantine phase evidence failed after moving $probe_root: ${recovery_detail:-no adapter detail}"
+        return 1
+      fi
     fi
     worktree_created=0
   fi
@@ -1790,14 +1827,7 @@ def verify_producer_before_move():
             print(f"NATIVE_PRIOR_OUTPUT_READBACK_REQUIRED_FAILURE:{error}", file=sys.stderr)
             raise SystemExit(1) from error
 
-    derived_phase = Path(binding_path).parent / "phases" / "derived-data-removed.json"
-    if derived_phase.exists() or derived_phase.is_symlink():
-        verify_native_proofs()
-        status = verifier.verify_command(binding_path, [])
-        if status:
-            raise SystemExit(status)
-        verify_prior_operations()
-        return
+    verify_native_proofs()
     status = verifier.verify_command(binding_path, [])
     if status:
         raise SystemExit(status)
