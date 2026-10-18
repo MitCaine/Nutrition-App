@@ -16,6 +16,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable, Protocol
+import zipfile
 
 from lib.task_authorization import (
     AUTHORIZATION_MARKERS,
@@ -37,6 +38,7 @@ from lib.capsule_contract import (ExecutionError, EvidenceError,
     GOVERNING_ISSUE_REPLAN_REQUIRED, GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE,
     GOVERNING_ISSUE_REVALIDATION_INVALID)
 from lib import path_scope, task_closeout
+from lib import task_output_cleanup as output_cleanup
 from lib.ri_consumer import RIError
 
 
@@ -6141,6 +6143,905 @@ def command_validate_record(args: argparse.Namespace) -> int:
     return 0
 
 
+def _output_helper_selection(repo: Path) -> tuple[Path, str]:
+    mapping = (repo / "docs/local_project_map.md").read_text(encoding="utf-8")
+    match = re.search(r"(?ms)^### Optional task-output cleanup helper\s*\n(?P<body>.*?)(?=^### |^## |\Z)", mapping)
+    if match is None:
+        raise TaskControllerError("OUTPUT_SHARED_HELPER_SELECTION_MISSING")
+    section = match.group("body")
+    revision = re.search(r"(?m)^Optional task-output cleanup helper revision: \x60([0-9a-f]{40})\x60$", section)
+    location = re.search(r"authenticated RI checkout\s*\x60([^\x60]+)\x60", section)
+    if revision is None or location is None:
+        raise TaskControllerError("OUTPUT_SHARED_HELPER_SELECTION_INVALID")
+    root = Path(location.group(1))
+    if not root.is_absolute():
+        raise TaskControllerError("OUTPUT_SHARED_HELPER_PATH_INVALID")
+    try:
+        root = root.resolve(strict=True)
+        actual = git(root, "rev-parse", "HEAD")
+        dirty = git(root, "status", "--porcelain=v1", "-uall")
+    except (OSError, TaskControllerError) as error:
+        raise TaskControllerError("OUTPUT_SHARED_HELPER_UNAVAILABLE") from error
+    if actual != revision.group(1) or dirty:
+        raise TaskControllerError("OUTPUT_SHARED_HELPER_SOURCE_MISMATCH")
+    return root, revision.group(1)
+
+
+def _shared_output_assess(root: Path, revision: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Authenticate and run the selected helper in an isolated interpreter."""
+    program = r'''import hashlib, importlib, json, os, pathlib, subprocess, sys
+root = pathlib.Path(sys.argv[1]).resolve(strict=True)
+revision = sys.argv[2]
+sys.path.insert(0, str(root / "src"))
+module = importlib.import_module("repository_intelligence.output_cleanup")
+loaded = []
+for name, item in sorted(tuple(sys.modules.items())):
+    if not name.startswith("repository_intelligence") or not getattr(item, "__file__", None):
+        continue
+    path = pathlib.Path(item.__file__).resolve(strict=True)
+    if not path.is_relative_to(root / "src"):
+        raise SystemExit("OUTPUT_SHARED_IMPORT_PATH_MISMATCH:" + name)
+    relative = path.relative_to(root).as_posix()
+    committed = subprocess.check_output(["git", "--no-replace-objects", "-C", str(root), "show", revision + ":" + relative])
+    raw = path.read_bytes()
+    if raw != committed:
+        raise SystemExit("OUTPUT_SHARED_IMPORT_BYTES_MISMATCH:" + name)
+    loaded.append({"module": name, "path": str(path), "sha256": hashlib.sha256(raw).hexdigest()})
+request = json.load(sys.stdin)
+operation = request.get("operation", "assess")
+if operation not in {"assess", "dispose"}:
+    raise SystemExit("OUTPUT_SHARED_OPERATION_INVALID")
+results = []
+for item in request["items"]:
+    if operation == "assess":
+        result = module.assess_output(item["receipt"], item["observation"],
+                                      protected=item["protected"], retained=item["retained"])
+    else:
+        def dispose(path):
+            if str(path) != item["receipt"].get("path"):
+                raise ValueError("adapter target differs from the selected receipt")
+            destination = pathlib.Path(item["destination"])
+            source = pathlib.Path(path)
+            if (not destination.is_absolute() or destination != pathlib.Path(os.path.normpath(destination))
+                    or destination.exists() or destination.is_symlink()
+                    or destination.parent.stat().st_dev != source.stat(follow_symlinks=False).st_dev):
+                raise ValueError("unsafe or cross-device quarantine destination")
+            os.rename(source, destination)
+            return {"kind": "quarantined", "path": str(destination)}
+        result = module.dispose_output(item["receipt"], item["observation"],
+                                       protected=item["protected"], retained=item["retained"],
+                                       authorized=True, dispose=dispose)
+    results.append(result)
+print(json.dumps({"source_revision": revision, "source_root": str(root),
+                  "modules": loaded, "results": results}, sort_keys=True))
+'''
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", program, str(root), revision],
+        input=json.dumps(payload, sort_keys=True), text=True, capture_output=True, check=False,
+        cwd=root,
+        env={"PATH": os.environ.get("PATH", ""), "HOME": str(Path.home()),
+             "PYTHONDONTWRITEBYTECODE": "1", "LANG": "C.UTF-8"},
+    )
+    if completed.returncode:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise TaskControllerError("OUTPUT_SHARED_HELPER_REFUSED: " + detail)
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise TaskControllerError("OUTPUT_SHARED_HELPER_RESULT_INVALID") from error
+    if result.get("source_revision") != revision or result.get("source_root") != str(root):
+        raise TaskControllerError("OUTPUT_SHARED_HELPER_RESULT_BINDING_MISMATCH")
+    return result
+
+
+def _output_paths_overlap(first: Path, second: Path) -> bool:
+    return first == second or first in second.parents or second in first.parents
+
+
+def _output_current_reference(state: dict[str, Any] | None) -> dict[str, Any] | None:
+    closeout = state.get("output_closeout") if isinstance(state, dict) else None
+    binding = closeout.get("current_reference") if isinstance(closeout, dict) else None
+    if binding is None:
+        return None
+    if not isinstance(binding, dict) or set(binding) != {"path", "sha256"}:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_REFERENCE_INVALID")
+    path = Path(binding["path"])
+    observed = output_cleanup.file_binding(path)
+    if observed != binding:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_REFERENCE_CHANGED")
+    try:
+        reference = output_cleanup.read_current_reference(path)
+    except (OSError, ValueError, output_cleanup.OutputError) as error:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_REFERENCE_UNREADABLE") from error
+    return reference
+
+
+def _resolve_output_owner_record(path: Path, state: dict[str, Any] | None) -> Path:
+    supplied = Path(os.path.normpath(str(path.absolute())))
+    if supplied.is_file() and not supplied.is_symlink():
+        return supplied
+    reference = _output_current_reference(state)
+    if reference is None:
+        raise TaskControllerError("OUTPUT_EXECUTION_RECORD_INVALID")
+    matches = [item for item in reference["relocations"]
+               if item["original_path"] == str(supplied)]
+    if len(matches) != 1:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_OWNER_REFERENCE_MISSING")
+    selected = Path(matches[0]["current_path"])
+    if not selected.is_file() or selected.is_symlink():
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_OWNER_REFERENCE_UNREADABLE")
+    if output_cleanup.file_binding(selected) != {
+            "path": str(selected), "sha256": matches[0]["current_sha256"]}:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_OWNER_REFERENCE_CHANGED")
+    return selected
+
+
+def _output_authored_member(
+    attempt_root: Path,
+    value: Any,
+    current_reference: dict[str, Any] | None,
+    expected_sha256: str | None = None,
+) -> tuple[Path, bytes]:
+    if not isinstance(value, str) or not value:
+        raise output_cleanup.OutputError("AUTHORED_EVIDENCE_PATH_INVALID")
+    raw_path = Path(value)
+    if raw_path.is_absolute():
+        original = Path(os.path.abspath(raw_path))
+    else:
+        if any(part in {"", ".", ".."} for part in raw_path.parts):
+            raise output_cleanup.OutputError("AUTHORED_EVIDENCE_PATH_INVALID")
+        original = Path(os.path.abspath(attempt_root / raw_path))
+    root = Path(os.path.abspath(attempt_root))
+    if not original.is_relative_to(root):
+        raise output_cleanup.OutputError("AUTHORED_EVIDENCE_ESCAPES_ATTEMPT")
+
+    selected = original
+    if current_reference is not None:
+        matches = [entry for entry in current_reference.get("relocations", [])
+                   if isinstance(entry, dict) and entry.get("original_path") == str(original)
+                   and (expected_sha256 is None or entry.get("original_sha256") == expected_sha256)]
+        if len(matches) > 1:
+            raise output_cleanup.OutputError("AUTHORED_EVIDENCE_REFERENCE_AMBIGUOUS")
+        if matches:
+            selected = Path(matches[0]["current_path"])
+            expected_sha256 = matches[0].get("current_sha256")
+    if current_reference is not None and selected != original:
+        durable_root = Path(current_reference["current_attempt_directory"])
+        if not selected.is_relative_to(durable_root):
+            raise output_cleanup.OutputError("AUTHORED_EVIDENCE_REFERENCE_ESCAPES_DURABLE_ROOT")
+    binding = output_cleanup.file_binding(selected)
+    if expected_sha256 is not None and binding["sha256"] != expected_sha256:
+        raise output_cleanup.OutputError("AUTHORED_EVIDENCE_HASH_MISMATCH")
+    return selected, selected.read_bytes()
+
+
+def _output_source_fingerprint(snapshot: dict[str, Any]) -> str:
+    payload = {key: value for key, value in snapshot.items() if key != "captured_at"}
+    raw = (json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _output_owner_terminal_evidence(
+    record_path: Path, record: dict[str, Any], request: dict[str, Any],
+    current_reference: dict[str, Any] | None = None,
+) -> bool:
+    status = record.get("status")
+    if status not in {"complete", "failed", "superseded-terminal"}:
+        return False
+    if record_path.name == "attempt-state.json":
+        root = Path(record.get("attempt_directory", record_path.parent))
+        if root == record_path.parent:
+            complete_path = root / "complete.json"
+            results_path = root / "results.json"
+        elif current_reference is not None:
+            owner_relocations = [item for item in current_reference["relocations"]
+                                 if item.get("original_path") == str(root / "attempt-state.json")
+                                 and item.get("current_path") == str(record_path)]
+            if len(owner_relocations) != 1:
+                return False
+            complete_matches = [item for item in current_reference["relocations"]
+                                if item.get("original_path") == str(root / "complete.json")]
+            results_matches = [item for item in current_reference["relocations"]
+                               if item.get("original_path") == str(root / "results.json")]
+            if len(complete_matches) != 1 or len(results_matches) != 1:
+                return False
+            complete_path = Path(complete_matches[0]["current_path"])
+            results_path = Path(results_matches[0]["current_path"])
+        else:
+            return False
+        marker = root / "in-progress.marker"
+        if ((root == record_path.parent and (marker.exists() or marker.is_symlink()))
+                or not complete_path.is_file() or complete_path.is_symlink()):
+            return False
+        try:
+            complete = output_cleanup._json(complete_path)
+            results_bytes = _output_authored_member(root, "results.json", current_reference,
+                                                    complete.get("results_sha256"))[1]
+            results = output_cleanup._json(results_path)
+            complete_hash = hashlib.sha256(results_bytes).hexdigest()
+        except (OSError, ValueError, output_cleanup.OutputError):
+            return False
+        if not (
+            complete.get("attempt") == record.get("attempt")
+            and complete.get("request_sha256") == record.get("request_sha256")
+            and complete.get("expected_head") == request.get("expected_head")
+            and complete.get("results_sha256") == complete_hash
+            and complete.get("status") == results.get("status")
+            and results.get("status") in {"passed", "failed"}
+            and status == ("complete" if results.get("status") == "passed" else "failed")
+            and results.get("attempt", results.get("run_id")) == record.get("attempt")
+        ):
+            return False
+
+        try:
+            authored = results["authored_commands"]
+            source_observation = authored["source_observation"]
+            steps = authored["steps"]
+            if (authored.get("attempt") != record.get("attempt")
+                    or authored.get("expected_head") != request.get("expected_head")
+                    or authored.get("repository") != request.get("repository")
+                    or source_observation.get("status") != "stable"
+                    or not isinstance(steps, list)):
+                return False
+            for step in steps:
+                if not isinstance(step, dict):
+                    return False
+                for path_key, hash_key in (("stdout_log", "stdout_sha256"),
+                                           ("stderr_log", "stderr_sha256"),
+                                           ("runner_log", "runner_log_sha256")):
+                    if not isinstance(step.get(path_key), str) or not isinstance(step.get(hash_key), str):
+                        return False
+                    _output_authored_member(root, step[path_key], current_reference, step[hash_key])
+                warning_log = step.get("warning_log")
+                if warning_log:
+                    _output_authored_member(root, warning_log, current_reference)
+            warnings = results.get("warnings", [])
+            if not isinstance(warnings, list):
+                return False
+            for warning in warnings:
+                if not isinstance(warning, dict) or not isinstance(warning.get("log"), str):
+                    return False
+                _output_authored_member(root, warning["log"], current_reference)
+
+            before_path = source_observation.get("before_path")
+            after_path = source_observation.get("after_path")
+            before_raw = _output_authored_member(root, before_path, current_reference)[1]
+            after_raw = _output_authored_member(root, after_path, current_reference)[1]
+            before = json.loads(before_raw)
+            after = json.loads(after_raw)
+            package_raw = _output_authored_member(root, "source-after-package.json", current_reference)[1]
+            packaged = json.loads(package_raw)
+            source_fingerprint = source_observation.get("before_fingerprint")
+            if (not isinstance(before, dict) or not isinstance(after, dict) or not isinstance(packaged, dict)
+                    or _output_source_fingerprint(before) != source_fingerprint
+                    or _output_source_fingerprint(after) != source_fingerprint
+                    or _output_source_fingerprint(packaged) != source_fingerprint
+                    or complete.get("source_stable") is not True
+                    or complete.get("source_before_sha256") != source_fingerprint
+                    or complete.get("source_after_package_sha256") != source_fingerprint
+                    or any(snapshot.get("repository") != request.get("repository")
+                           or snapshot.get("head") != request.get("expected_head")
+                           or snapshot.get("status_entry_count") != 0
+                           for snapshot in (before, after, packaged))):
+                return False
+
+            bundle_path, bundle_bytes = _output_authored_member(
+                root, complete.get("bundle_path"), current_reference, complete.get("bundle_sha256"))
+            with zipfile.ZipFile(bundle_path) as bundle:
+                if bundle.testzip() is not None or bundle.read("evidence/results.json") != results_bytes:
+                    return False
+            # Every ordinary file in the original attempt tree is either read above or
+            # independently authenticated by the copy/relocation manifest before moves.
+            if root.exists():
+                root_stat = root.lstat()
+                output_cleanup._walk_native_tree(root, root_stat.st_dev)
+        except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile,
+                output_cleanup.OutputError):
+            return False
+        return True
+    result = record.get("terminal_result")
+    if not isinstance(result, dict) or set(result) != {"path", "sha256"}:
+        return False
+    try:
+        observed = output_cleanup.file_binding(Path(result["path"]))
+        native_result = output_cleanup._json(Path(result["path"]))
+    except (OSError, ValueError, output_cleanup.OutputError):
+        return False
+    return bool(
+        observed == result and native_result.get("attempt") == record.get("attempt")
+        and native_result.get("candidate") == request.get("base")
+        and record.get("native_result_ready") is (status == "complete")
+    )
+
+
+def _output_closeout_disposition(
+    state: dict[str, Any] | None, issue_number: int, attempt: str,
+    record: dict[str, Any], request: dict[str, Any],
+) -> str:
+    task = f"GH-{issue_number}"
+    if (not isinstance(state, dict) or state.get("issue_number") != issue_number
+            or state.get("task_id") != task or workflow_mode_for_state(state) != "standard"):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_TASK_UNAUTHENTICATED")
+    if state.get("paused") is True or state.get("owner_pause") is True:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_TASK_PAUSED")
+    records = [state.get(name) for name in ("execution", "execution_checkpoint")
+               if state.get(name) is not None]
+    if not records or any(not isinstance(item, dict) for item in records):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_EXECUTION_UNKNOWN")
+    for current in records:
+        phase = current.get("phase")
+        if (current.get("paused") is True or current.get("owner_pause") is True
+                or phase in {"STOP_REPLAN", "CANCELLED", "PAUSED", "PENDING", "RUNNING", "IN_PROGRESS", "ACTIVE"}):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_EXECUTION_ACTIVE_OR_PAUSED")
+    attempts = {item.get("attempt") for item in records}
+    if len(attempts) != 1:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_EXECUTION_AMBIGUOUS")
+    candidate = request.get("expected_head", request.get("base"))
+    if not isinstance(candidate, str) or not re.fullmatch(r"[0-9a-f]{40}", candidate):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_REQUEST_CANDIDATE_INVALID")
+    if attempts == {attempt}:
+        current = records[0]
+        if (record.get("status") not in {"complete", "failed"} or state.get("phase") != "INTEGRATED"
+                or current.get("phase") != "VERIFIED_TERMINAL_CLOSEOUT_COMPLETE"
+                or current.get("installed_checks_due") is not False):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_ATTEMPT_NOT_VERIFIED_TERMINAL")
+        reviewer = current.get("reviewer_status")
+        if reviewer is None and isinstance(current.get("reviewer"), dict):
+            reviewer = current["reviewer"].get("status")
+        if not isinstance(reviewer, str) or reviewer.casefold() not in {"consumed", "pass consumed"}:
+            raise TaskControllerError("OUTPUT_CLOSEOUT_REVIEWER_DISPOSITION_UNKNOWN")
+        integration = state.get("integration")
+        qualification = state.get("qualification")
+        verification = state.get("verification")
+        review = state.get("review")
+        if (not isinstance(integration, dict) or integration.get("candidate_sha") != candidate
+                or integration.get("origin_main_after") != candidate
+                or integration.get("human_owner_authorized") is not True
+                or not isinstance(qualification, dict) or qualification.get("result") != "PASS"
+                or qualification.get("candidate_sha") != candidate
+                or not isinstance(verification, dict) or verification.get("decision") != "pass"
+                or verification.get("candidate_sha") != candidate
+                or not isinstance(review, dict) or review.get("decision") != "approved"
+                or review.get("candidate_sha") != candidate):
+            raise TaskControllerError("OUTPUT_CLOSEOUT_CONTROLLER_OBLIGATIONS_INCOMPLETE")
+        installed = current.get("installed_checks_evidence")
+        if not isinstance(installed, dict) or installed.get("candidate_sha") != candidate:
+            raise TaskControllerError("OUTPUT_CLOSEOUT_INSTALLED_EVIDENCE_MISSING")
+        output_cleanup.checkpoint_evidence_bindings(state)
+        return "completed"
+
+    # A previous attempt is eligible only when the current authenticated rework
+    # chain records its exact candidate as superseded by a different candidate.
+    binding = state.get("rework")
+    history = state.get("rework_history")
+    if not isinstance(binding, dict) or not isinstance(history, list):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_SUPERSESSION_NOT_PROVEN")
+    matches = [item for item in history if isinstance(item, dict)
+               and item.get("from_candidate_sha") == candidate
+               and item.get("selected_candidate_sha") == binding.get("candidate_sha")]
+    if (len(matches) != 1 or binding.get("from_candidate_sha") != candidate
+            or binding.get("candidate_sha") == candidate):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_SUPERSESSION_NOT_PROVEN")
+    archive = matches[0]
+    qualification = archive.get("qualification")
+    verification = archive.get("verification")
+    review = archive.get("review")
+    operation = archive.get("qualification_operation")
+    if (record.get("status") not in {"complete", "failed"}
+            or not isinstance(archive.get("checkpoint_sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", archive["checkpoint_sha256"])
+            or not isinstance(qualification, dict) or qualification.get("candidate_sha") != candidate
+            or qualification.get("result") not in {"PASS", "FAIL"}
+            or not isinstance(verification, dict) or verification.get("candidate_sha") != candidate
+            or verification.get("decision") not in {"pass", "fail"}
+            or not isinstance(review, dict) or review.get("candidate_sha") != candidate
+            or review.get("decision") != "changes-requested"
+            or not isinstance(operation, dict) or operation.get("status") != "COMPLETE"
+            or operation.get("candidate_sha") != candidate
+            or operation.get("terminal_result") != qualification.get("result")):
+        raise TaskControllerError("OUTPUT_CLOSEOUT_SUPERSESSION_TERMINAL_PROOF_INVALID")
+    output_cleanup.checkpoint_evidence_bindings(state)
+    return "superseded_terminal"
+
+
+def command_output_closeout(args: argparse.Namespace) -> int:
+    if args.execute and not args.human_owner_authorized:
+        raise TaskControllerError("OUTPUT_CLOSEOUT_AUTHORIZATION_REQUIRED")
+    issue_task = f"GH-{args.issue_number}"
+    durable = args.durable_evidence.absolute()
+    output_cleanup._no_symlinks(durable)
+    if not durable.is_dir():
+        raise TaskControllerError("OUTPUT_DURABLE_EVIDENCE_ROOT_INVALID")
+    try:
+        state = load_state(args.state_dir, args.issue_number)
+    except TaskControllerError:
+        state = None
+    requested_record = args.execution_record.absolute()
+    record_path = _resolve_output_owner_record(requested_record, state)
+    reference = _output_current_reference(state)
+    if not record_path.is_file() or record_path.is_symlink():
+        raise TaskControllerError("OUTPUT_EXECUTION_RECORD_INVALID")
+    try:
+        execution = output_cleanup._json(record_path)
+    except (OSError, ValueError, output_cleanup.OutputError) as error:
+        raise TaskControllerError("OUTPUT_EXECUTION_RECORD_INVALID") from error
+    task = execution.get("task")
+    attempt = execution.get("attempt")
+    receipts = execution.get("owned_outputs")
+    if task != issue_task or not isinstance(attempt, str) or not attempt:
+        raise TaskControllerError("OUTPUT_EXECUTION_RECORD_TASK_MISMATCH")
+    if not isinstance(receipts, list) or not receipts:
+        raise TaskControllerError("OUTPUT_EXECUTION_RECORD_HAS_NO_RECEIPTS")
+    if any(not isinstance(receipt, dict) or receipt.get("task") != task
+           or receipt.get("attempt") != attempt for receipt in receipts):
+        raise TaskControllerError("OUTPUT_RECEIPT_TASK_MISMATCH")
+    for receipt in receipts:
+        if receipt.get("schema_version") != output_cleanup.SCHEMA_VERSION:
+            raise TaskControllerError("OUTPUT_RECEIPT_VERSION_INVALID")
+    if output_cleanup.paths_overlap(durable, record_path):
+        retained_owner = (reference is not None and record_path.is_relative_to(durable)
+                          and any(item.get("original_path") == str(requested_record)
+                                  and item.get("current_path") == str(record_path)
+                                  and item.get("current_sha256") == output_cleanup.file_binding(record_path)["sha256"]
+                                  for item in reference.get("relocations", [])))
+        if not retained_owner:
+            raise TaskControllerError("OUTPUT_DURABLE_EVIDENCE_ROOT_INVALID")
+
+    repo_root = resolve_repo_root(args.repo_root)
+    helper_source = helper_revision = None
+    if args.shared_helper:
+        helper_source, helper_revision = _output_helper_selection(repo_root)
+    request: dict[str, Any] | None = None
+    protected: list[str] = []
+    protection_error: str | None = None
+    try:
+        request, protected = output_cleanup.derive_protected_inputs(record_path, execution)
+        if (request.get("attempt") != attempt
+                or output_cleanup.task_identifier(request.get("assignment", attempt)) != task):
+            raise output_cleanup.OutputError("OWNER_REQUEST_TASK_OR_ATTEMPT_MISMATCH")
+        if not _output_owner_terminal_evidence(record_path, execution, request, reference):
+            raise output_cleanup.OutputError("OWNER_TERMINAL_RESULT_UNVERIFIED")
+    except (OSError, ValueError, KeyError, TypeError, output_cleanup.OutputError) as error:
+        protection_error = str(error)
+    try:
+        disposition = _output_closeout_disposition(state, args.issue_number, attempt, execution, request or {})
+    except (TaskControllerError, output_cleanup.OutputError) as error:
+        disposition = None
+        if protection_error is None:
+            protection_error = str(error)
+
+    # The selected RI949 helper requires actual retained-file bindings. Prepare
+    # that closure only on the explicitly authorized route, under the same owner
+    # exclusion used for disposal, then persist its current locators before asking
+    # the helper to assess or move any receipt.
+    if args.shared_helper and args.execute and reference is None and disposition is not None \
+            and protection_error is None:
+        try:
+            with output_cleanup.owner_lock(record_path, blocking=False):
+                current_state = load_state(args.state_dir, args.issue_number)
+                if _output_closeout_disposition(current_state, args.issue_number, attempt,
+                                                 execution, request or {}) != disposition:
+                    raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_DISPOSITION_CHANGED")
+                current_execution = output_cleanup._json(record_path)
+                current_request, current_protected = output_cleanup.derive_protected_inputs(
+                    record_path, current_execution)
+                if (current_request.get("attempt") != attempt
+                        or not _output_owner_terminal_evidence(record_path, current_execution,
+                                                               current_request, None)):
+                    raise output_cleanup.OutputError("OWNER_TERMINAL_RESULT_UNVERIFIED")
+                bindings = output_cleanup.checkpoint_evidence_bindings(current_state)
+                output_items = [{"receipt": row,
+                                 "kind": "worktree" if "git_worktree" in row else "plain"}
+                                for row in receipts]
+                reference = output_cleanup.create_current_reference(
+                    record_path, output_items, bindings, durable,
+                )
+                reference_binding = output_cleanup.file_binding(
+                    Path(reference["current_reference_path"]))
+
+                def bind_initial_reference(current: dict[str, Any]) -> dict[str, Any]:
+                    if _output_closeout_disposition(current, args.issue_number, attempt,
+                                                     execution, current_request) != disposition:
+                        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_DISPOSITION_CHANGED")
+                    relocated = output_cleanup.relocate_checkpoint_references(current, reference)
+                    closeout = dict(relocated.get("output_closeout", {}))
+                    closeout["current_reference"] = reference_binding
+                    relocated["output_closeout"] = closeout
+                    return relocated
+
+                checkpoint_transaction(args.state_dir, args.issue_number, bind_initial_reference)
+                state = load_state(args.state_dir, args.issue_number)
+                execution = current_execution
+                request = current_request
+                protected = current_protected
+                reference = _output_current_reference(state)
+        except (OSError, ValueError, KeyError, TypeError, output_cleanup.OutputError,
+                TaskControllerError) as error:
+            protection_error = str(error)
+
+    protected_paths = [Path(item) for item in protected]
+    reports: list[dict[str, Any]] = []
+    receipt_rows = []
+    for receipt in receipts:
+        path = Path(receipt.get("path", ""))
+        item: dict[str, Any] = {
+            "task": task, "attempt": attempt, "path": str(path), "owner_node": receipt.get("node"),
+            "owner_definition": receipt.get("definition"), "status": "retained",
+            "logical_bytes": None, "physical_bytes_reclaimed": 0, "reclaimed_bytes": 0,
+            "reason": protection_error or "current task completion and source recovery are unverified",
+        }
+        try:
+            if reference is not None:
+                previous = [operation for operation in state.get("output_closeout", {}).get("operations", [])
+                            if isinstance(operation, dict) and operation.get("original") == str(path)
+                            and operation.get("original_node") == receipt.get("node")]
+            else:
+                previous = []
+            if previous and previous[-1].get("status") == "complete":
+                destination = Path(previous[-1].get("destination", ""))
+                moved = destination.lstat()
+                if output_cleanup._node(moved) != receipt.get("node"):
+                    raise output_cleanup.OutputError("QUARANTINE_CURRENT_REFERENCE_NODE_MISMATCH")
+                output_cleanup._walk_native_tree(destination, moved.st_dev)
+                item.update(path=str(destination), status="already_quarantined", reason="verified prior quarantine",
+                            newly_removed_bytes=0, current_reference=state.get("output_closeout", {}).get("current_reference"))
+                reports.append(item)
+                receipt_rows.append((receipt, item))
+                continue
+            if previous and previous[-1].get("status") in {"pending", "incomplete"}:
+                destination = Path(previous[-1].get("destination", ""))
+                intent_path = durable / ("output-quarantine-" + str(receipt["node"][1]) + ".json")
+                if (not os.path.lexists(path) and os.path.lexists(destination)
+                        and intent_path.is_file() and not intent_path.is_symlink()):
+                    intent = output_cleanup._json(intent_path)
+                    moved = destination.lstat()
+                    if (intent.get("source") != str(path) or intent.get("source_node") != receipt.get("node")
+                            or intent.get("destination") != str(destination)
+                            or output_cleanup._node(moved) != receipt.get("node")
+                            or intent.get("destination_parent_node") != output_cleanup._node(destination.parent.lstat())
+                            or output_cleanup._walk_native_tree(destination, moved.st_dev)[1]
+                            != intent.get("evidence_entries")):
+                        raise output_cleanup.OutputError("QUARANTINE_INTERRUPTION_RECONCILIATION_MISMATCH")
+                    item.update(status="eligible", path=str(path), destination=str(destination),
+                                logical_bytes=intent.get("logical_bytes"), reconciliation_required=True,
+                                reason="authenticated pending quarantine requires actual-state reconciliation",
+                                task_state=disposition)
+                    reports.append(item)
+                    receipt_rows.append((receipt, item))
+                    continue
+            output_path, output_stat = output_cleanup.verify_receipt(receipt)
+            logical, entries = output_cleanup._walk_native_tree(output_path, output_stat.st_dev)
+            item.update(logical_bytes=logical, observed_entry_count=len(entries), status="retained")
+            if disposition is None or protection_error is not None:
+                item["reason"] = protection_error or "current controller disposition is not verified terminal"
+            else:
+                own_record_protected = (not record_path.is_relative_to(output_path)
+                                        and not output_path.is_relative_to(record_path))
+                blocked = any(output_cleanup.paths_overlap(output_path, protected_path)
+                              for protected_path in protected_paths)
+                if own_record_protected and output_cleanup.paths_overlap(output_path, record_path):
+                    blocked = True
+                if output_cleanup.paths_overlap(output_path, durable):
+                    blocked = True
+                for other in receipts:
+                    if other is receipt:
+                        continue
+                    other_path = Path(other.get("path", ""))
+                    if not output_cleanup.paths_overlap(output_path, other_path):
+                        continue
+                    nested_worktree = (isinstance(other.get("git_worktree"), dict)
+                                       and Path(other_path).parent == output_path)
+                    nested_container = (isinstance(receipt.get("git_worktree"), dict)
+                                        and Path(path).parent == other_path)
+                    if not (nested_worktree or nested_container):
+                        blocked = True
+                if blocked:
+                    item["reason"] = "output overlaps protected source, runtime, owner or durable evidence"
+                elif not _output_owner_terminal_evidence(record_path, execution, request or {}, reference):
+                    item["reason"] = "original owner terminal result is unavailable"
+                else:
+                    item.update(status="eligible", reason="terminal owner, protected inputs and current task state verified",
+                                task_state=disposition)
+                    if helper_source is not None:
+                        if "git_worktree" in receipt:
+                            item.update(status="retained", reason="selected helper does not own registered worktree movement")
+                        else:
+                            observation = {"task": task, "attempt": attempt, "state": disposition,
+                                           "exclusive": False, "quiescent": False,
+                                           "regenerable": False, "source_preserved": False,
+                                           "references_relocated": False}
+                            try:
+                                with output_cleanup.owner_lock(record_path, blocking=False):
+                                    current_owner = output_cleanup._json(record_path)
+                                    if (current_owner.get("task") != task
+                                            or current_owner.get("attempt") != attempt
+                                            or current_owner.get("status") not in {
+                                                "complete", "failed", "superseded-terminal"}
+                                            or current_owner.get("active_owner") is not None
+                                            or current_owner.get("pending_worktree_creation") is not None):
+                                        raise output_cleanup.OutputError("OWNER_CURRENT_PROCESS_OR_OPERATION_UNKNOWN")
+                                    observation.update(
+                                        exclusive=True,
+                                        quiescent=_output_owner_terminal_evidence(
+                                            record_path, current_owner, request or {}, reference),
+                                        regenerable=(receipt.get("schema_version") == output_cleanup.SCHEMA_VERSION
+                                                     and receipt.get("definition") is not None),
+                                        source_preserved=(request is not None and not protection_error),
+                                        references_relocated=(reference is not None and bool(reference.get("retained"))),
+                                    )
+                            except output_cleanup.OutputError:
+                                observation.update(exclusive=False, quiescent=False)
+                            retained = reference.get("retained", []) if reference is not None else []
+                            assessed = _shared_output_assess(helper_source, helper_revision, {
+                                "items": [{"receipt": receipt, "observation": observation,
+                                           "protected": protected, "retained": retained}],
+                            })
+                            shared = assessed["results"][0]
+                            item["shared_helper_assessment"] = shared
+                            if shared.get("status") != "eligible" or shared.get("bytes") != logical:
+                                item.update(status="retained", reason="selected helper assessment is not eligible")
+        except (OSError, ValueError, KeyError, TypeError, output_cleanup.OutputError) as error:
+            item.update(status="retained", reason=str(error))
+        reports.append(item)
+        receipt_rows.append((receipt, item))
+
+    if not args.execute:
+        try:
+            with output_cleanup.owner_lock(record_path, blocking=False):
+                pass
+        except output_cleanup.OutputError as error:
+            if str(error) == "OUTPUT_OWNER_ACTIVE":
+                raise TaskControllerError("OUTPUT_OWNER_ACTIVE") from error
+            raise TaskControllerError("OUTPUT_CLOSEOUT_REFUSED: " + str(error)) from error
+        emit({"task": task, "attempt": attempt,
+              "mode": "shared-helper" if args.shared_helper else "consumer-only",
+              "source": ({"root": str(helper_source), "revision": helper_revision} if helper_source else None),
+              "execution": "dry-run", "items": reports, "physical_bytes_reclaimed": 0})
+        return 0
+
+    try:
+        with output_cleanup.owner_lock(record_path, blocking=False):
+            for receipt, report in sorted(
+                    receipt_rows,
+                    key=lambda pair: (Path(pair[0].get("path", "")).is_relative_to(record_path.parent),
+                                      -len(Path(pair[0].get("path", "")).parts))):
+                if report.get("status") != "eligible":
+                    continue
+                output_path = Path(receipt["path"])
+                node = receipt["node"]
+                op_key = hashlib.sha256((str(output_path) + json.dumps(node)).encode()).hexdigest()[:20]
+                destination_parent = durable / f"quarantine-{attempt}-{op_key}"
+                destination = destination_parent / output_path.name
+                operation_id = op_key
+                try:
+                    def save_intent(current: dict[str, Any]) -> dict[str, Any]:
+                        current_disposition = _output_closeout_disposition(
+                            current, args.issue_number, attempt, execution, request or {},
+                        )
+                        if current_disposition != disposition:
+                            raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_DISPOSITION_CHANGED")
+                        closeout = dict(current.get("output_closeout", {}))
+                        operations = list(closeout.get("operations", []))
+                        matches = [entry for entry in operations if isinstance(entry, dict)
+                                   and entry.get("operation_id") == operation_id]
+                        intended = {"operation_id": operation_id, "task": task, "attempt": attempt,
+                                    "original": str(output_path), "original_node": node,
+                                    "destination": str(destination), "quarantine_parent": str(destination_parent),
+                                    "status": "pending", "mode": "shared-helper" if args.shared_helper else "consumer-only",
+                                    "shared_source": ({"root": str(helper_source), "revision": helper_revision}
+                                                      if helper_source else None),
+                                    "physical_bytes_reclaimed": 0}
+                        if len(matches) > 1:
+                            raise TaskControllerError("OUTPUT_CLOSEOUT_OPERATION_AMBIGUOUS")
+                        if matches:
+                            for key, value in intended.items():
+                                if key == "status" and matches[0].get(key) in {"pending", "incomplete"}:
+                                    matches[0][key] = "pending"
+                                    continue
+                                if matches[0].get(key) != value:
+                                    raise TaskControllerError("OUTPUT_CLOSEOUT_OPERATION_BINDING_CHANGED")
+                        else:
+                            operations.append(intended)
+                        closeout["operations"] = operations
+                        current["output_closeout"] = closeout
+                        return current
+                    checkpoint_transaction(args.state_dir, args.issue_number, save_intent)
+
+                    if destination_parent.exists() or destination_parent.is_symlink():
+                        closeout = load_state(args.state_dir, args.issue_number).get("output_closeout", {})
+                        known = [entry for entry in closeout.get("operations", [])
+                                 if isinstance(entry, dict) and entry.get("operation_id") == operation_id]
+                        expected_parent = known[0].get("quarantine_parent_node") if len(known) == 1 else None
+                        if expected_parent is None or output_cleanup._node(destination_parent.lstat()) != expected_parent:
+                            raise output_cleanup.OutputError("QUARANTINE_PARENT_ALREADY_EXISTS_UNKNOWN_OWNER")
+                    else:
+                        output_cleanup._ensure_quarantine_parent(destination_parent, receipt["node"][0])
+                        parent_node = output_cleanup._node(destination_parent.lstat())
+                        def bind_parent(current: dict[str, Any]) -> dict[str, Any]:
+                            closeout = dict(current.get("output_closeout", {}))
+                            operations = list(closeout.get("operations", []))
+                            matches = [entry for entry in operations if entry.get("operation_id") == operation_id]
+                            if len(matches) != 1 or matches[0].get("status") != "pending":
+                                raise TaskControllerError("OUTPUT_CLOSEOUT_OPERATION_INTENT_MISSING")
+                            matches[0]["quarantine_parent_node"] = parent_node
+                            closeout["operations"] = operations
+                            current["output_closeout"] = closeout
+                            return current
+                        checkpoint_transaction(args.state_dir, args.issue_number, bind_parent)
+
+                    current_state = load_state(args.state_dir, args.issue_number)
+                    current_reference = _output_current_reference(current_state)
+                    if current_reference is None:
+                        bindings = output_cleanup.checkpoint_evidence_bindings(current_state)
+                        output_items = [{"receipt": row, "kind": "worktree" if "git_worktree" in row else "plain"}
+                                        for row in receipts]
+                        current_reference = output_cleanup.create_current_reference(
+                            record_path, output_items, bindings, durable,
+                        )
+                    reference_binding = output_cleanup.file_binding(
+                        Path(current_reference["current_reference_path"]),
+                    )
+                    def bind_reference(current: dict[str, Any]) -> dict[str, Any]:
+                        current_disposition = _output_closeout_disposition(
+                            current, args.issue_number, attempt, execution, request or {},
+                        )
+                        if current_disposition != disposition:
+                            raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_DISPOSITION_CHANGED")
+                        relocated = output_cleanup.relocate_checkpoint_references(current, current_reference)
+                        closeout = dict(relocated.get("output_closeout", {}))
+                        closeout["current_reference"] = reference_binding
+                        relocated["output_closeout"] = closeout
+                        return relocated
+                    checkpoint_transaction(args.state_dir, args.issue_number, bind_reference)
+
+                    latest_state = load_state(args.state_dir, args.issue_number)
+                    latest_disposition = _output_closeout_disposition(
+                        latest_state, args.issue_number, attempt, execution, request or {},
+                    )
+                    if latest_disposition != disposition:
+                        raise TaskControllerError("OUTPUT_CLOSEOUT_CURRENT_DISPOSITION_CHANGED")
+                    latest_execution = output_cleanup._json(record_path)
+                    latest_request, latest_protected = output_cleanup.derive_protected_inputs(
+                        record_path, latest_execution,
+                    )
+                    if (latest_request.get("attempt") != attempt
+                            or latest_request.get("expected_head", latest_request.get("base"))
+                            != (request or {}).get("expected_head", (request or {}).get("base"))
+                            or not _output_owner_terminal_evidence(
+                                record_path, latest_execution, latest_request, current_reference,
+                            )):
+                        raise output_cleanup.OutputError("OWNER_TERMINAL_OR_SOURCE_RECOVERY_CHANGED")
+                    if (any(output_cleanup.paths_overlap(output_path, Path(item))
+                            for item in latest_protected)
+                            or output_cleanup.paths_overlap(output_path, durable)
+                            or (not record_path.is_relative_to(output_path)
+                                and output_cleanup.paths_overlap(output_path, record_path))):
+                        raise output_cleanup.OutputError("OUTPUT_BECAME_PROTECTED_BEFORE_MOVE")
+                    current_reference = output_cleanup.read_current_reference(
+                        Path(current_reference["current_reference_path"]),
+                    )
+                    request, protected = latest_request, latest_protected
+
+                    shared_disposer = None
+                    if helper_source is not None:
+                        current_owner = output_cleanup._json(record_path)
+                        _, current_output_stat = output_cleanup.verify_receipt(receipt)
+                        owner_is_terminal = current_owner.get("status") in {
+                            "complete", "failed", "superseded-terminal",
+                        }
+                        process_is_quiescent = (
+                            current_owner.get("active_owner") is None
+                            and not (Path(current_owner.get("attempt_directory", record_path.parent))
+                                     / "in-progress.marker").exists()
+                        )
+                        references_are_relocated = bool(
+                            current_reference.get("retained")
+                            and output_cleanup.checkpoint_evidence_bindings(latest_state)
+                        )
+                        observation = {
+                            "task": task,
+                            "attempt": attempt,
+                            "state": disposition,
+                            "exclusive": owner_is_terminal
+                                and output_cleanup._node(current_output_stat) == receipt["node"],
+                            "quiescent": process_is_quiescent and latest_disposition in {
+                                "completed", "superseded_terminal",
+                            },
+                            "regenerable": owner_is_terminal and "git_worktree" not in receipt,
+                            "source_preserved": _output_owner_terminal_evidence(
+                                record_path, current_owner, latest_request, current_reference,
+                            ) and not any(output_cleanup.paths_overlap(output_path, Path(item))
+                                          for item in latest_protected),
+                            "references_relocated": references_are_relocated,
+                        }
+                        if not all(observation[key] for key in (
+                                "exclusive", "quiescent", "regenerable", "source_preserved",
+                                "references_relocated")):
+                            raise output_cleanup.OutputError("OUTPUT_SHARED_HELPER_OBSERVATION_UNVERIFIED")
+
+                        def shared_disposer(source: Path, target: Path) -> dict[str, Any]:
+                            result = _shared_output_assess(helper_source, helper_revision, {
+                                "operation": "dispose", "items": [{"receipt": receipt,
+                                    "observation": observation, "protected": protected,
+                                    "retained": current_reference["retained"], "destination": str(target)}],
+                            })
+                            selected = result["results"][0]
+                            if selected.get("status") != "quarantined":
+                                raise output_cleanup.OutputError("SELECTED_HELPER_DID_NOT_QUARANTINE")
+                            return {"status": "quarantined", "selected": selected}
+
+                    if "git_worktree" in receipt:
+                        result = output_cleanup.execute_registered_worktree_quarantine(
+                            record_path, output_path=output_path,
+                            repository=Path(receipt["git_worktree"]["repository"]),
+                            quarantine_parent=destination_parent, destination=destination,
+                            durable_evidence=durable, task=task, attempt=attempt,
+                            owner_lock_held=True,
+                        )
+                    else:
+                        result = output_cleanup.execute_native_quarantine(
+                            record_path, output_path=output_path, destination=destination,
+                            durable_evidence=durable, task=task, attempt=attempt,
+                            owner_lock_held=True, dispose=shared_disposer,
+                        )
+                    def persist_result(current: dict[str, Any]) -> dict[str, Any]:
+                        closeout = dict(current.get("output_closeout", {}))
+                        operations = list(closeout.get("operations", []))
+                        matches = [entry for entry in operations if entry.get("operation_id") == operation_id]
+                        if len(matches) != 1:
+                            raise TaskControllerError("OUTPUT_CLOSEOUT_OPERATION_INTENT_MISSING")
+                        matches[0].update(status="complete", destination=str(destination),
+                                          destination_node=result.get("destination_node", result.get("node")),
+                                          logical_bytes=report.get("logical_bytes"),
+                                          newly_removed_bytes=result.get("newly_removed_bytes", 0),
+                                          physical_bytes_reclaimed=0, current_reference=reference_binding)
+                        closeout["operations"] = operations
+                        current["output_closeout"] = closeout
+                        return current
+                    checkpoint_transaction(args.state_dir, args.issue_number, persist_result)
+                    completed_status = ("already_quarantined"
+                                        if result.get("status") == "already_quarantined" else "quarantined")
+                    report.update(status=completed_status, destination=str(destination),
+                                  newly_removed_bytes=result.get("newly_removed_bytes", 0),
+                                  destination_node=result.get("destination_node", result.get("node")),
+                                  physical_bytes_reclaimed=0,
+                                  reason=("verified prior quarantine reconciliation"
+                                          if completed_status == "already_quarantined"
+                                          else "verified recoverable quarantine"),
+                                  current_reference=reference_binding)
+                except (OSError, ValueError, KeyError, TypeError, output_cleanup.OutputError,
+                        TaskControllerError) as error:
+                    message = str(error)
+                    try:
+                        def persist_incomplete(current: dict[str, Any]) -> dict[str, Any]:
+                            closeout = dict(current.get("output_closeout", {}))
+                            operations = list(closeout.get("operations", []))
+                            for entry in operations:
+                                if isinstance(entry, dict) and entry.get("operation_id") == operation_id:
+                                    if entry.get("status") == "pending":
+                                        entry.update(status="incomplete", last_error=message,
+                                                     physical_bytes_reclaimed=0)
+                            closeout["operations"] = operations
+                            current["output_closeout"] = closeout
+                            return current
+                        checkpoint_transaction(args.state_dir, args.issue_number, persist_incomplete)
+                    except (TaskControllerError, OSError):
+                        pass
+                    report.update(status="incomplete", reason=message, newly_removed_bytes=None,
+                                  physical_bytes_reclaimed=0)
+    except output_cleanup.OutputError as error:
+        if str(error) == "OUTPUT_OWNER_ACTIVE":
+            raise TaskControllerError("OUTPUT_OWNER_ACTIVE") from error
+        raise TaskControllerError("OUTPUT_CLOSEOUT_REFUSED: " + str(error)) from error
+
+    emit({"task": task, "attempt": attempt,
+          "mode": "shared-helper" if args.shared_helper else "consumer-only",
+          "source": ({"root": str(helper_source), "revision": helper_revision} if helper_source else None),
+          "execution": "authorized-quarantine", "items": reports,
+          "physical_bytes_reclaimed": 0})
+    return 0 if all(item.get("status") in {"quarantined", "already_quarantined"} for item in reports) else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -6164,6 +7065,18 @@ def build_parser() -> argparse.ArgumentParser:
         dest="command",
         required=True,
     )
+
+    output_closeout = subparsers.add_parser(
+        "output-closeout",
+        help="Assess owned task outputs; execution requires explicit authorization.",
+    )
+    output_closeout.add_argument("issue_number", type=int)
+    output_closeout.add_argument("--execution-record", type=Path, required=True)
+    output_closeout.add_argument("--durable-evidence", type=Path, required=True)
+    output_closeout.add_argument("--execute", action="store_true")
+    output_closeout.add_argument("--human-owner-authorized", action="store_true")
+    output_closeout.add_argument("--shared-helper", action="store_true")
+    output_closeout.set_defaults(handler=command_output_closeout)
 
     validate_record = subparsers.add_parser(
         "validate-record",

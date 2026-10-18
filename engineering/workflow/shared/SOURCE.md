@@ -548,3 +548,37 @@ framework or RI135 experiment is selected.
 Both complete kickoff folders were inventoried; all four installed files retain their prior selected bytes. This proves file contents only; Work discovery/import remains unverified and document-based kickoff remains supported.
 
 Consumer-owned queue redirect installed SHA-256 `584ab90dbc121fd7119d363c5a013d9a42b9ce40dbeb4955137f47dd5d9d0b1f`; future-intake URLs only.
+
+
+## GH-420 optional task-output lifecycle resource
+
+This is an additive consumer selection. It does not replace the current RI685
+instruction/helper selection, RI00117 dispatch guard, RI20a producer/runtime or
+the existing e0 request binding. The cleanup helper is optional and is invoked
+only by `task output-closeout --shared-helper`; public runner and native output
+creation remain Nutrition-owned.
+
+| RI949 source resource | Git blob | Bytes | Source SHA-256 | Adopted bytes / transformation |
+| --- | --- | ---: | --- | --- |
+| `src/repository_intelligence/output_cleanup.py` | `86944be945b6bab0a9cb95a5c467a75a88c39d6d` | 8642 | `500f09b11db44fea5f8a0ffeafeb922c23138872290281507d9422df93d7f0b7` | Pinned optional source; not copied. |
+| `src/repository_intelligence/worker_execution.py` | `03b1ff064983ac53857e8a5918e37ab56e9f4d4a` | 28050 | `254fc4ece0c4b5732378903f9941c9d087fb2d636db9208988a813e9f7000676` | Authenticated transitive helper import; not copied. |
+| `src/repository_intelligence/adapter_conformance.py` | `ca4dffee72b40af79d2daf38a6a8f2c6107a8a13` | 2937 | `663d62abf07888d6e6c1ce7fcea89bf2a5ecaecb794eb61cb476fc200c024da3` | Authenticated transitive helper import; not copied. |
+| `src/repository_intelligence/adoption.py` | `82951a06cb6b930f8d3da93ec5828dc816da1374` | 18968 | `4d642a3ab03537e398e4aa4506acafc809b921c084cd848a30968a0147a92f98` | Authenticated transitive helper import; not copied. |
+| `docs/start-an-issue.md` | `3a07c8fc558e5059267d45607555a9aa5ee49461` | 40793 | `fb3a16a1caae49b653b09f4cb648c1ef58623444ad43eb36ae4c6eb7f20d7bf1` | `### Retain evidence and dispose of owned outputs`, 2952 bytes; exact excerpt SHA-256 `7d971529c80941935711e7663ed35c558ecad5db5e9a670d3ba7902f18328ac6`; installed at the same heading in `engineering/workflow/shared/start-an-issue.md`. |
+| `docs/worker-instructions.md` | `5e6708025d860b974b4004f44f87335d508573b1` | 20886 | `b8e6875d3bc0c090eca5c25d9637fb747afe626e8f4055701e187c233f9e4423` | Exact 494-byte output-retention rule excerpt SHA-256 `2e116a44c9cc055b63b906bca80a11f0ffee12c288d18bff4aa3ca1d759fbeb9`; installed in `engineering/workflow/shared/worker-instructions.md`. |
+| `docs/workflow-tools.md` | `d6a12d6e5f4d3f76c39ee48eb3c5716ca3e95077` | 31912 | `8b5122e8a388f98c5059ab9f7531828d0acc7bdb09a46d787bd8e600cdf1db26` | 4575-byte `### Task-output lifecycle` excerpt SHA-256 `ccc81b440fe1e45395614cbf6cdb2b49daa34d2a3fcd1edfc38bbb17dcbf9ff2`; relocate the unavailable `../src/repository_intelligence/output_cleanup.py` link to the exact pinned RI949 GitHub source URL. |
+
+Installed full destination SHA-256 values are `engineering/workflow/shared/start-an-issue.md`
+`63296e0880573b2d0fe52fe2892797b166672514406ed9b332cb503fb8e2402b`,
+`engineering/workflow/shared/worker-instructions.md`
+`0e735e279dd4db6f2d2aaed68fb7f4d22ea8346eff0ed77fec2f12ef1fabe6e2`, and
+`engineering/workflow/shared/workflow-tools.md`
+`37ffeba04cf0bb22248da7994b4771a15ad78f625b622da5734af9375ca2ff2f`.
+
+The start and worker guide excerpts are byte-identical to the selected RI949 source
+excerpts. The workflow-tools excerpt makes the single pinned GitHub URL relocation;
+no local RI source path is referenced. The new
+`scripts/lib/task_output_cleanup.py` is a Nutrition-owned adapter, not an import
+or copy of the RI module. Its installed bytes are recorded with the GH-420
+candidate identity. The map carries the optional RI949 checkout and exact commit
+for the explicitly selected closeout mode; it does not alter prior helper pins.

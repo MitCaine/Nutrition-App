@@ -19,6 +19,11 @@ import time
 from typing import Any
 import zipfile
 
+# This file is also executed directly by run-review.sh. Make the scripts
+# package root available before importing its shared lifecycle adapter.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from lib import task_output_cleanup
+
 
 SCHEMA_VERSION = 1
 MAX_REQUEST_BYTES = 1_000_000
@@ -551,11 +556,21 @@ def _prepare(args: argparse.Namespace) -> int:
     if source_before["head"] != normalized["expected_head"]:
         raise RequestError("source HEAD changed before attempt initialization")
 
-    run_dir.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
-        run_dir.mkdir(mode=0o700, exist_ok=False)
+        run_dir.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        task_output_cleanup.create_owned_output(
+            run_dir,
+            task=task_output_cleanup.task_identifier(args.attempt),
+            attempt=args.attempt,
+            definition={"path": str(request_path.resolve()), "sha256": _sha256(request_raw)},
+            owner_record=run_dir / "attempt-state.json",
+        )
     except FileExistsError as error:
         raise RequestError("attempt directory already exists; evidence is immutable and attempts do not repeat") from error
+    except task_output_cleanup.OutputError as error:
+        if str(error) == "OUTPUT_ALREADY_EXISTS_UNKNOWN_OWNER":
+            raise RequestError("attempt directory already exists; evidence is immutable and attempts do not repeat") from error
+        raise RequestError(f"owned attempt creation failed: {error}") from error
     try:
         (run_dir / "logs").mkdir(mode=0o700)
         (run_dir / "failures").mkdir(mode=0o700)
@@ -579,8 +594,27 @@ def _prepare(args: argparse.Namespace) -> int:
             "steps": normalized["steps"],
         }
         _write_exclusive(run_dir / "command-plan.json", _json_bytes(plan))
+        protected_paths = {str(root), str(request_path.resolve()), str(Path(sys.executable).resolve()),
+                           str(Path(__file__).resolve()), str(Path(__file__).resolve().parents[1] / "run-review.sh"),
+                           str(Path(__file__).resolve().parents[1] / "lib/common.sh"),
+                           str(Path(__file__).resolve().parents[1] / "lib/task_output_cleanup.py")}
+        for step in normalized["steps"]:
+            executable = Path(step["argv"][0])
+            if executable.is_absolute() and executable.exists():
+                protected_paths.add(str(executable.resolve()))
+            for value in step["env"].values():
+                if Path(value).is_absolute() and Path(value).exists():
+                    protected_paths.add(str(Path(value).resolve()))
+        for name in SAFE_BASE_ENV:
+            value = os.environ.get(name)
+            if value:
+                for candidate in value.split(os.pathsep) if name == "PATH" else (value,):
+                    item = Path(candidate).expanduser()
+                    if item.is_absolute() and item.exists():
+                        protected_paths.add(str(item.resolve()))
         state = {
             "schema_version": SCHEMA_VERSION,
+            "task": task_output_cleanup.task_identifier(args.attempt),
             "attempt": args.attempt,
             "attempt_directory": str(run_dir),
             "status": "in_progress",
@@ -590,8 +624,16 @@ def _prepare(args: argparse.Namespace) -> int:
             "expected_head": head,
             "source_before_sha256": _source_fingerprint(source_before),
             "terminal_marker_required": True,
+            "owned_outputs": _parse_json(
+                (run_dir / "attempt-state.json").read_bytes()
+            ).get("owned_outputs", []),
+            "owner_record_schema": task_output_cleanup.SCHEMA_VERSION,
+            "protected_paths": sorted(protected_paths),
+            "protected_path_bindings": task_output_cleanup.protected_path_bindings(
+                sorted(protected_paths)
+            ),
         }
-        _write_exclusive(run_dir / "attempt-state.json", _json_bytes(state))
+        _atomic_write(run_dir / "attempt-state.json", _json_bytes(state))
         _write_exclusive(run_dir / "in-progress.marker", b"Attempt is active. Missing complete.json means this attempt is not terminal.\n")
         _fsync_directory(run_dir)
     except Exception as error:

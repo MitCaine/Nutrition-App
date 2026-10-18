@@ -138,6 +138,14 @@ require_command tee
 require_command grep
 require_command awk
 
+if [[ $RUN_AUTHORED -eq 1 ]]; then
+    COMMANDS_NAME="${COMMANDS_PATH##*/}"
+    COMMANDS_PARENT="${COMMANDS_PATH%/*}"
+    [[ "$COMMANDS_PARENT" != "$COMMANDS_PATH" ]] || COMMANDS_PARENT="."
+    COMMANDS_PARENT="$(cd -- "$COMMANDS_PARENT" && pwd -P)" || die "Unable to resolve the authored request directory."
+    COMMANDS_PATH="$COMMANDS_PARENT/$COMMANDS_NAME"
+fi
+
 if [[ $RUN_MOBILE -eq 1 ]]; then
     require_command npm
 fi
@@ -207,9 +215,15 @@ else
     FINAL_ZIP="$OUTPUT_ROOT/nutrition-app-${SAFE_LABEL}-${STAMP}.zip"
 fi
 AUTHORED_HELPER="$REPO_ROOT/scripts/lib/review_commands.py"
-BUNDLE_STAGE="$(make_temp_dir)"
+OUTPUT_OWNER_HELPER="$REPO_ROOT/scripts/lib/task_output_cleanup.py"
+if [[ $RUN_AUTHORED -eq 1 ]]; then
+    BUNDLE_STAGE="$OUTPUT_ROOT/.bundle-stage-${ATTEMPT_ID}-$$"
+else
+    BUNDLE_STAGE="$(make_temp_dir)"
+fi
 
 AUTHORED_PREPARED=0
+OUTPUT_OWNER_GUARD_PID=""
 
 cleanup() {
     local original_status=$?
@@ -219,7 +233,14 @@ cleanup() {
             --reason "runner exited before terminal completion (exit $original_status)" \
             >/dev/null 2>&1 || true
     fi
-    rm -rf "$BUNDLE_STAGE"
+    if [[ -n "$OUTPUT_OWNER_GUARD_PID" ]]; then
+        kill "$OUTPUT_OWNER_GUARD_PID" >/dev/null 2>&1 || true
+        wait "$OUTPUT_OWNER_GUARD_PID" >/dev/null 2>&1 || true
+        OUTPUT_OWNER_GUARD_PID=""
+    fi
+    if [[ $RUN_AUTHORED -eq 0 ]]; then
+        rm -rf "$BUNDLE_STAGE"
+    fi
     return "$original_status"
 }
 trap cleanup EXIT
@@ -234,6 +255,29 @@ if [[ $RUN_AUTHORED -eq 1 ]]; then
         --attempt "$ATTEMPT_ID" \
         --attempt-dir "$RUN_DIR"
     AUTHORED_PREPARED=1
+    python3 "$OUTPUT_OWNER_HELPER" create-owned \
+        --owner-record "$RUN_DIR/attempt-state.json" \
+        --path "$BUNDLE_STAGE" \
+        --attempt "$ATTEMPT_ID" \
+        --definition "$COMMANDS_PATH" \
+        >> "$RUN_DIR/output-owner.log"
+    python3 "$OUTPUT_OWNER_HELPER" owner-hold \
+        --owner-record "$RUN_DIR/attempt-state.json" \
+        >> "$RUN_DIR/output-owner.log" 2>&1 &
+    OUTPUT_OWNER_GUARD_PID=$!
+    owner_lock_ready=0
+    for _ in {1..200}; do
+        if grep -Fq 'OUTPUT_OWNER_LOCK_ACQUIRED' "$RUN_DIR/output-owner.log"; then
+            owner_lock_ready=1
+            break
+        fi
+        if ! kill -0 "$OUTPUT_OWNER_GUARD_PID" >/dev/null 2>&1; then
+            cat "$RUN_DIR/output-owner.log" >&2
+            die "Unable to establish authored-output owner lock."
+        fi
+        sleep 0.05
+    done
+    [[ $owner_lock_ready -eq 1 ]] || die "Timed out establishing authored-output owner lock."
 else
     ensure_directory "$LOG_DIR"
     ensure_directory "$FAILURE_DIR"

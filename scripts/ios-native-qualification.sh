@@ -87,6 +87,13 @@ native_lifecycle_dir="$evidence_dir/native-lifecycle"
 native_lifecycle_helper="$repo_root/scripts/lib/native_process_lifecycle.py"
 native_lifecycle_binding="$native_lifecycle_dir/invocation.json"
 native_lifecycle_wrapper="$native_lifecycle_dir/ibtool"
+native_output_cleanup="$repo_root/scripts/lib/task_output_cleanup.py"
+native_output_owner="$native_lifecycle_dir/output-owner.json"
+native_output_attempt=""
+native_output_durable="$native_lifecycle_dir/retained-outputs"
+native_output_quarantine="$native_lifecycle_dir/quarantine"
+native_owner_hold_pid=""
+native_owner_ready="$native_lifecycle_dir/output-owner-ready.json"
 native_lifecycle_python=""
 native_lifecycle_python_version=""
 native_lifecycle_python_executable=""
@@ -102,6 +109,7 @@ cleanup_disposition="NOT_STARTED"
 cleanup_reason=""
 cleanup_retained_roots=""
 cleanup_removed_roots=""
+cleanup_quarantined_roots=""
 required_proof_failure=0
 application_build_outcome="$evidence_dir/application-build-outcome.json"
 propagation_proof_outcome="$evidence_dir/propagation-proof-outcome.json"
@@ -264,7 +272,7 @@ mark_cleanup_incomplete() {
   cleanup_disposition="INCOMPLETE"
   if test -n "$cleanup_removed_roots"
   then
-    cleanup_reason="completed removals before refusal: ${cleanup_removed_roots//$'\n'/, }; $reason"
+    cleanup_reason="completed recoverable quarantine moves: ${cleanup_quarantined_roots//$'\n'/, }; $reason"
   else
     cleanup_reason="$reason"
   fi
@@ -324,106 +332,160 @@ verify_before_disposal() {
 }
 
 cleanup_stage() {
-  local worktree_listed=0
-
   cleanup_disposition="IN_PROGRESS"
   cleanup_reason=""
   cleanup_removed_roots=""
+  cleanup_quarantined_roots=""
 
-  if test "$worktree_created" -eq 1 &&
-    git -C "$repo_root" worktree list --porcelain |
-      grep -Fqx "worktree $probe_root"
+  if test -f "$native_output_owner"
   then
-    worktree_listed=1
-  fi
-
-  if test "$worktree_listed" -eq 1
-  then
-    if ! verify_before_disposal worktree-remove
+    if ! finish_native_output_owner
     then
       return 1
     fi
-    if ! git -C "$repo_root" worktree remove \
-      --force \
-      "$probe_root" \
-      > /dev/null \
-      2> "$evidence_dir/worktree-cleanup.stderr"
+  elif test -e "$probe_root" || test -L "$probe_root" ||
+    test -e "$derived_data" || test -L "$derived_data" ||
+    test -e "$harness_bin" || test -L "$harness_bin"
+  then
+    mark_cleanup_incomplete "generated roots exist without Nutrition-owned creation receipts"
+    return 1
+  fi
+
+  if test -e "$probe_root" || test -L "$probe_root"
+  then
+    local worktree_destination="$native_output_quarantine/Nutrition App Native"
+    if ! verify_before_disposal worktree-quarantine
     then
-      mark_cleanup_incomplete "git worktree remove failed; retained $probe_root"
+      return 1
+    fi
+    if ! execute_verified_native_quarantine worktree "$probe_root" "$worktree_destination"
+    then
+      local detail
+      detail="$(tail -n 1 "$native_lifecycle_dir/quarantine-worktree.stderr.log" 2>/dev/null || true)"
+      mark_cleanup_incomplete "registered worktree quarantine failed; retained $probe_root: ${detail:-no adapter detail}"
       return 1
     fi
     cleanup_removed_roots="${cleanup_removed_roots}${probe_root}
 "
-    if ! record_native_phase worktree-removed "{\"root\":$(
-      "$native_lifecycle_python" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$probe_root"
-    )}"
+    cleanup_quarantined_roots="${cleanup_quarantined_roots}${worktree_destination}
+"
+    local worktree_operation="$native_output_durable/worktree-quarantine-$(
+      "$native_lifecycle_python" - "$native_output_owner" "$probe_root" <<'PY'
+import json,sys
+record=json.load(open(sys.argv[1], encoding="utf-8"))
+receipt=next(item for item in record["owned_outputs"] if item["path"] == sys.argv[2])
+print(receipt["node"][1])
+PY
+    ).json"
+    local worktree_operation_binding
+    worktree_operation_binding="$("$native_lifecycle_python" - "$worktree_operation" <<'PY'
+import hashlib,json,sys
+path=sys.argv[1]
+print(json.dumps({"path":path,"sha256":hashlib.sha256(open(path,"rb").read()).hexdigest()},sort_keys=True))
+PY
+    )" || return 1
+    local worktree_phase_details
+    worktree_phase_details="$("$native_lifecycle_python" - "$probe_root" "$worktree_destination" "$worktree_operation_binding" <<'PY'
+import json,sys
+print(json.dumps({"root":sys.argv[1],"destination":sys.argv[2],"quarantine_operation":json.loads(sys.argv[3])},sort_keys=True))
+PY
+    )" || return 1
+    if ! record_native_phase worktree-removed "$worktree_phase_details"
     then
-      mark_cleanup_incomplete "worktree removal phase evidence failed after removing $probe_root"
-      return 1
-    fi
-  fi
-
-  if test "$worktree_created" -eq 1
-  then
-    if ! verify_before_disposal worktree-prune
-    then
-      return 1
-    fi
-    if ! git -C "$repo_root" worktree prune \
-      > /dev/null \
-      2> "$evidence_dir/worktree-prune.stderr"
-    then
-      mark_cleanup_incomplete "git worktree prune failed"
+      mark_cleanup_incomplete "worktree quarantine phase evidence failed after moving $probe_root"
       return 1
     fi
     worktree_created=0
-    if ! record_native_phase worktree-pruned "{}"
-    then
-      mark_cleanup_incomplete "worktree prune phase evidence failed"
-      return 1
-    fi
   fi
 
   if test -e "$derived_data" || test -L "$derived_data"
   then
-    if ! verify_before_disposal derived-data-remove
+    local derived_destination="$native_output_quarantine/DerivedData"
+    if ! verify_before_disposal derived-data-quarantine
     then
       return 1
     fi
-    if ! rm -rf "$derived_data"
+    if ! execute_verified_native_quarantine derived-data "$derived_data" "$derived_destination"
     then
-      mark_cleanup_incomplete "removal failed; retained $derived_data"
+      local detail
+      detail="$(tail -n 1 "$native_lifecycle_dir/quarantine-derived-data.stderr.log" 2>/dev/null || true)"
+      mark_cleanup_incomplete "DerivedData quarantine failed; retained $derived_data: ${detail:-no adapter detail}"
       return 1
     fi
     cleanup_removed_roots="${cleanup_removed_roots}${derived_data}
 "
-    if ! record_native_phase derived-data-removed "{\"root\":$(
-      "$native_lifecycle_python" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$derived_data"
-    )}"
+    cleanup_quarantined_roots="${cleanup_quarantined_roots}${derived_destination}
+"
+    local derived_operation="$native_output_durable/output-quarantine-$(
+      "$native_lifecycle_python" - "$native_output_owner" "$derived_data" <<'PY'
+import json,sys
+record=json.load(open(sys.argv[1], encoding="utf-8"))
+receipt=next(item for item in record["owned_outputs"] if item["path"] == sys.argv[2])
+print(receipt["node"][1])
+PY
+    ).json"
+    local derived_operation_binding
+    derived_operation_binding="$("$native_lifecycle_python" - "$derived_operation" <<'PY'
+import hashlib,json,sys
+path=sys.argv[1]
+print(json.dumps({"path":path,"sha256":hashlib.sha256(open(path,"rb").read()).hexdigest()},sort_keys=True))
+PY
+    )" || return 1
+    local derived_phase_details
+    derived_phase_details="$("$native_lifecycle_python" - "$derived_data" "$derived_destination" "$derived_operation_binding" <<'PY'
+import json,sys
+print(json.dumps({"root":sys.argv[1],"destination":sys.argv[2],"quarantine_operation":json.loads(sys.argv[3])},sort_keys=True))
+PY
+    )" || return 1
+    if ! record_native_phase derived-data-removed "$derived_phase_details"
     then
-      mark_cleanup_incomplete "DerivedData removal phase evidence failed"
+      mark_cleanup_incomplete "DerivedData quarantine phase evidence failed after moving $derived_data"
       return 1
     fi
   fi
 
   if test -e "$harness_bin" || test -L "$harness_bin"
   then
-    if ! verify_before_disposal harness-remove
+    local harness_destination="$native_output_quarantine/harness-bin"
+    if ! verify_before_disposal harness-bin-quarantine
     then
       return 1
     fi
-    if ! rm -rf "$harness_bin"
+    if ! execute_verified_native_quarantine harness-bin "$harness_bin" "$harness_destination"
     then
-      mark_cleanup_incomplete "removal failed; retained $harness_bin"
+      local detail
+      detail="$(tail -n 1 "$native_lifecycle_dir/quarantine-harness-bin.stderr.log" 2>/dev/null || true)"
+      mark_cleanup_incomplete "harness binary quarantine failed; retained $harness_bin: ${detail:-no adapter detail}"
       return 1
     fi
     cleanup_removed_roots="${cleanup_removed_roots}${harness_bin}
 "
-    if ! record_native_phase harness-bin-removed "{\"root\":$(
-      "$native_lifecycle_python" -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$harness_bin"
-    )}"
+    cleanup_quarantined_roots="${cleanup_quarantined_roots}${harness_destination}
+"
+    local harness_operation="$native_output_durable/output-quarantine-$(
+      "$native_lifecycle_python" - "$native_output_owner" "$harness_bin" <<'PY'
+import json,sys
+record=json.load(open(sys.argv[1], encoding="utf-8"))
+receipt=next(item for item in record["owned_outputs"] if item["path"] == sys.argv[2])
+print(receipt["node"][1])
+PY
+    ).json"
+    local harness_operation_binding
+    harness_operation_binding="$("$native_lifecycle_python" - "$harness_operation" <<'PY'
+import hashlib,json,sys
+path=sys.argv[1]
+print(json.dumps({"path":path,"sha256":hashlib.sha256(open(path,"rb").read()).hexdigest()},sort_keys=True))
+PY
+    )" || return 1
+    local harness_phase_details
+    harness_phase_details="$("$native_lifecycle_python" - "$harness_bin" "$harness_destination" "$harness_operation_binding" <<'PY'
+import json,sys
+print(json.dumps({"root":sys.argv[1],"destination":sys.argv[2],"quarantine_operation":json.loads(sys.argv[3])},sort_keys=True))
+PY
+    )" || return 1
+    if ! record_native_phase harness-bin-removed "$harness_phase_details"
     then
-      mark_cleanup_incomplete "harness binary removal phase evidence failed"
+      mark_cleanup_incomplete "harness quarantine phase evidence failed after moving $harness_bin"
       return 1
     fi
   fi
@@ -437,7 +499,7 @@ cleanup_stage() {
   fi
 
   cleanup_disposition="PASS"
-  cleanup_reason="all generated outputs removed after fresh source and invocation verification"
+  cleanup_reason="all generated outputs moved to verified recoverable quarantine after fresh source and invocation checks"
   cleanup_retained_roots=""
   return 0
 }
@@ -508,9 +570,13 @@ write_manifest() {
   IOS_NATIVE_PROPAGATION_PROOF_OUTCOME_FILE="$propagation_proof_outcome" \
   IOS_NATIVE_LIFECYCLE_DIR="$native_lifecycle_dir" \
   IOS_NATIVE_LIFECYCLE_BINDING="$native_lifecycle_binding" \
+  IOS_NATIVE_OUTPUT_OWNER_FILE="$native_output_owner" \
+  IOS_NATIVE_OUTPUT_EVIDENCE_DIR="$native_output_durable" \
+  IOS_NATIVE_OUTPUT_QUARANTINE_ROOT="$native_output_quarantine" \
   IOS_NATIVE_CLEANUP_DISPOSITION="$cleanup_disposition" \
   IOS_NATIVE_CLEANUP_REASON="$cleanup_reason" \
   IOS_NATIVE_CLEANUP_RETAINED_ROOTS="$cleanup_retained_roots" \
+  IOS_NATIVE_CLEANUP_QUARANTINED_ROOTS="$cleanup_quarantined_roots" \
   "$native_lifecycle_python" - "$timings_file" "$manifest" <<'PY'
 import json
 import os
@@ -691,6 +757,17 @@ def lifecycle_inventory():
         return {"invocation_binding": None, "capability_proof": None, "full_build_proof": None, "records": [], "phases": []}
     records_dir = root / "records"
     phases_dir = root / "phases"
+    output_owner_path = Path(text("IOS_NATIVE_OUTPUT_OWNER_FILE") or "")
+    output_evidence = Path(text("IOS_NATIVE_OUTPUT_EVIDENCE_DIR") or "")
+    output_operations = []
+    if output_evidence.is_dir():
+        for path in sorted(output_evidence.glob("*.json")):
+            try:
+                content = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                content = None
+            output_operations.append({"path": str(path), "sha256": file_digest(path),
+                                      "status": content.get("status") if isinstance(content, dict) else "UNREADABLE"})
     return {
         "invocation_binding": document("IOS_NATIVE_LIFECYCLE_BINDING"),
         "capability_proof": lifecycle_proof(root / "capability-proof.json"),
@@ -705,6 +782,13 @@ def lifecycle_inventory():
             for path in sorted(phases_dir.glob("*.json"))
             if path.is_file()
         ] if phases_dir.is_dir() else [],
+        "nutrition_output_lifecycle": {
+            "owner": {"path": str(output_owner_path), "sha256": file_digest(output_owner_path),
+                      "content": document("IOS_NATIVE_OUTPUT_OWNER_FILE")},
+            "evidence_root": str(output_evidence),
+            "quarantine_root": text("IOS_NATIVE_OUTPUT_QUARANTINE_ROOT"),
+            "operations": output_operations,
+        },
         "coverage_limit": "known process identities and the admitted IBC_EXEC producer only; no universal descendant tracking; IBPostprocessor literal ibtool is not covered by IBC_EXEC",
     }
 
@@ -714,10 +798,16 @@ cleanup_roots = [
     for value in (text("IOS_NATIVE_CLEANUP_RETAINED_ROOTS") or "").splitlines()
     if value
 ]
+quarantined_roots = [
+    value
+    for value in (text("IOS_NATIVE_CLEANUP_QUARANTINED_ROOTS") or "").splitlines()
+    if value
+]
 cleanup = {
     "status": text("IOS_NATIVE_CLEANUP_DISPOSITION") or "NOT_STARTED",
     "reason": text("IOS_NATIVE_CLEANUP_REASON"),
     "retained_roots": cleanup_roots,
+    "quarantined_roots": quarantined_roots,
 }
 manifest = {
     "schema_version": 1,
@@ -1432,6 +1522,204 @@ import native_process_lifecycle as lifecycle
 details = json.loads(sys.argv[4])
 lifecycle.record_phase(sys.argv[2], sys.argv[3], **details)
 PY
+}
+
+initialize_native_output_owner() {
+  native_output_attempt="native-${commit:0:12}-$$-${start_epoch}"
+  if ! mkdir -m 700 "$native_output_durable"
+  then
+    echo "IOS_NATIVE_OUTPUT_EVIDENCE_ROOT_CREATE_FAILED" >&2
+    return 1
+  fi
+  if ! "$native_lifecycle_python" "$native_output_cleanup" create-owned \
+      --owner-record "$native_output_owner" \
+      --path "$derived_data" \
+      --task "$native_output_attempt" \
+      --attempt "$native_output_attempt" \
+      --definition "$native_lifecycle_binding" \
+      > "$native_lifecycle_dir/derived-data-owner.json"
+  then
+    echo "IOS_NATIVE_DERIVED_DATA_OWNERSHIP_FAILED" >&2
+    return 1
+  fi
+  if ! "$native_lifecycle_python" "$native_output_cleanup" create-owned \
+      --owner-record "$native_output_owner" \
+      --path "$harness_bin" \
+      --task "$native_output_attempt" \
+      --attempt "$native_output_attempt" \
+      --definition "$native_lifecycle_binding" \
+      > "$native_lifecycle_dir/harness-bin-owner.json"
+  then
+    echo "IOS_NATIVE_HARNESS_OWNERSHIP_FAILED" >&2
+    return 1
+  fi
+  return 0
+}
+
+start_native_output_owner() {
+  "$native_lifecycle_python" "$native_output_cleanup" owner-hold \
+    --owner-record "$native_output_owner" \
+    --ready-file "$native_owner_ready" \
+    > "$native_lifecycle_dir/output-owner-hold.log" 2>&1 &
+  native_owner_hold_pid="$!"
+  local wait_index=0
+  while test "$wait_index" -lt 250 && ! test -f "$native_owner_ready" &&
+    kill -0 "$native_owner_hold_pid" 2>/dev/null
+  do
+    sleep 0.02
+    wait_index=$((wait_index + 1))
+  done
+  if ! test -f "$native_owner_ready"
+  then
+    echo "IOS_NATIVE_OUTPUT_OWNER_LOCK_FAILED" >&2
+    return 1
+  fi
+  return 0
+}
+
+stop_native_output_owner() {
+  if test -n "$native_owner_hold_pid"
+  then
+    kill -TERM "$native_owner_hold_pid" 2>/dev/null || true
+    wait "$native_owner_hold_pid" 2>/dev/null || true
+    native_owner_hold_pid=""
+  fi
+}
+
+finish_native_output_owner() {
+  local phase_details
+  local hold_pid="$native_owner_hold_pid"
+  phase_details="$("$native_lifecycle_python" - "$native_output_attempt" "$qualifier_exit_status" "$signal_status" <<'PY'
+import json
+import sys
+print(json.dumps({"owner_attempt": sys.argv[1], "producer_exit_code": int(sys.argv[2]),
+                  "signal_status": int(sys.argv[3])}, sort_keys=True))
+PY
+)" || return 1
+  if ! record_native_phase producer-finished "$phase_details"
+  then
+    mark_cleanup_incomplete "native producer terminal phase could not be retained"
+    return 1
+  fi
+  stop_native_output_owner
+  if ! verify_before_disposal output-owner-terminal
+  then
+    return 1
+  fi
+  local finish_status=0
+  if test -n "$hold_pid"
+  then
+    "$native_lifecycle_python" "$native_output_cleanup" finish-native-owner \
+      --owner-record "$native_output_owner" \
+      --invocation-record "$native_lifecycle_binding" \
+      --hold-pid "$hold_pid" \
+      > "$native_lifecycle_dir/output-owner-terminal.json" || finish_status=$?
+  else
+    "$native_lifecycle_python" "$native_output_cleanup" finish-native-owner \
+      --owner-record "$native_output_owner" \
+      --invocation-record "$native_lifecycle_binding" \
+      > "$native_lifecycle_dir/output-owner-terminal.json" || finish_status=$?
+  fi
+  if test "$finish_status" -ne 0
+  then
+    mark_cleanup_incomplete "native producer ownership terminal observation failed"
+    return 1
+  fi
+  if ! "$native_lifecycle_python" "$native_output_cleanup" native-quarantine-parent-create \
+      --owner-record "$native_output_owner" \
+      --path "$native_output_quarantine" \
+      --same-device-as "$derived_data" \
+      --durable-evidence "$native_output_durable" \
+      --invocation-record "$native_lifecycle_binding" \
+      > "$native_lifecycle_dir/quarantine-parent.json"
+  then
+    mark_cleanup_incomplete "native quarantine parent could not be bound to the output owner"
+    return 1
+  fi
+  return 0
+}
+
+execute_verified_native_quarantine() {
+  local kind="$1"
+  local output_path="$2"
+  local destination="$3"
+  local stdout_path="$native_lifecycle_dir/quarantine-$kind.stdout.log"
+  local stderr_path="$native_lifecycle_dir/quarantine-$kind.stderr.log"
+  local quarantine_status=0
+  if "$native_lifecycle_python" - \
+    "$native_lifecycle_helper" \
+    "$native_lifecycle_binding" \
+    "$native_output_owner" \
+    "$native_output_durable" \
+    "$native_output_quarantine" \
+    "$output_path" \
+    "$destination" \
+    "$native_output_attempt" \
+    "$repo_root" \
+    "$kind" \
+    > "$stdout_path" 2> "$stderr_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+helper_path, binding_path, owner_path, durable, quarantine_parent, output_path, destination, attempt, repository, kind = sys.argv[1:]
+helper_path = Path(helper_path).resolve(strict=True)
+sys.path.insert(0, str(helper_path.parent))
+import native_process_lifecycle as verifier
+if Path(verifier.__file__).resolve(strict=True) != helper_path:
+    raise SystemExit("NATIVE_HELPER_IMPORT_PATH_MISMATCH")
+status = verifier.verify_command(binding_path, [])
+if status:
+    raise SystemExit(status)
+script_root = Path(repository).resolve(strict=True) / "scripts"
+sys.path.insert(0, str(script_root))
+from lib import task_output_cleanup as cleanup
+
+def verify_producer_before_move():
+    status = verifier.verify_command(binding_path, [])
+    if status:
+        raise SystemExit(status)
+
+with cleanup.owner_lock(Path(owner_path), blocking=False):
+    if kind == "worktree":
+        result = cleanup.execute_registered_worktree_quarantine(
+            Path(owner_path), output_path=Path(output_path), repository=Path(repository),
+            quarantine_parent=Path(quarantine_parent), destination=Path(destination),
+            durable_evidence=Path(durable), task=attempt, attempt=attempt, owner_lock_held=True,
+            before_move=verify_producer_before_move,
+        )
+    elif kind in {"derived-data", "harness-bin"}:
+        result = cleanup.execute_native_quarantine(
+            Path(owner_path), output_path=Path(output_path), destination=Path(destination),
+            durable_evidence=Path(durable), task=attempt, attempt=attempt, owner_lock_held=True,
+            before_move=verify_producer_before_move,
+        )
+    else:
+        raise SystemExit("NATIVE_QUARANTINE_KIND_INVALID")
+print(json.dumps(result, sort_keys=True))
+PY
+  then
+    quarantine_status=0
+  else
+    quarantine_status="$?"
+  fi
+  if test "$quarantine_status" -eq 2
+  then
+    local detail
+    detail="$(tail -n 1 "$stderr_path" 2>/dev/null || true)"
+    required_proof_failure=1
+    record_outcome \
+      "$propagation_proof_outcome" \
+      propagation_proof \
+      FAILURE \
+      "$quarantine_status" \
+      "${detail:-required lifecycle evidence verification failed immediately before quarantine}" || true
+    if test "$qualifier_exit_status" -eq 0
+    then
+      qualifier_exit_status=1
+    fi
+  fi
+  return "$quarantine_status"
 }
 
 ibtool_capability_stage() {
@@ -2903,6 +3191,32 @@ then
   exit 1
 fi
 
+if ! initialize_native_output_owner
+then
+  qualifier_exit_status=1
+  exit 1
+fi
+
+worktree_create_intent="$("$native_lifecycle_python" "$native_output_cleanup" begin-worktree \
+  --owner-record "$native_output_owner" \
+  --path "$probe_root" \
+  --task "$native_output_attempt" \
+  --attempt "$native_output_attempt" \
+  --definition "$native_lifecycle_binding")"
+stage_exit="$?"
+if test "$stage_exit" -ne 0
+then
+  qualifier_exit_status="$stage_exit"
+  exit "$qualifier_exit_status"
+fi
+worktree_create_nonce="$("$native_lifecycle_python" -c 'import json,sys; print(json.load(sys.stdin)["nonce"])' <<< "$worktree_create_intent")"
+if test -z "$worktree_create_nonce"
+then
+  echo "IOS_NATIVE_WORKTREE_CREATION_INTENT_INVALID" >&2
+  qualifier_exit_status=1
+  exit 1
+fi
+
 git -C "$repo_root" worktree add \
   --detach \
   "$probe_root" \
@@ -2912,6 +3226,17 @@ git -C "$repo_root" worktree add \
 stage_exit="$?"
 if test "$stage_exit" -ne 0
 then
+  if test -e "$probe_root" || test -L "$probe_root"
+  then
+    worktree_created=1
+  else
+    "$native_lifecycle_python" "$native_output_cleanup" cancel-worktree \
+      --owner-record "$native_output_owner" \
+      --path "$probe_root" \
+      --nonce "$worktree_create_nonce" \
+      --repository "$repo_root" \
+      > "$native_lifecycle_dir/worktree-create-cancel.json" 2> "$native_lifecycle_dir/worktree-create-cancel.stderr.log" || true
+  fi
   if test "$signal_status" -ne 0
   then
     qualifier_exit_status="$signal_status"
@@ -2921,6 +3246,23 @@ then
   exit "$qualifier_exit_status"
 fi
 worktree_created=1
+if ! "$native_lifecycle_python" "$native_output_cleanup" finish-worktree \
+    --owner-record "$native_output_owner" \
+    --path "$probe_root" \
+    --nonce "$worktree_create_nonce" \
+    --repository "$repo_root" \
+    --expected-head "$commit" \
+    > "$native_lifecycle_dir/worktree-owner.json"
+then
+  echo "IOS_NATIVE_WORKTREE_RECEIPT_PERSISTENCE_FAILED" >&2
+  qualifier_exit_status=1
+  exit 1
+fi
+if ! start_native_output_owner
+then
+  qualifier_exit_status=1
+  exit 1
+fi
 
 case "$probe_root" in
   *" "*)

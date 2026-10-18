@@ -112,6 +112,24 @@ controller preparation. Ordinary supported routes remain available for unselecte
 Resource copies, generated readiness and helper availability grant no authority. The controller
 retains publication, qualification, independent review, approval, integration and installed closeout.
 
+### Optional task-output cleanup helper
+
+Optional task-output cleanup helper revision: `949b838809bcddb01e2cbe161faed6f6f1f705fe`
+
+The cleanup helper is separately selected from the authenticated RI checkout
+`/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/949b838809bcddb01e2cbe161faed6f6f1f705fe`
+at that exact revision. It is used only when a controller explicitly selects
+`task output-closeout --shared-helper`; authenticate the clean checkout and the
+`output_cleanup` module plus its transitive source imports in an isolated process
+before that operation. A missing or changed selected binding refuses that selected
+operation without installation or fallback. Consumer-only closeout and ordinary
+runner/native creation use Nutrition-owned `scripts/lib/task_output_cleanup.py`
+and do not depend on this private checkout.
+
+This optional selection does not repin the existing e0b82 worker/execution helpers,
+00117 dispatch guard, 20a5039 producer/runtime, dependencies or any prepared request.
+Existing attempts retain their original bindings and are not rewritten.
+
 ### Selected native dispatch decision binding
 
 Native dispatch guard source revision: `00117a3b216b089e1e3a0a693c83efab9dcf12f0`
