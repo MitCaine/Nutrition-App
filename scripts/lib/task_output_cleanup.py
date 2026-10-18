@@ -2931,93 +2931,123 @@ def owner_hold(owner_record: Path, ready_file: Path | None = None) -> None:
         os.close(descriptor)
 
 
+def _prepare_owner_exit_reconciliation(
+    owner_record: Path, *, ready_file: Path, holder_pid: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate a departed holder and derive its terminal owner record without writing."""
+    owner = _json(owner_record)
+    ready = _json(ready_file)
+    if (set(ready) != {"pid", "start_monotonic_ns"}
+            or type(ready.get("pid")) is not int or ready["pid"] != holder_pid
+            or type(ready.get("start_monotonic_ns")) is not int
+            or ready["start_monotonic_ns"] <= 0):
+        raise OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_INVALID")
+    active = owner.get("active_owner")
+    prior_exit = owner.get("owner_exit")
+    if active is None and isinstance(prior_exit, dict):
+        if (prior_exit.get("pid") != ready["pid"]
+                or prior_exit.get("start_monotonic_ns") != ready["start_monotonic_ns"]):
+            raise OutputError("OUTPUT_OWNER_EXIT_PRIOR_BINDING_CHANGED")
+        repeated = True
+    else:
+        if active != ready:
+            raise OutputError("OUTPUT_OWNER_EXIT_ACTIVE_BINDING_CHANGED")
+        try:
+            os.kill(holder_pid, 0)
+        except ProcessLookupError:
+            pass
+        except OSError as error:
+            raise OutputError("OUTPUT_OWNER_EXIT_PROCESS_OBSERVATION_FAILED") from error
+        else:
+            raise OutputError("OUTPUT_OWNER_STILL_LIVE")
+        repeated = False
+
+    attempt_root = Path(os.path.abspath(owner_record.parent))
+    complete_path = attempt_root / "complete.json"
+    results_path = attempt_root / "results.json"
+    complete_binding = None
+    terminal_result = None
+    owner_status = "incomplete"
+    if os.path.lexists(complete_path):
+        complete_binding = file_binding(complete_path)
+        complete = _json(complete_path)
+        results_binding = file_binding(results_path)
+        results = _json(results_path)
+        definitions = [item.get("definition") for item in owner.get("owned_outputs", [])
+                       if isinstance(item, dict)]
+        unique_definitions = {json.dumps(value, sort_keys=True) for value in definitions}
+        authored = results.get("authored_commands")
+        request_identity = authored.get("request_identity") if isinstance(authored, dict) else None
+        if (len(unique_definitions) != 1 or not definitions
+                or not isinstance(definitions[0], dict)
+                or set(definitions[0]) != {"path", "sha256"}
+                or file_binding(Path(definitions[0]["path"]))["sha256"] != definitions[0]["sha256"]
+                or not isinstance(request_identity, dict)
+                or complete.get("attempt") != owner.get("attempt")
+                or complete.get("request_sha256") != request_identity.get("sha256")
+                or complete.get("results_sha256") != results_binding["sha256"]
+                or complete.get("status") != results.get("status")
+                or results.get("status") not in {"passed", "failed"}
+                or complete.get("repository") != authored.get("repository")
+                or complete.get("expected_head") != authored.get("expected_head")):
+            raise OutputError("OUTPUT_OWNER_EXIT_TERMINAL_RESULT_INVALID")
+        bundle_path = Path(complete.get("bundle_path", ""))
+        if (not bundle_path.is_absolute() or not bundle_path.is_relative_to(attempt_root)
+                or file_binding(bundle_path)["sha256"] != complete.get("bundle_sha256")):
+            raise OutputError("OUTPUT_OWNER_EXIT_BUNDLE_INVALID")
+        owner_status = "complete" if results["status"] == "passed" else "failed"
+        terminal_result = results_binding
+
+    updated = dict(owner)
+    updated["attempt_directory"] = str(attempt_root)
+    updated["status"] = owner_status
+    updated["terminal_result"] = terminal_result
+    updated["native_result_ready"] = owner_status == "complete"
+    updated["owner_exit"] = {
+        "pid": ready["pid"],
+        "start_monotonic_ns": ready["start_monotonic_ns"],
+        "ready_file": file_binding(ready_file),
+        "complete_record": complete_binding,
+        "reconciled_monotonic_ns": (
+            prior_exit.get("reconciled_monotonic_ns") if repeated else time.monotonic_ns()
+        ),
+        "result": owner_status,
+    }
+    updated.pop("active_owner", None)
+    updated["updated_monotonic_ns"] = time.monotonic_ns()
+    result = {"status": owner_status, "attempt": owner.get("attempt"),
+              "holder_pid": holder_pid, "complete_record": complete_binding,
+              "result": terminal_result, "reconciled": not repeated}
+    return updated, result
+
+
+def _preview_owner_exit_reconciliation_locked(
+    owner_record: Path, *, ready_file: Path, holder_pid: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Preview exact owner-exit reconciliation while the caller holds owner_lock."""
+    return _prepare_owner_exit_reconciliation(
+        owner_record, ready_file=ready_file, holder_pid=holder_pid,
+    )
+
+
+def _reconcile_owner_exit_locked(
+    owner_record: Path, *, ready_file: Path, holder_pid: int,
+) -> dict[str, Any]:
+    """Persist an authenticated owner-exit transition while the caller holds owner_lock."""
+    updated, result = _prepare_owner_exit_reconciliation(
+        owner_record, ready_file=ready_file, holder_pid=holder_pid,
+    )
+    _atomic_json(owner_record, updated)
+    return result
+
+
 def reconcile_owner_exit(owner_record: Path, *, ready_file: Path, holder_pid: int) -> dict[str, Any]:
     """Reconcile the exact lock holder only after its process has exited."""
     lock = _open_owner_lock(owner_record, blocking=False)
     try:
-        owner = _json(owner_record)
-        ready = _json(ready_file)
-        if (set(ready) != {"pid", "start_monotonic_ns"}
-                or type(ready.get("pid")) is not int or ready["pid"] != holder_pid
-                or type(ready.get("start_monotonic_ns")) is not int
-                or ready["start_monotonic_ns"] <= 0):
-            raise OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_INVALID")
-        active = owner.get("active_owner")
-        prior_exit = owner.get("owner_exit")
-        if active is None and isinstance(prior_exit, dict):
-            if (prior_exit.get("pid") != ready["pid"]
-                    or prior_exit.get("start_monotonic_ns") != ready["start_monotonic_ns"]):
-                raise OutputError("OUTPUT_OWNER_EXIT_PRIOR_BINDING_CHANGED")
-            repeated = True
-        else:
-            if active != ready:
-                raise OutputError("OUTPUT_OWNER_EXIT_ACTIVE_BINDING_CHANGED")
-            try:
-                os.kill(holder_pid, 0)
-            except ProcessLookupError:
-                pass
-            except OSError as error:
-                raise OutputError("OUTPUT_OWNER_EXIT_PROCESS_OBSERVATION_FAILED") from error
-            else:
-                raise OutputError("OUTPUT_OWNER_STILL_LIVE")
-            repeated = False
-
-        attempt_root = Path(os.path.abspath(owner_record.parent))
-        complete_path = attempt_root / "complete.json"
-        results_path = attempt_root / "results.json"
-        complete_binding = None
-        terminal_result = None
-        owner_status = "incomplete"
-        if os.path.lexists(complete_path):
-            complete_binding = file_binding(complete_path)
-            complete = _json(complete_path)
-            results_binding = file_binding(results_path)
-            results = _json(results_path)
-            definitions = [item.get("definition") for item in owner.get("owned_outputs", [])
-                           if isinstance(item, dict)]
-            unique_definitions = {json.dumps(value, sort_keys=True) for value in definitions}
-            authored = results.get("authored_commands")
-            request_identity = authored.get("request_identity") if isinstance(authored, dict) else None
-            if (len(unique_definitions) != 1 or not definitions
-                    or not isinstance(definitions[0], dict)
-                    or set(definitions[0]) != {"path", "sha256"}
-                    or file_binding(Path(definitions[0]["path"]))["sha256"] != definitions[0]["sha256"]
-                    or not isinstance(request_identity, dict)
-                    or complete.get("attempt") != owner.get("attempt")
-                    or complete.get("request_sha256") != request_identity.get("sha256")
-                    or complete.get("results_sha256") != results_binding["sha256"]
-                    or complete.get("status") != results.get("status")
-                    or results.get("status") not in {"passed", "failed"}
-                    or complete.get("repository") != authored.get("repository")
-                    or complete.get("expected_head") != authored.get("expected_head")):
-                raise OutputError("OUTPUT_OWNER_EXIT_TERMINAL_RESULT_INVALID")
-            bundle_path = Path(complete.get("bundle_path", ""))
-            if (not bundle_path.is_absolute() or not bundle_path.is_relative_to(attempt_root)
-                    or file_binding(bundle_path)["sha256"] != complete.get("bundle_sha256")):
-                raise OutputError("OUTPUT_OWNER_EXIT_BUNDLE_INVALID")
-            owner_status = "complete" if results["status"] == "passed" else "failed"
-            terminal_result = results_binding
-
-        owner["attempt_directory"] = str(attempt_root)
-        owner["status"] = owner_status
-        owner["terminal_result"] = terminal_result
-        owner["native_result_ready"] = owner_status == "complete"
-        owner["owner_exit"] = {
-            "pid": ready["pid"],
-            "start_monotonic_ns": ready["start_monotonic_ns"],
-            "ready_file": file_binding(ready_file),
-            "complete_record": complete_binding,
-            "reconciled_monotonic_ns": (
-                prior_exit.get("reconciled_monotonic_ns") if repeated else time.monotonic_ns()
-            ),
-            "result": owner_status,
-        }
-        owner.pop("active_owner", None)
-        owner["updated_monotonic_ns"] = time.monotonic_ns()
-        _atomic_json(owner_record, owner)
-        return {"status": owner_status, "attempt": owner.get("attempt"),
-                "holder_pid": holder_pid, "complete_record": complete_binding,
-                "result": terminal_result, "reconciled": not repeated}
+        return _reconcile_owner_exit_locked(
+            owner_record, ready_file=ready_file, holder_pid=holder_pid,
+        )
     finally:
         os.close(lock)
 

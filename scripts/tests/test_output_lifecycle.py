@@ -371,9 +371,8 @@ def test_gh420_o1_keeps_selected_helper_sources_separate():
 
 
 @pytest.mark.parametrize("fault", ["none", "ready-file-mismatch", "terminal-record-tamper"])
-@pytest.mark.parametrize("mode", ["consumer-only", "shared-helper"])
-def test_gh420_a6_closeout_authenticates_departed_authored_holder(tmp_path: Path, fault: str, mode: str):
-    attempt = f"GH-420-a6-departed-owner-{mode}-{fault}"
+def test_gh420_a6_closeout_authenticates_departed_authored_holder(tmp_path: Path, fault: str):
+    attempt = f"GH-420-a6-departed-owner-consumer-only-{fault}"
     fixture = interrupted_authored_runner_before_reconciliation(tmp_path, attempt=attempt)
     owner_before = lifecycle._json(fixture["owner"])
     owner_bytes_before = fixture["owner"].read_bytes()
@@ -401,13 +400,11 @@ def test_gh420_a6_closeout_authenticates_departed_authored_holder(tmp_path: Path
     state_fixture = integrated_controller_fixture(
         controller_root, attempt=attempt, candidate=fixture["candidate"],
     )
-    mode_arguments = ("--shared-helper",) if mode == "shared-helper" else ()
     result = task_cli(
-        "--repo-root", str(ROOT if mode == "shared-helper" else fixture["repo"]),
+        "--repo-root", str(fixture["repo"]),
         "--state-dir", str(state_fixture["state_dir"]),
         "output-closeout", "420", "--execution-record", str(fixture["owner"]),
         "--durable-evidence", str(state_fixture["durable"]),
-        *mode_arguments,
         "--execute", "--human-owner-authorized",
     )
     if fault == "none":
@@ -430,7 +427,7 @@ def test_gh420_a6_closeout_authenticates_departed_authored_holder(tmp_path: Path
             "start_monotonic_ns": reconciled["owner_exit"]["start_monotonic_ns"],
         }
         report = json.loads(result.stdout)
-        assert report["mode"] == mode
+        assert report["mode"] == "consumer-only"
         item = next(row for row in report["items"] if row.get("owner_node") == receipt["node"])
         destination = Path(item["destination"])
         assert item["status"] == "quarantined"
@@ -447,12 +444,9 @@ def test_gh420_a6_closeout_authenticates_departed_authored_holder(tmp_path: Path
         assert not (state_fixture["durable"] / "current-reference.json").exists()
 
 
-@pytest.mark.parametrize("mode", ["consumer-only", "shared-helper"])
 @pytest.mark.parametrize("operation_field", ["pending_worktree_creation", "owner_operation"])
-def test_gh420_a6_closeout_refuses_unresolved_owner_operation(
-    tmp_path: Path, mode: str, operation_field: str,
-):
-    attempt = f"GH-420-a6-pending-{mode}-{operation_field}"
+def test_gh420_a6_closeout_refuses_unresolved_owner_operation(tmp_path: Path, operation_field: str):
+    attempt = f"GH-420-a6-pending-consumer-only-{operation_field}"
     fixture = authored_runner_fixture(tmp_path, attempt=attempt, steps=[
         {"id": "proof", "argv": [sys.executable, "-c", "print('proof')"],
          "cwd": ".", "env": {}, "prerequisites": [], "designation": "mandatory"},
@@ -472,13 +466,11 @@ def test_gh420_a6_closeout_refuses_unresolved_owner_operation(
     state_fixture = integrated_controller_fixture(
         controller_root, attempt=attempt, candidate=fixture["candidate"],
     )
-    mode_arguments = ("--shared-helper",) if mode == "shared-helper" else ()
     result = task_cli(
-        "--repo-root", str(ROOT if mode == "shared-helper" else fixture["repo"]),
+        "--repo-root", str(fixture["repo"]),
         "--state-dir", str(state_fixture["state_dir"]),
         "output-closeout", "420", "--execution-record", str(fixture["owner"]),
         "--durable-evidence", str(state_fixture["durable"]),
-        *mode_arguments,
         "--execute", "--human-owner-authorized",
     )
     assert result.returncode == 1, result.stdout + result.stderr
@@ -486,6 +478,88 @@ def test_gh420_a6_closeout_refuses_unresolved_owner_operation(
     assert fixture["owner"].read_bytes() == owner_bytes
     assert all(path.is_dir() and lifecycle._node(path.lstat()) == receipt_nodes[path]
                for path in receipt_paths)
+    assert not (state_fixture["durable"] / "current-reference.json").exists()
+
+
+@pytest.mark.parametrize("fault", [
+    "wrong-issue", "wrong-current-attempt", "missing-state", "paused-state",
+    "pending-controller-operation", "pending-owner-operation", "missing-selected-helper",
+])
+def test_gh420_a7_refuses_before_departed_owner_reconciliation(tmp_path: Path, fault: str):
+    attempt = "GH-421-a7-wrong-issue" if fault == "wrong-issue" else f"GH-420-a7-{fault}"
+    fixture = interrupted_authored_runner_before_reconciliation(tmp_path, attempt=attempt)
+    owner = lifecycle._json(fixture["owner"])
+    if fault == "pending-owner-operation":
+        owner["owner_operation"] = {"status": "pending", "operation": "synthetic-a7"}
+        lifecycle._atomic_json(fixture["owner"], owner)
+
+    controller_root = tmp_path / "controller"
+    controller_root.mkdir()
+    state_fixture = integrated_controller_fixture(
+        controller_root, attempt=attempt, candidate=fixture["candidate"],
+    )
+    state_path = controller.state_path(state_fixture["state_dir"], 420)
+    if fault == "wrong-current-attempt":
+        state = controller.load_state(state_fixture["state_dir"], 420)
+        state["execution"]["attempt"] = "GH-420-a7-newer-current-attempt"
+        write_json(state_path, state)
+    elif fault == "paused-state":
+        state = controller.load_state(state_fixture["state_dir"], 420)
+        state["paused"] = True
+        write_json(state_path, state)
+    elif fault == "pending-controller-operation":
+        state = controller.load_state(state_fixture["state_dir"], 420)
+        state["execution"]["phase"] = "PENDING"
+        write_json(state_path, state)
+    elif fault == "missing-state":
+        state_path.unlink()
+
+    state_bytes_before = state_path.read_bytes() if state_path.exists() else None
+    owner_bytes_before = fixture["owner"].read_bytes()
+    receipt_paths = [Path(item["path"]) for item in owner["owned_outputs"]]
+    receipt_snapshots = {
+        path: (lifecycle._node(path.lstat()),
+               lifecycle._walk_native_tree(path, path.stat().st_dev)[1])
+        for path in receipt_paths
+    }
+    repo_root = fixture["repo"]
+    shared_args: tuple[str, ...] = ()
+    if fault == "missing-selected-helper":
+        repo_root = tmp_path / "selected-repository-with-missing-helper"
+        init_repo(repo_root)
+        (repo_root / "docs").mkdir()
+        missing_helper = tmp_path / "unavailable-ri949-source"
+        (repo_root / "docs/local_project_map.md").write_text(
+            "### Optional task-output cleanup helper\n"
+            "Optional task-output cleanup helper revision: `949b838809bcddb01e2cbe161faed6f6f1f705fe`\n"
+            f"The source is authenticated RI checkout `{missing_helper}`.\n",
+            encoding="utf-8",
+        )
+        shared_args = ("--shared-helper",)
+
+    result = task_cli(
+        "--repo-root", str(repo_root), "--state-dir", str(state_fixture["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(fixture["owner"]),
+        "--durable-evidence", str(state_fixture["durable"]), *shared_args,
+        "--execute", "--human-owner-authorized",
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    errors = json.loads(result.stdout)
+    expected = {
+        "wrong-issue": "OUTPUT_EXECUTION_RECORD_TASK_MISMATCH",
+        "wrong-current-attempt": "OUTPUT_CLOSEOUT_SUPERSESSION_NOT_PROVEN",
+        "missing-state": "OUTPUT_CLOSEOUT_CURRENT_TASK_UNAUTHENTICATED",
+        "paused-state": "OUTPUT_CLOSEOUT_TASK_PAUSED",
+        "pending-controller-operation": "OUTPUT_CLOSEOUT_EXECUTION_ACTIVE_OR_PAUSED",
+        "pending-owner-operation": "OUTPUT_CLOSEOUT_REFUSED: OUTPUT_OWNER_CURRENT_OPERATION_UNKNOWN",
+        "missing-selected-helper": "OUTPUT_SHARED_HELPER_UNAVAILABLE",
+    }[fault]
+    assert errors["error"] == expected, result.stdout
+    assert fixture["owner"].read_bytes() == owner_bytes_before
+    assert (state_path.read_bytes() if state_path.exists() else None) == state_bytes_before
+    for path, (node, entries) in receipt_snapshots.items():
+        assert path.is_dir() and lifecycle._node(path.lstat()) == node
+        assert lifecycle._walk_native_tree(path, path.stat().st_dev)[1] == entries
     assert not (state_fixture["durable"] / "current-reference.json").exists()
 
 
@@ -721,6 +795,67 @@ def selected_ri949_conformance(tmp_path: Path) -> dict:
     assert recovered_operation["mode"] == "shared-helper"
     assert recovered_operation["shared_source"] == {"root": str(helper_root), "revision": revision}
 
+    owner_recovery_root = tmp_path / "selected-helper-owner-reconciliation"
+    owner_recovery_root.mkdir()
+    owner_recovery = interrupted_authored_runner_before_reconciliation(
+        owner_recovery_root, attempt="GH-420-o1-selected-owner-reconciliation",
+    )
+    owner_recovery_record = lifecycle._json(owner_recovery["owner"])
+    owner_recovery_receipt = owner_recovery_record["owned_outputs"][0]
+    owner_recovery_output = Path(owner_recovery_receipt["path"])
+    owner_recovery_raw_entries = lifecycle._walk_native_tree(
+        owner_recovery_output, owner_recovery_output.stat().st_dev,
+    )[1]
+    owner_recovery_controller_root = owner_recovery_root / "controller"
+    owner_recovery_controller_root.mkdir()
+    owner_recovery_controller = integrated_controller_fixture(
+        owner_recovery_controller_root, attempt=owner_recovery["attempt"],
+        candidate=owner_recovery["candidate"],
+    )
+    owner_recovery_args = (
+        "--repo-root", str(ROOT), "--state-dir", str(owner_recovery_controller["state_dir"]),
+        "output-closeout", "420", "--execution-record", str(owner_recovery["owner"]),
+        "--durable-evidence", str(owner_recovery_controller["durable"]),
+        "--shared-helper", "--execute", "--human-owner-authorized",
+    )
+    owner_recovered = task_cli(*owner_recovery_args)
+    assert owner_recovered.returncode == 0, owner_recovered.stdout + owner_recovered.stderr
+    owner_recovered_report = json.loads(owner_recovered.stdout)
+    assert owner_recovered_report["mode"] == "shared-helper"
+    assert owner_recovered_report["source"] == {"root": str(helper_root), "revision": revision}
+    owner_recovered_item = next(item for item in owner_recovered_report["items"]
+                                if item.get("path") == str(owner_recovery_output))
+    owner_recovery_destination = Path(owner_recovered_item["destination"])
+    assert owner_recovered_item["status"] == "quarantined"
+    assert not owner_recovery_output.exists()
+    assert owner_recovery_destination.lstat().st_ino == owner_recovery_receipt["node"][1]
+    moved_entries = lifecycle._walk_native_tree(
+        owner_recovery_destination, owner_recovery_destination.stat().st_dev,
+    )[1]
+    unchanged_entries = [item for item in owner_recovery_raw_entries
+                         if item["path"] != "attempt-state.json"]
+    assert [item for item in moved_entries if item["path"] != "attempt-state.json"] == unchanged_entries
+    owner_recovery_state = controller.load_state(owner_recovery_controller["state_dir"], 420)
+    owner_recovery_reference = lifecycle.read_current_reference(
+        Path(owner_recovery_state["output_closeout"]["current_reference"]["path"]),
+    )
+    owner_relocation = next(item for item in owner_recovery_reference["relocations"]
+                            if item.get("original_path") == str(owner_recovery["owner"]))
+    recovered_owner = lifecycle._json(Path(owner_relocation["current_path"]))
+    assert recovered_owner["status"] == "complete"
+    assert recovered_owner.get("active_owner") is None
+    assert recovered_owner["owner_exit"]["result"] == "complete"
+    owner_recovery_repeat = task_cli(*owner_recovery_args)
+    assert owner_recovery_repeat.returncode == 0, owner_recovery_repeat.stdout + owner_recovery_repeat.stderr
+    owner_recovery_repeat_report = json.loads(owner_recovery_repeat.stdout)
+    assert owner_recovery_repeat_report["mode"] == "shared-helper"
+    assert owner_recovery_repeat_report["source"] == {"root": str(helper_root), "revision": revision}
+    repeated_owner_output = next(item for item in owner_recovery_repeat_report["items"]
+                                if item.get("owner_node") == owner_recovery_receipt["node"])
+    assert repeated_owner_output["status"] == "already_quarantined"
+    assert repeated_owner_output["newly_removed_bytes"] == 0
+    assert Path(repeated_owner_output["destination"]) == owner_recovery_destination
+
     substituted_root = tmp_path / "substituted-ri949-checkout"
     subprocess.run(["git", "clone", "--no-hardlinks", str(helper_root), str(substituted_root)],
                    capture_output=True, text=True, check=True, timeout=60)
@@ -774,6 +909,15 @@ def selected_ri949_conformance(tmp_path: Path) -> dict:
             "consumer_mode": consumer_report["mode"], "selected_mode": shared_report["mode"],
             "selected_repeat": repeated_output["status"],
             "selected_interruption_recovery": recovered_item["status"],
+            "selected_owner_exit_reconciliation": {
+                "attempt": owner_recovery["attempt"],
+                "mode": owner_recovered_report["mode"],
+                "source": owner_recovered_report["source"],
+                "status": owner_recovered_item["status"],
+                "repeat_status": repeated_owner_output["status"],
+                "repeat_newly_removed_bytes": repeated_owner_output["newly_removed_bytes"],
+                "owner_exit": recovered_owner["owner_exit"],
+            },
             "selected_source_substitution_refused":
                 json.loads(substituted_result.stdout)["error"],
             "owner_exit": owner_record["owner_exit"], "linked_tree_refused": linked_item["status"]}

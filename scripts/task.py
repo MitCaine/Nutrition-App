@@ -6806,6 +6806,128 @@ def _output_closeout_reconcile_departed_owner(
                 raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_CHANGED")
 
 
+def _output_closeout_preflight_and_reconcile_departed_owner(
+    *, state_dir: Path, issue_number: int, owner_record: Path, requested_record: Path,
+    durable: Path, repo_root: Path, helper_source: Path | None, helper_revision: str | None,
+    allow_reconciliation: bool,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Authenticate closeout authority before a departed-holder owner write."""
+    with output_cleanup.owner_lock(owner_record, blocking=False):
+        with checkpoint_lock(state_dir, issue_number):
+            try:
+                state = load_state(state_dir, issue_number)
+            except TaskControllerError:
+                state = None
+            reference = _output_current_reference(state)
+            execution = output_cleanup._json(owner_record)
+            active_owner = execution.get("active_owner")
+            if active_owner is None:
+                return state, reference
+            if not allow_reconciliation:
+                raise output_cleanup.OutputError("OUTPUT_OWNER_ACTIVE")
+
+            issue_task = f"GH-{issue_number}"
+            task = execution.get("task")
+            attempt = execution.get("attempt")
+            receipts = execution.get("owned_outputs")
+            if task != issue_task or not isinstance(attempt, str) or not attempt:
+                raise TaskControllerError("OUTPUT_EXECUTION_RECORD_TASK_MISMATCH")
+            if not isinstance(receipts, list) or not receipts:
+                raise TaskControllerError("OUTPUT_EXECUTION_RECORD_HAS_NO_RECEIPTS")
+            if any(not isinstance(receipt, dict) or receipt.get("task") != task
+                   or receipt.get("attempt") != attempt for receipt in receipts):
+                raise TaskControllerError("OUTPUT_RECEIPT_TASK_MISMATCH")
+            for receipt in receipts:
+                if receipt.get("schema_version") != output_cleanup.SCHEMA_VERSION:
+                    raise TaskControllerError("OUTPUT_RECEIPT_VERSION_INVALID")
+                output_cleanup.verify_receipt(receipt)
+
+            if output_cleanup.paths_overlap(durable, owner_record):
+                retained_owner = (reference is not None and owner_record.is_relative_to(durable)
+                                  and any(item.get("original_path") == str(requested_record)
+                                          and item.get("current_path") == str(owner_record)
+                                          and item.get("current_sha256")
+                                          == output_cleanup.file_binding(owner_record)["sha256"]
+                                          for item in reference.get("relocations", [])))
+                if not retained_owner:
+                    raise TaskControllerError("OUTPUT_DURABLE_EVIDENCE_ROOT_INVALID")
+
+            pending = [key for key, value in execution.items()
+                       if key.startswith("pending_") and value is not None]
+            if pending:
+                raise output_cleanup.OutputError("OUTPUT_OWNER_CURRENT_OPERATION_UNKNOWN")
+            for key in ("owner_operation", "active_operation"):
+                operation = execution.get(key)
+                if operation is not None and (
+                    not isinstance(operation, dict)
+                    or operation.get("status") not in {"complete", "failed", "cancelled", "reconciled"}
+                ):
+                    raise output_cleanup.OutputError("OUTPUT_OWNER_CURRENT_OPERATION_UNKNOWN")
+            if execution.get("status") not in {"in_progress", "complete", "failed"}:
+                raise output_cleanup.OutputError("OUTPUT_OWNER_CURRENT_OPERATION_UNKNOWN")
+
+            if helper_source is not None:
+                selected_source, selected_revision = _output_helper_selection(repo_root)
+                if (selected_source != helper_source or selected_revision != helper_revision):
+                    raise output_cleanup.OutputError("OUTPUT_SHARED_HELPER_SOURCE_MISMATCH")
+
+            request, protected = output_cleanup.derive_protected_inputs(owner_record, execution)
+            if (request.get("attempt") != attempt
+                    or output_cleanup.task_identifier(request.get("assignment", attempt)) != task):
+                raise output_cleanup.OutputError("OWNER_REQUEST_TASK_OR_ATTEMPT_MISMATCH")
+
+            ready_path = owner_record.parent / "output-owner-ready.json"
+            active_binding = execution.get("active_owner")
+            if (not isinstance(active_binding, dict)
+                    or set(active_binding) != {"pid", "start_monotonic_ns"}
+                    or type(active_binding.get("pid")) is not int
+                    or active_binding.get("pid", 0) <= 0
+                    or type(active_binding.get("start_monotonic_ns")) is not int
+                    or active_binding.get("start_monotonic_ns", 0) <= 0
+                    or ready_path.is_symlink() or not ready_path.is_file()
+                    or output_cleanup._json(ready_path) != active_binding):
+                raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_MISMATCH")
+            proposed, preview = output_cleanup._preview_owner_exit_reconciliation_locked(
+                owner_record, ready_file=ready_path, holder_pid=active_binding["pid"],
+            )
+            if not _output_owner_terminal_evidence(owner_record, proposed, request, reference):
+                raise output_cleanup.OutputError("OWNER_TERMINAL_RESULT_UNVERIFIED")
+            disposition = _output_closeout_disposition(
+                state, issue_number, attempt, proposed, request,
+            )
+            candidate = _output_terminal_candidate(
+                proposed, request, current_reference=reference,
+            )
+            if not isinstance(candidate, str):
+                raise output_cleanup.OutputError("OUTPUT_CLOSEOUT_TERMINAL_CANDIDATE_UNAUTHENTICATED")
+
+            reconciled = output_cleanup._reconcile_owner_exit_locked(
+                owner_record, ready_file=ready_path, holder_pid=active_binding["pid"],
+            )
+            if (reconciled != preview
+                    or reconciled.get("status") != proposed.get("status")
+                    or reconciled.get("result") != proposed.get("terminal_result")):
+                raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_RECONCILIATION_CHANGED")
+            final_owner = _output_closeout_assert_owner_quiescent(
+                owner_record, current_reference=reference,
+            )
+            if final_owner.get("owner_exit", {}).get("ready_file") != output_cleanup.file_binding(ready_path):
+                raise output_cleanup.OutputError("OUTPUT_OWNER_EXIT_READY_BINDING_CHANGED")
+            final_request, final_protected = output_cleanup.derive_protected_inputs(
+                owner_record, final_owner,
+            )
+            final_disposition = _output_closeout_disposition(
+                state, issue_number, attempt, final_owner, final_request,
+            )
+            final_candidate = _output_terminal_candidate(
+                final_owner, final_request, current_reference=reference,
+            )
+            if (final_request != request or final_protected != protected
+                    or final_disposition != disposition or final_candidate != candidate):
+                raise output_cleanup.OutputError("OUTPUT_CLOSEOUT_CURRENT_DISPOSITION_CHANGED")
+            return state, reference
+
+
 def _verify_output_closeout_mode(
     operation: dict[str, Any], *, helper_source: Path | None, helper_revision: str | None,
 ) -> None:
@@ -7051,11 +7173,23 @@ def command_output_closeout(args: argparse.Namespace) -> int:
     reference = _output_current_reference(state)
     if not record_path.is_file() or record_path.is_symlink():
         raise TaskControllerError("OUTPUT_EXECUTION_RECORD_INVALID")
+    repo_root = resolve_repo_root(args.repo_root)
+    helper_source = helper_revision = None
+    if args.shared_helper:
+        helper_source, helper_revision = _output_helper_selection(repo_root)
     try:
-        _output_closeout_reconcile_departed_owner(
-            record_path, allow_reconciliation=args.execute,
-            current_reference=reference,
-        )
+        if args.execute:
+            state, reference = _output_closeout_preflight_and_reconcile_departed_owner(
+                state_dir=args.state_dir, issue_number=args.issue_number,
+                owner_record=record_path, requested_record=requested_record,
+                durable=durable, repo_root=repo_root, helper_source=helper_source,
+                helper_revision=helper_revision, allow_reconciliation=True,
+            )
+        else:
+            _output_closeout_reconcile_departed_owner(
+                record_path, allow_reconciliation=False,
+                current_reference=reference,
+            )
     except output_cleanup.OutputError as error:
         if str(error) == "OUTPUT_OWNER_ACTIVE":
             raise TaskControllerError("OUTPUT_OWNER_ACTIVE") from error
@@ -7086,10 +7220,6 @@ def command_output_closeout(args: argparse.Namespace) -> int:
         if not retained_owner:
             raise TaskControllerError("OUTPUT_DURABLE_EVIDENCE_ROOT_INVALID")
 
-    repo_root = resolve_repo_root(args.repo_root)
-    helper_source = helper_revision = None
-    if args.shared_helper:
-        helper_source, helper_revision = _output_helper_selection(repo_root)
     try:
         with output_cleanup.owner_lock(record_path, blocking=False):
             _output_closeout_assert_owner_quiescent(
