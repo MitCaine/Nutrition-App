@@ -1942,9 +1942,24 @@ def _native_prebuild_stage_matches(stage_file: Path, producer_exit_code: int) ->
 def _read_native_stage_bytes(path: Path) -> bytes:
     """Read one unique regular stage file without following links or accepting races."""
     _no_symlinks(path)
+    try:
+        path_before = path.lstat()
+    except OSError as error:
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE") from error
+    if (not stat.S_ISREG(path_before.st_mode) or path_before.st_nlink != 1
+            or not path_before.st_mode & 0o444):
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE")
+
+    def identity(item: os.stat_result) -> tuple[int, int, int, int, int, int, int]:
+        return (item.st_dev, item.st_ino, item.st_mode, item.st_size,
+                item.st_mtime_ns, item.st_ctime_ns, item.st_nlink)
+
     flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    nonblocking = getattr(os, "O_NONBLOCK", None)
+    if no_follow is None or nonblocking is None:
+        raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE")
+    flags |= no_follow | nonblocking
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
     try:
@@ -1955,6 +1970,8 @@ def _read_native_stage_bytes(path: Path) -> bytes:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or not before.st_mode & 0o444:
             raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE")
+        if identity(path_before) != identity(before):
+            raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_IDENTITY_CHANGED")
         chunks = []
         while True:
             block = os.read(descriptor, 1024 * 1024)
@@ -1966,10 +1983,6 @@ def _read_native_stage_bytes(path: Path) -> bytes:
             current = path.lstat()
         except OSError as error:
             raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_IDENTITY_CHANGED") from error
-
-        def identity(item: os.stat_result) -> tuple[int, int, int, int, int, int]:
-            return (item.st_dev, item.st_ino, item.st_size,
-                    item.st_mtime_ns, item.st_ctime_ns, item.st_nlink)
 
         if identity(before) != identity(after) or identity(after) != identity(current):
             raise OutputError("NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_IDENTITY_CHANGED")

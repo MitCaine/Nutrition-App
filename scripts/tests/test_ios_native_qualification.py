@@ -589,6 +589,147 @@ class IosNativeQualificationTests(
                 self.assertEqual(expected_snapshot.read_bytes(), snapshot_bytes)
                 owner_path.write_bytes(owner_bytes)
 
+        def snapshot_tree(root: Path) -> dict[str, tuple]:
+            observed: dict[str, tuple] = {}
+
+            def visit(path: Path) -> None:
+                item = path.lstat()
+                identity = (
+                    item.st_dev, item.st_ino, item.st_mode, item.st_nlink,
+                    item.st_size, item.st_mtime_ns, item.st_ctime_ns,
+                )
+                if stat.S_ISLNK(item.st_mode):
+                    value = ("symlink", identity, os.readlink(path))
+                elif stat.S_ISDIR(item.st_mode):
+                    value = ("directory", identity)
+                    observed[str(path)] = value
+                    for child in sorted(path.iterdir(), key=lambda candidate: candidate.name):
+                        visit(child)
+                    return
+                elif stat.S_ISREG(item.st_mode):
+                    value = ("file", identity, hashlib.sha256(path.read_bytes()).hexdigest())
+                else:
+                    value = ("special", identity)
+                observed[str(path)] = value
+
+            visit(root)
+            return observed
+
+        retained = evidence / "native-lifecycle" / "retained-outputs"
+        phases = evidence / "native-lifecycle" / "phases"
+        record_paths = sorted((*retained.rglob("*.json"), *phases.rglob("*.json")))
+        record_state = {
+            str(path): (path.read_bytes(), hashlib.sha256(path.read_bytes()).hexdigest(),
+                        path.stat(follow_symlinks=False).st_ino)
+            for path in record_paths
+        }
+        quarantine_root = Path(owner["quarantine_parent"]["path"])
+        quarantine_state = snapshot_tree(quarantine_root)
+        saved_stage_bytes = stage_path.read_bytes()
+        saved_stage_hash = hashlib.sha256(saved_stage_bytes).hexdigest()
+        saved_stage_mode = stat.S_IMODE(stage_path.stat(follow_symlinks=False).st_mode)
+        recovery_copy = evidence.parent / "a15-original-stages.jsonl"
+        recovery_copy.write_bytes(saved_stage_bytes)
+        self.assertEqual(hashlib.sha256(recovery_copy.read_bytes()).hexdigest(), saved_stage_hash)
+
+        with self.subTest(snapshot_fault="current-stage-fifo"):
+            stage_path.unlink()
+            os.mkfifo(stage_path)
+            self.assertTrue(stat.S_ISFIFO(stage_path.lstat().st_mode))
+            timed_out = False
+            refused = None
+            try:
+                refused = subprocess.run(
+                    command, cwd=ROOT, env=environment, capture_output=True, text=True,
+                    check=False, timeout=5,
+                )
+            except subprocess.TimeoutExpired:
+                timed_out = True
+            finally:
+                if os.path.lexists(stage_path):
+                    stage_path.unlink()
+                stage_path.write_bytes(recovery_copy.read_bytes())
+                stage_path.chmod(saved_stage_mode)
+
+            self.assertEqual(stage_path.read_bytes(), saved_stage_bytes)
+            self.assertEqual(hashlib.sha256(stage_path.read_bytes()).hexdigest(), saved_stage_hash)
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            self.assertEqual(hashlib.sha256(expected_snapshot.read_bytes()).hexdigest(),
+                             generated[0]["stages"]["sha256"])
+            self.assertEqual(expected_snapshot.read_bytes(), snapshot_bytes)
+            self.assertEqual(
+                {
+                    str(path): (path.read_bytes(), hashlib.sha256(path.read_bytes()).hexdigest(),
+                                path.stat(follow_symlinks=False).st_ino)
+                    for path in record_paths
+                },
+                record_state,
+            )
+            self.assertEqual(snapshot_tree(quarantine_root), quarantine_state)
+            self.assertFalse(timed_out, "complete native readback blocked on current-stage FIFO")
+            self.assertIsNotNone(refused)
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+            self.assertEqual(
+                json.loads(refused.stderr)["reason"],
+                "NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE",
+            )
+
+    @unittest.skipUnless(
+        hasattr(os, "mkfifo") and hasattr(os, "O_NONBLOCK"),
+        "FIFO open-race control requires POSIX nonblocking FIFOs",
+    )
+    def test_native_stage_reader_refuses_fifo_substitution_during_open(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a15-stage-open-race-") as temporary:
+            stage_path = Path(temporary) / "stages.jsonl"
+            stage_path.write_bytes(b"authenticated stage bytes\n")
+            original = stage_path.read_bytes()
+            script = "\n".join((
+                "import os, sys",
+                "from pathlib import Path",
+                "sys.path.insert(0, sys.argv[1])",
+                "from lib import task_output_cleanup as cleanup",
+                "stage = Path(sys.argv[2])",
+                "real_open = os.open",
+                "swapped = False",
+                "def race_open(path, flags, *args, **kwargs):",
+                "    global swapped",
+                "    if os.fspath(path) == str(stage) and not swapped:",
+                "        swapped = True",
+                "        stage.unlink()",
+                "        os.mkfifo(stage)",
+                "        if not flags & os.O_NONBLOCK:",
+                "            raise AssertionError('stage descriptor was not opened nonblocking')",
+                "    return real_open(path, flags, *args, **kwargs)",
+                "os.open = race_open",
+                "try:",
+                "    cleanup._read_native_stage_bytes(stage)",
+                "except cleanup.OutputError as error:",
+                "    print(str(error))",
+                "    raise SystemExit(2)",
+                "raise SystemExit(0)",
+            ))
+            timed_out = False
+            try:
+                try:
+                    result = subprocess.run(
+                        [sys.executable, "-c", script, str(SCRIPTS), str(stage_path)],
+                        cwd=ROOT, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                        capture_output=True, text=True, check=False, timeout=5,
+                    )
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    result = None
+            finally:
+                if os.path.lexists(stage_path):
+                    stage_path.unlink()
+                stage_path.write_bytes(original)
+
+            self.assertFalse(timed_out, "stage reader blocked after FIFO substitution at open")
+            self.assertIsNotNone(result)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), "NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE")
+            self.assertEqual(stage_path.read_bytes(), original)
+
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_native_complete_worktree_verification_reuses_one_observation(self):
         result, evidence = self._run_fixture_qualification("success", trace_worktree_walks=True)
