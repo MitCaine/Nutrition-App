@@ -16,7 +16,7 @@ def record():
     return (ROOT / 'engineering/tasks/ENGINEERING_TEMPLATE.md').read_text()
 
 
-def _inspector_fixture(tmp_path):
+def _inspector_fixture(tmp_path, history='existing'):
     repo = tmp_path / 'repo'
     repo.mkdir()
     def git(*args):
@@ -26,18 +26,69 @@ def _inspector_fixture(tmp_path):
     git('config', 'user.email', 'owner@example.invalid')
     specification_path = repo / 'engineering/tasks/GH-422-ENGINEERING.md'
     specification_path.parent.mkdir(parents=True)
-    specification_path.write_text('## Prior plan\n\nAccepted starting text.\n')
+    has_starting_specification = history != 'first_add_then_modify'
+    if has_starting_specification:
+        specification_path.write_text('## Prior plan\n\nAccepted starting text.\n')
     source_path = repo / 'scripts/worker_execution.py'
     source_path.parent.mkdir(parents=True)
     source_path.write_text('pass\n')
-    git('add', '.')
+    git('add', 'scripts/worker_execution.py')
+    if has_starting_specification:
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
     git('commit', '-qm', 'integration base')
     integration_base = git('rev-parse', 'HEAD')
     predecessor = integration_base
-    specification_path.write_text('## Accepted plan\n\nExact reviewed planning text.\n')
-    git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
-    git('commit', '-qm', 'publish accepted plan')
+    accepted_plan = '## Accepted plan\n\nExact reviewed planning text.\n'
+    if history == 'first_add_then_modify':
+        specification_path.write_text('## Initial approved plan\n\nFirst reviewed addition.\n')
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
+        git('commit', '-qm', 'add accepted plan')
+        specification_path.write_text(accepted_plan)
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
+        git('commit', '-qm', 'refine accepted plan')
+    elif history == 'delete_readd':
+        git('rm', 'engineering/tasks/GH-422-ENGINEERING.md')
+        git('commit', '-qm', 'delete accepted specification')
+        specification_path.parent.mkdir(parents=True, exist_ok=True)
+        specification_path.write_text(accepted_plan)
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
+        git('commit', '-qm', 'reintroduce accepted specification')
+    elif history == 'rename':
+        git('mv', 'engineering/tasks/GH-422-ENGINEERING.md', 'engineering/tasks/GH-422-RENAMED.md')
+        git('commit', '-qm', 'rename accepted specification')
+        git('mv', 'engineering/tasks/GH-422-RENAMED.md', 'engineering/tasks/GH-422-ENGINEERING.md')
+        specification_path.write_text(accepted_plan)
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
+        git('commit', '-qm', 'rename accepted specification back')
+    elif history == 'unrelated':
+        specification_path.write_text(accepted_plan)
+        (repo / 'unrelated.txt').write_text('Unauthorized history change.\n')
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md', 'unrelated.txt')
+        git('commit', '-qm', 'change plan and unrelated path')
+    elif history == 'reverted_source':
+        specification_path.write_text(accepted_plan)
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
+        git('commit', '-qm', 'publish accepted plan')
+        source_path.write_text('source change that is later reverted\n')
+        git('add', 'scripts/worker_execution.py')
+        git('commit', '-qm', 'introduce unrelated source change')
+        source_path.write_text('pass\n')
+        git('add', 'scripts/worker_execution.py')
+        git('commit', '-qm', 'revert unrelated source change')
+    elif history == 'existing':
+        specification_path.write_text(accepted_plan)
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
+        git('commit', '-qm', 'publish accepted plan')
+    else:
+        raise AssertionError(f'unknown fixture history: {history}')
     base = git('rev-parse', 'HEAD')
+
+    history_rows = []
+    for commit in git('rev-list', '--reverse', f'{predecessor}..{base}').splitlines():
+        parent = git('rev-list', '--parents', '-n', '1', commit).split()[1]
+        rows = git('diff-tree', '--no-commit-id', '--name-status', '-r', '--find-renames',
+                   parent, commit).splitlines()
+        history_rows.append([row.split('\t') for row in rows])
 
     def reference(path):
         return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
@@ -143,7 +194,7 @@ def _inspector_fixture(tmp_path):
     return {
         'repo': repo, 'git': git, 'state': state, 'request': request,
         'checkpoint': checkpoint, 'request_path': request_path, 'state_dir': state_dir,
-        'transport': FixtureTransport(), 'due_paths': due_paths,
+        'transport': FixtureTransport(), 'due_paths': due_paths, 'history_rows': history_rows,
     }
 
 
@@ -164,16 +215,68 @@ def _save_assignment(fixture, assignment):
     fixture['request_path'].write_text(json.dumps(fixture['request'], sort_keys=True) + '\n')
 
 
-def test_public_inspect_engineering_assignment_is_read_only_and_authenticates_fixture(tmp_path, monkeypatch, capsys):
+def _state_snapshot(fixture):
+    state_dir = fixture['state_dir']
+    return {
+        path.relative_to(state_dir).as_posix(): ('directory' if path.is_dir() else path.read_bytes())
+        for path in sorted(state_dir.rglob('*'))
+    }
+
+
+def test_public_inspector_accepts_existing_specification_modification(tmp_path, monkeypatch, capsys):
     fixture = _inspector_fixture(tmp_path)
-    before = fixture['checkpoint'].read_bytes()
+    before = _state_snapshot(fixture)
+    assert fixture['history_rows'] == [[['M', 'engineering/tasks/GH-422-ENGINEERING.md']]]
     assert _run_assignment_inspector(fixture, monkeypatch) == 0
     result = json.loads(capsys.readouterr().out)
     assert result['result'] == 'PASS'
     assert result['assignment'] == 'GH-422/implementation-a1'
     assert result['base'] == fixture['state']['execution']['engineering_assignment']['base']
     assert len(result['references']) == 6
-    assert fixture['checkpoint'].read_bytes() == before
+    assert _state_snapshot(fixture) == before
+
+
+def test_public_inspector_accepts_initial_specification_addition_then_modification(
+        tmp_path, monkeypatch, capsys):
+    fixture = _inspector_fixture(tmp_path, history='first_add_then_modify')
+    before = _state_snapshot(fixture)
+    assert fixture['history_rows'] == [
+        [['A', 'engineering/tasks/GH-422-ENGINEERING.md']],
+        [['M', 'engineering/tasks/GH-422-ENGINEERING.md']],
+    ]
+    assert _run_assignment_inspector(fixture, monkeypatch) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result['result'] == 'PASS'
+    assert result['base'] == fixture['state']['execution']['engineering_assignment']['base']
+    assert _state_snapshot(fixture) == before
+
+
+@pytest.mark.parametrize('history', ['delete_readd', 'rename', 'unrelated', 'reverted_source'])
+def test_public_inspector_refuses_unsafe_specification_history_without_checkpoint_or_attempt_changes(
+        tmp_path, monkeypatch, capsys, history):
+    fixture = _inspector_fixture(tmp_path, history=history)
+    if history == 'delete_readd':
+        assert fixture['history_rows'] == [
+            [['D', 'engineering/tasks/GH-422-ENGINEERING.md']],
+            [['A', 'engineering/tasks/GH-422-ENGINEERING.md']],
+        ]
+    elif history == 'rename':
+        assert fixture['history_rows'][0][0][0].startswith('R')
+    elif history == 'unrelated':
+        assert fixture['history_rows'] == [[
+            ['M', 'engineering/tasks/GH-422-ENGINEERING.md'],
+            ['A', 'unrelated.txt'],
+        ]]
+    else:
+        assert fixture['history_rows'] == [
+            [['M', 'engineering/tasks/GH-422-ENGINEERING.md']],
+            [['M', 'scripts/worker_execution.py']],
+            [['M', 'scripts/worker_execution.py']],
+        ]
+    before = _state_snapshot(fixture)
+    assert _run_assignment_inspector(fixture, monkeypatch) == 1
+    assert json.loads(capsys.readouterr().out)['result'] == 'FAIL'
+    assert _state_snapshot(fixture) == before
 
 
 @pytest.mark.parametrize('failure', [

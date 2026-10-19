@@ -2248,14 +2248,18 @@ def inspect_engineering_assignment(
     if predecessor_candidate != base:
         commits = _engineering_git(repo, "rev-list", "--reverse", predecessor_candidate + ".." + base).splitlines()
         previous = predecessor_candidate
-        for commit in commits:
+        for index, commit in enumerate(commits):
             parents = _engineering_git(repo, "rev-list", "--parents", "-n", "1", commit).split()
             if len(parents) != 2 or parents[1] != previous:
                 raise TaskControllerError("ENGINEERING_ASSIGNMENT_HISTORY_NOT_LINEAR")
             changed = _engineering_git(repo, "diff-tree", "--no-commit-id", "--name-status", "-r",
                                        "--find-renames", parents[1], commit).splitlines()
-            if not changed or any(row.split("\t") != ["M", specification_relative.as_posix()]
-                                  for row in changed):
+            rows = [row.split("\t") for row in changed]
+            expected_change = ["M", specification_relative.as_posix()]
+            initial_specification_addition = (
+                index == 0 and rows == [["A", specification_relative.as_posix()]]
+            )
+            if not changed or (not initial_specification_addition and rows != [expected_change]):
                 raise TaskControllerError("ENGINEERING_ASSIGNMENT_HISTORY_OUT_OF_SCOPE")
             previous = commit
         if previous != base:
