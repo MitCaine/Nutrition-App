@@ -1,6 +1,7 @@
 """Public record/prepare barriers for the explicitly selected engineering route."""
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -10,13 +11,14 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import task  # noqa: E402
+import worker_execution  # noqa: E402
 
 
 def record():
     return (ROOT / 'engineering/tasks/ENGINEERING_TEMPLATE.md').read_text()
 
 
-def _inspector_fixture(tmp_path, history='existing'):
+def _inspector_fixture(tmp_path, history='existing', owner_profiles=None):
     repo = tmp_path / 'repo'
     repo.mkdir()
     def git(*args):
@@ -37,6 +39,7 @@ def _inspector_fixture(tmp_path, history='existing'):
         git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
     git('commit', '-qm', 'integration base')
     integration_base = git('rev-parse', 'HEAD')
+    initial_branch = git('branch', '--show-current')
     predecessor = integration_base
     accepted_plan = '## Accepted plan\n\nExact reviewed planning text.\n'
     if history == 'first_add_then_modify':
@@ -75,6 +78,16 @@ def _inspector_fixture(tmp_path, history='existing'):
         source_path.write_text('pass\n')
         git('add', 'scripts/worker_execution.py')
         git('commit', '-qm', 'revert unrelated source change')
+    elif history == 'nonlinear':
+        git('switch', '-c', 'side-plan', '-q')
+        specification_path.write_text('## Side plan\n\nNonlinear planning branch.\n')
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
+        git('commit', '-qm', 'side specification change')
+        git('switch', initial_branch, '-q')
+        specification_path.write_text(accepted_plan)
+        git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
+        git('commit', '-qm', 'main specification change')
+        git('merge', '-q', '--no-ff', '-s', 'ours', 'side-plan', '-m', 'nonlinear specification history')
     elif history == 'existing':
         specification_path.write_text(accepted_plan)
         git('add', 'engineering/tasks/GH-422-ENGINEERING.md')
@@ -115,6 +128,7 @@ def _inspector_fixture(tmp_path, history='existing'):
     approval = reference(approval_path)
     allowed_changes = ['scripts/worker_execution.py', 'scripts/lib/review_commands.py']
     profiles = ['repository']
+    authorized_profiles = owner_profiles or profiles
     assignment = {
         'assignment': 'GH-422/implementation-a1', 'attempt': 'GH-422-implementation-a1',
         'base': base, 'integration_base': integration_base,
@@ -135,7 +149,7 @@ def _inspector_fixture(tmp_path, history='existing'):
     payload = task.build_payload(
         task_id='GH-422', issue_number=422, repository='owner/repo', base_sha=integration_base,
         allowed_paths=['scripts/**', 'engineering/**'], forbidden_paths=['engineering/private/**'],
-        profiles=profiles, revision=1, nonce='fixture-owner-nonce',
+        profiles=authorized_profiles, revision=1, nonce='fixture-owner-nonce',
     )
     selection = task._normalize_workflow_selection('standard', None)
     selection_sha = task._workflow_selection_digest(selection)
@@ -181,9 +195,27 @@ def _inspector_fixture(tmp_path, history='existing'):
     }
 
     class FixtureTransport:
+        def __init__(self):
+            self.predecessor_decisions = []
+
         def list_issue_comments(self, repository, issue_number):
             assert (repository, issue_number) == ('owner/repo', 422)
             return [comment]
+
+        def withhold_predecessor_acceptance(self, return_reference):
+            report_path = Path(return_reference['path'])
+            report = json.loads(report_path.read_text())
+            observed_hash = hashlib.sha256(report_path.read_bytes()).hexdigest()
+            assert observed_hash == return_reference['sha256']
+            if report.get('review_ready') is False and report.get('completeness', {}).get('ready') is False:
+                decision = 'interrupted'
+            else:
+                decision = 'accepted'
+            self.predecessor_decisions.append({
+                'candidate': report.get('candidate'), 'return': return_reference,
+                'decision': decision,
+            })
+            return decision
 
     state_dir = tmp_path / 'state'
     state_dir.mkdir()
@@ -223,6 +255,66 @@ def _state_snapshot(fixture):
     }
 
 
+def _worker_test_helpers():
+    path = ROOT / 'scripts/tests/test_worker_execution.py'
+    spec = importlib.util.spec_from_file_location('nutrition_worker_execution_test_support', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_partial_public_return_keeps_predecessor_unaccepted_through_fixture_transport(
+        tmp_path, monkeypatch, capsys):
+    public_root = tmp_path / 'public-route'
+    public_root.mkdir()
+    worker_tests = _worker_test_helpers()
+    case = worker_tests._write_generated_fixture(worker_execution, public_root)
+    attempt, result_path, terminal_path, result, terminal = worker_tests._run_generated_fixture_to_terminal(
+        case, second_case_failure='raise SystemExit(13)', expected_run=1)
+    assert result['ready'] is False
+    assert terminal['review_ready'] is False
+    assert terminal['completeness']['ready'] is False
+    facts = {row['id']: row for row in result['facts']['outcomes']}
+    assert facts['P1']['status'] == 'passed'
+    assert facts['P1b']['status'] == 'failed'
+    assert facts['R1']['status'] == 'failed'
+    original_return = terminal_path.read_bytes()
+
+    inspector_root = tmp_path / 'inspector'
+    inspector_root.mkdir()
+    fixture = _inspector_fixture(inspector_root)
+    return_reference = {
+        'path': str(terminal_path),
+        'sha256': hashlib.sha256(original_return).hexdigest(),
+    }
+    # This deterministic test transport models the controller boundary only.
+    # The product inspector still reads the controller's saved decision mechanically.
+    decision = fixture['transport'].withhold_predecessor_acceptance(return_reference)
+    assert decision == 'interrupted'
+    assert fixture['transport'].predecessor_decisions == [{
+        'candidate': terminal['candidate'], 'return': return_reference, 'decision': 'interrupted',
+    }]
+    assignment = json.loads(json.dumps(fixture['state']['execution']['engineering_assignment']))
+    assignment['predecessor']['decision'] = decision
+    assignment['predecessor']['review']['report'] = return_reference
+    assignment['predecessor']['due_evidence'] = [
+        return_reference,
+        {'path': str(result_path), 'sha256': hashlib.sha256(result_path.read_bytes()).hexdigest()},
+    ]
+    _save_assignment(fixture, assignment)
+    checkpoint_before = fixture['checkpoint'].read_bytes()
+    state_before = _state_snapshot(fixture)
+
+    assert _run_assignment_inspector(fixture, monkeypatch) == 1
+    refused = json.loads(capsys.readouterr().out)
+    assert refused['result'] == 'FAIL'
+    assert refused['error'] == 'ENGINEERING_PREDECESSOR_NOT_ACCEPTED'
+    assert fixture['checkpoint'].read_bytes() == checkpoint_before
+    assert _state_snapshot(fixture) == state_before
+    assert not (fixture['state_dir'] / assignment['attempt']).exists()
+    assert terminal_path.read_bytes() == original_return
+
+
 def test_public_inspector_accepts_existing_specification_modification(tmp_path, monkeypatch, capsys):
     fixture = _inspector_fixture(tmp_path)
     before = _state_snapshot(fixture)
@@ -251,9 +343,15 @@ def test_public_inspector_accepts_initial_specification_addition_then_modificati
     assert _state_snapshot(fixture) == before
 
 
-@pytest.mark.parametrize('history', ['delete_readd', 'rename', 'unrelated', 'reverted_source'])
+@pytest.mark.parametrize('history,error', [
+    ('delete_readd', 'ENGINEERING_ASSIGNMENT_HISTORY_OUT_OF_SCOPE'),
+    ('rename', 'ENGINEERING_ASSIGNMENT_HISTORY_OUT_OF_SCOPE'),
+    ('unrelated', 'ENGINEERING_ASSIGNMENT_HISTORY_OUT_OF_SCOPE'),
+    ('reverted_source', 'ENGINEERING_ASSIGNMENT_HISTORY_OUT_OF_SCOPE'),
+    ('nonlinear', 'ENGINEERING_ASSIGNMENT_HISTORY_NOT_LINEAR'),
+])
 def test_public_inspector_refuses_unsafe_specification_history_without_checkpoint_or_attempt_changes(
-        tmp_path, monkeypatch, capsys, history):
+        tmp_path, monkeypatch, capsys, history, error):
     fixture = _inspector_fixture(tmp_path, history=history)
     if history == 'delete_readd':
         assert fixture['history_rows'] == [
@@ -267,32 +365,59 @@ def test_public_inspector_refuses_unsafe_specification_history_without_checkpoin
             ['M', 'engineering/tasks/GH-422-ENGINEERING.md'],
             ['A', 'unrelated.txt'],
         ]]
-    else:
+    elif history == 'reverted_source':
         assert fixture['history_rows'] == [
             [['M', 'engineering/tasks/GH-422-ENGINEERING.md']],
             [['M', 'scripts/worker_execution.py']],
             [['M', 'scripts/worker_execution.py']],
         ]
+    else:
+        assert len(fixture['history_rows']) >= 3
     before = _state_snapshot(fixture)
+    checkpoint_before = fixture['checkpoint'].read_bytes()
     assert _run_assignment_inspector(fixture, monkeypatch) == 1
-    assert json.loads(capsys.readouterr().out)['result'] == 'FAIL'
+    refused = json.loads(capsys.readouterr().out)
+    assert refused['result'] == 'FAIL'
+    assert refused['error'] == error
+    assert fixture['checkpoint'].read_bytes() == checkpoint_before
     assert _state_snapshot(fixture) == before
+    assert not (fixture['state_dir'] / fixture['request']['attempt']).exists()
 
 
-@pytest.mark.parametrize('failure', [
-    'altered_plan', 'rejected_predecessor', 'moved_review', 'missing_due_evidence',
-    'unauthorized_path', 'profile_reduction', 'rename', 'moved_base',
+@pytest.mark.parametrize('failure,error', [
+    ('altered_plan', 'ENGINEERING_PLANNING_APPROVAL_BINDING_MISMATCH'),
+    ('predecessor_absent', 'ENGINEERING_PREDECESSOR_INCOMPLETE'),
+    ('predecessor_rejected', 'ENGINEERING_PREDECESSOR_NOT_ACCEPTED'),
+    ('predecessor_interrupted', 'ENGINEERING_PREDECESSOR_NOT_ACCEPTED'),
+    ('moved_review', 'ENGINEERING_PREDECESSOR_NOT_ACCEPTED'),
+    ('missing_due_evidence', 'ENGINEERING_PREDECESSOR_DUE_EVIDENCE_REFERENCE_UNAVAILABLE'),
+    ('planning_report_binding', 'ENGINEERING_PLANNING_REPORT_REFERENCE_CHANGED'),
+    ('due_evidence_binding', 'ENGINEERING_PREDECESSOR_DUE_EVIDENCE_REFERENCE_CHANGED'),
+    ('unauthorized_path', 'ENGINEERING_ASSIGNMENT_PATH_OUTSIDE_OWNER_SCOPE: engineering/private/secret.md'),
+    ('profile_floor', 'ENGINEERING_ASSIGNMENT_PROFILE_FLOOR_REDUCED'),
+    ('rename', 'ENGINEERING_ASSIGNMENT_HISTORY_OUT_OF_SCOPE'),
+    ('moved_base', 'ENGINEERING_ASSIGNMENT_BASE_MOVED'),
 ])
 def test_public_inspector_refuses_changed_assignment_and_preserves_checkpoint(
-        tmp_path, monkeypatch, capsys, failure):
-    fixture = _inspector_fixture(tmp_path)
+        tmp_path, monkeypatch, capsys, failure, error):
+    owner_profiles = ['repository', 'backend'] if failure == 'profile_floor' else None
+    fixture = _inspector_fixture(tmp_path, owner_profiles=owner_profiles)
     assignment = json.loads(json.dumps(fixture['state']['execution']['engineering_assignment']))
     if failure == 'altered_plan':
         assignment['selection_sha256'] = 'b' * 64
         assignment['planning_review']['selection_sha256'] = 'b' * 64
         _save_assignment(fixture, assignment)
-    elif failure == 'rejected_predecessor':
-        assignment['predecessor']['decision'] = 'interrupted'
+    elif failure in ('predecessor_rejected', 'predecessor_interrupted'):
+        assignment['predecessor']['decision'] = 'rejected' if failure == 'predecessor_rejected' else 'interrupted'
+        _save_assignment(fixture, assignment)
+    elif failure == 'predecessor_absent':
+        assignment['predecessor'] = {}
+        _save_assignment(fixture, assignment)
+    elif failure == 'planning_report_binding':
+        assignment['planning_review']['report']['sha256'] = '0' * 64
+        _save_assignment(fixture, assignment)
+    elif failure == 'due_evidence_binding':
+        assignment['predecessor']['due_evidence'][0]['sha256'] = '0' * 64
         _save_assignment(fixture, assignment)
     elif failure == 'moved_review':
         assignment['predecessor']['review']['reviewed_candidate'] = 'f' * 40
@@ -302,9 +427,9 @@ def test_public_inspector_refuses_changed_assignment_and_preserves_checkpoint(
     elif failure == 'unauthorized_path':
         assignment['allowed_changes'] = ['engineering/private/secret.md']
         _save_assignment(fixture, assignment)
-    elif failure == 'profile_reduction':
-        fixture['request']['profiles'] = []
-        fixture['request_path'].write_text(json.dumps(fixture['request'], sort_keys=True) + '\n')
+    elif failure == 'profile_floor':
+        assignment['profiles'] = ['backend']
+        _save_assignment(fixture, assignment)
     elif failure == 'rename':
         fixture['git']('mv', 'scripts/worker_execution.py', 'scripts/worker_execution-moved.py')
         fixture['git']('commit', '-qm', 'unauthorized source rename')
@@ -314,10 +439,15 @@ def test_public_inspector_refuses_changed_assignment_and_preserves_checkpoint(
         fixture['git']('commit', '--allow-empty', '-qm', 'base moved unexpectedly')
 
     before = fixture['checkpoint'].read_bytes()
+    state_before = _state_snapshot(fixture)
     result = _run_assignment_inspector(fixture, monkeypatch)
     assert result == 1
-    assert json.loads(capsys.readouterr().out)['result'] == 'FAIL'
+    refused = json.loads(capsys.readouterr().out)
+    assert refused['result'] == 'FAIL'
+    assert refused['error'] == error
     assert fixture['checkpoint'].read_bytes() == before
+    assert _state_snapshot(fixture) == state_before
+    assert not (fixture['state_dir'] / assignment['attempt']).exists()
 
 
 def test_engineering_record_is_explicit_and_not_capsule_alias(tmp_path, capsys):

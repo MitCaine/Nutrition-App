@@ -730,11 +730,155 @@ def _write_generated_fixture(adapter, tmp_path, *, capsule=False, missing_comman
 
 
 def _generated_public(case, mode, *extra):
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), mode, '--request', str(case['generated']),
-         '--evidence', str(case['evidence']), *extra], cwd=ROOT, env=case['environment'],
-        capture_output=True, text=True, timeout=90,
+    return _generated_cli(case, mode, '--request', case['generated'],
+                          '--evidence', case.get('active_evidence', case['evidence']),
+                          *extra)
+
+
+def _generated_cli(case, *argv, timeout=90):
+    script = case.get('controller_script', SCRIPT)
+    cwd = case.get('controller_root', ROOT)
+    args = [str(value) for value in argv]
+    return subprocess.run([sys.executable, str(script), *args], cwd=cwd, env=case['environment'],
+                          capture_output=True, text=True, timeout=timeout)
+
+
+def _clone_public_controller(case, destination, *, runtime_relocation=None):
+    """Copy the bound consumer closure for isolated source/runtime drift controls."""
+    paths = (
+        'AGENTS.md', 'docs/local_project_map.md', 'docs/operations/session-contract.md',
+        'engineering/tooling/ri-helper-lock.json', 'engineering/workflow/shared/SOURCE.md',
+        'engineering/workflow/shared/worker-instructions.md',
+        'engineering/workflow/shared/workflow-tools.md', '.agents/skills/ri-implementor/SKILL.md',
+        '.agents/skills/ri-implementor/references/project-procedure.md',
+        'scripts/setup-ri-helpers.py', 'scripts/worker-execution', 'scripts/worker_execution.py',
+        'scripts/run-review.sh', 'scripts/lib/common.sh', 'scripts/lib/review_commands.py',
+        'scripts/lib/task_output_cleanup.py',
     )
+    for relative in paths:
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, target)
+    if runtime_relocation is not None:
+        original, replacement = runtime_relocation
+        map_path = destination / 'docs/local_project_map.md'
+        map_path.write_text(map_path.read_text().replace(str(original), str(replacement)))
+    case['controller_root'] = destination
+    case['controller_script'] = destination / 'scripts/worker_execution.py'
+
+
+def _clone_generated_helper_runtime(case, destination):
+    """Use a disposable selected runtime, preserving its recorded identities."""
+    selected = dict(case['seed']['ri_source'])
+    original = Path(selected['environment'])
+    shutil.copytree(original, destination)
+    receipt_path = destination / 'nutrition-helper-runtime.json'
+    receipt = json.loads(receipt_path.read_text())
+
+    def relocate(value):
+        if isinstance(value, str):
+            return value.replace(str(original), str(destination))
+        if isinstance(value, dict):
+            return {relocate(key): relocate(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [relocate(item) for item in value]
+        return value
+
+    write(receipt_path, relocate(receipt))
+    selected['environment'] = str(destination)
+    case['seed']['ri_source'] = selected
+    case['environment']['NUTRITION_CONTROLLER_PYTHON'] = str(destination / 'bin/python')
+    case['environment']['PATH'] = str(destination / 'bin') + os.pathsep + case['environment']['PATH']
+    write(case['seed_path'], case['seed'])
+    return original, destination
+
+
+def _run_generated_fixture_to_terminal(case, *, second_case_failure=None, expected_run=0):
+    if second_case_failure is not None:
+        case['definition']['check_request']['steps'][1]['argv'] = [
+            sys.executable, '-c', second_case_failure,
+        ]
+        write(case['definition_path'], case['definition'])
+    created = _generated_cli(case, 'create-workspace', '--request', case['seed_path'],
+                             '--evidence', case['evidence'], timeout=30)
+    assert created.returncode == 0, created.stdout + created.stderr
+    generated = _generated_cli(case, 'generate', '--request', case['seed_path'],
+                               '--definition', case['definition_path'], '--output', case['generated'],
+                               '--evidence', case['evidence'])
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    prepared = _generated_public(case, 'prepare')
+    assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+    edit = _apply_generated_fixture_edit(case)
+    executed = _generated_public(case, 'run')
+    _assert_generated_fixture_capture(case, edit)
+    assert executed.returncode == expected_run, executed.stdout + executed.stderr
+    attempt = case['evidence'] / case['seed']['attempt']
+    result_path = attempt / 'NUTRITION_RESULT.json'
+    terminal_path = attempt / 'RETURN.json'
+    result = json.loads(result_path.read_text())
+    terminal = json.loads(terminal_path.read_text())
+    return attempt, result_path, terminal_path, result, terminal
+
+
+def _copy_generated_evidence(case, name):
+    destination = case['root'] / name
+    shutil.copytree(case['evidence'], destination)
+    return destination
+
+
+def _rebase_attempt_paths(value, old_attempt, new_attempt):
+    if isinstance(value, dict):
+        path = value.get('path')
+        if isinstance(path, str):
+            try:
+                relative = Path(path).relative_to(old_attempt)
+            except ValueError:
+                pass
+            else:
+                value['path'] = str(new_attempt / relative)
+        for item in value.values():
+            _rebase_attempt_paths(item, old_attempt, new_attempt)
+    elif isinstance(value, list):
+        for item in value:
+            _rebase_attempt_paths(item, old_attempt, new_attempt)
+
+
+def _rewrite_reference(value, old_path, new_binding):
+    if isinstance(value, dict):
+        if value.get('path') == str(old_path):
+            value.update(new_binding)
+        for item in value.values():
+            _rewrite_reference(item, old_path, new_binding)
+    elif isinstance(value, list):
+        for item in value:
+            _rewrite_reference(item, old_path, new_binding)
+
+
+def _publish_fault_copy(result_path, terminal_path, result, terminal):
+    """Rebind only enclosing consumer references so intake reaches the fault."""
+    write(result_path, result)
+    terminal['runner_result'] = {'path': str(result_path), 'sha256': sha(result_path)}
+    terminal['references'] = result['references']
+    write(terminal_path, terminal)
+
+
+def _recompute_fault_conformance(case, attempt, result, terminal):
+    """Keep the enclosing conformance report accurate while isolating one fault."""
+    source = Path(case['seed']['ri_source']['repository'])
+    path = source / 'src/repository_intelligence/adapter_conformance.py'
+    spec = importlib.util.spec_from_file_location(
+        f'fixture_adapter_conformance_{id(case)}', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    request_raw = (attempt / 'CHECK_REQUEST.json').read_bytes()
+    generated = json.loads(case['generated'].read_text())
+    terminal['conformance'] = module.assess(
+        result['facts'], module.request_digests(request_raw), generated['required_outcomes'])
+
+
+def _generated_error(process):
+    assert process.returncode == 1, process.stdout + process.stderr
+    return json.loads(process.stdout)['error']
 
 
 def _apply_generated_fixture_edit(case):
@@ -773,6 +917,251 @@ def _assert_generated_fixture_capture(case, edit):
     assert capture['status_clean'] is True and capture['hidden_index_flags'] is False
     assert git(case['workspace'], 'rev-parse', 'HEAD') == capture['candidate']
     assert git(case['workspace'], 'status', '--porcelain=v1', '--untracked-files=all') == ''
+
+
+@pytest.mark.parametrize('fault', ['selection', 'approval'])
+def test_public_generated_route_rejects_unapproved_selection_and_approval_before_attempt(
+        adapter, tmp_path, fault):
+    good_root = tmp_path / 'valid-control'
+    good_root.mkdir()
+    good_case = _write_generated_fixture(adapter, good_root)
+    _, _, good_terminal, good_result_value, good_return = _run_generated_fixture_to_terminal(good_case)
+    assert good_result_value['ready'] is True and good_return['review_ready'] is True
+    assert good_terminal.is_file()
+
+    fault_root = tmp_path / 'fault-control'
+    fault_root.mkdir()
+    case = _write_generated_fixture(adapter, fault_root)
+    if fault == 'selection':
+        case['definition']['engineering']['entries'][0]['owner'] = 'Unapproved fixture owner'
+        write(case['definition_path'], case['definition'])
+    else:
+        approval_path = Path(case['seed']['engineering_assignment']['planning_review']['approval']['path'])
+        approval = json.loads(approval_path.read_text())
+        approval['decision'] = 'rejected'
+        write(approval_path, approval)
+        approval_binding = {'path': str(approval_path), 'sha256': sha(approval_path)}
+        case['seed']['engineering_assignment']['planning_review']['approval'] = approval_binding
+        case['seed']['accepted_engineering']['approval'] = approval_binding
+        write(case['seed_path'], case['seed'])
+
+    created = _generated_cli(case, 'create-workspace', '--request', case['seed_path'],
+                             '--evidence', case['evidence'], timeout=30)
+    assert created.returncode == 0, created.stdout + created.stderr
+    generated = _generated_cli(case, 'generate', '--request', case['seed_path'],
+                               '--definition', case['definition_path'], '--output', case['generated'],
+                               '--evidence', case['evidence'])
+    assert _generated_error(generated) == 'Engineering planning review does not approve this specification/selection'
+    attempt = case['evidence'] / case['seed']['attempt']
+    assert not case['generated'].exists()
+    assert not attempt.exists()
+
+
+@pytest.mark.parametrize('fault', [
+    'proof_omitted', 'proof_duplicated', 'proof_substituted',
+    'native_case_omitted', 'native_case_duplicated', 'native_case_substituted',
+    'native_candidate', 'native_attempt', 'native_request_sha256',
+    'inventory_identity', 'definition_identity', 'artifact_missing', 'artifact_invalid',
+    'measurement_missing', 'measurement_boolean', 'measurement_nonfinite',
+    'return_plan_identity', 'return_selection_identity', 'return_approval_identity',
+    'return_reviewer_report_identity', 'return_original_anchor_identity',
+])
+def test_public_generated_intake_refuses_semantic_faults_in_isolated_evidence_copies(
+        adapter, tmp_path, fault):
+    case = _write_generated_fixture(adapter, tmp_path)
+    attempt, result_path, terminal_path, result_value, terminal_value = (
+        _run_generated_fixture_to_terminal(case))
+    assert result_value['ready'] is True and terminal_value['review_ready'] is True
+    original_result = result_path.read_bytes()
+    original_terminal = terminal_path.read_bytes()
+
+    fault_evidence = _copy_generated_evidence(case, 'fault-evidence-' + fault)
+    copied_attempt = fault_evidence / case['seed']['attempt']
+    copied_result_path = copied_attempt / 'NUTRITION_RESULT.json'
+    copied_terminal_path = copied_attempt / 'RETURN.json'
+    result = json.loads(copied_result_path.read_text())
+    terminal = json.loads(copied_terminal_path.read_text())
+    _rebase_attempt_paths(result, attempt, copied_attempt)
+    _rebase_attempt_paths(terminal, attempt, copied_attempt)
+
+    if fault == 'proof_omitted':
+        result['facts']['outcomes'] = [row for row in result['facts']['outcomes'] if row['id'] != 'P1b']
+    elif fault == 'proof_duplicated':
+        result['facts']['outcomes'].append(dict(next(row for row in result['facts']['outcomes']
+                                                     if row['id'] == 'P1')))
+    elif fault == 'proof_substituted':
+        next(row for row in result['facts']['outcomes'] if row['id'] == 'P1b')['id'] = 'P1-substitute'
+    elif fault == 'inventory_identity':
+        result['facts']['inventory_sha256'] = '0' * 64
+    elif fault == 'definition_identity':
+        next(row for row in result['facts']['outcomes'] if row['id'] == 'P1')['definition_sha256'] = '0' * 64
+        terminal['conformance'] = {
+            'ready': True, 'errors': [], 'outcomes': result['facts']['outcomes'],
+        }
+    elif fault.startswith('return_'):
+        inventory = terminal['accepted_inventory']
+        if fault == 'return_plan_identity':
+            inventory['source']['sha256'] = '0' * 64
+        elif fault == 'return_selection_identity':
+            inventory['selection_sha256'] = '0' * 64
+        elif fault == 'return_approval_identity':
+            inventory['planning_review']['reference']['sha256'] = '0' * 64
+        elif fault == 'return_reviewer_report_identity':
+            inventory['planning_review']['decision']['reviewer_report']['sha256'] = '0' * 64
+        else:
+            inventory['original_requirements']['R1']['original']['sha256'] = '0' * 64
+    else:
+        case_id = 'case_b' if fault in ('native_case_omitted', 'native_case_duplicated',
+                                        'native_case_substituted') else 'case_a'
+        record_path = copied_attempt / 'native/runs/GH-422-accepted-flow/commands' / case_id / 'result.json'
+        old_binding = {'path': str(record_path), 'sha256': sha(record_path)}
+        if fault == 'native_case_omitted':
+            record_path.unlink()
+            result['references'] = [item for item in result['references'] if item['path'] != str(record_path)]
+        else:
+            record = json.loads(record_path.read_text())
+            native_case = record['native_case']
+            if fault == 'native_case_duplicated':
+                native_case['case'] = 'case_a'
+            elif fault == 'native_case_substituted':
+                native_case['case'] = 'unselected-case'
+            elif fault == 'native_candidate':
+                native_case['candidate'] = '0' * 40
+            elif fault == 'native_attempt':
+                native_case['attempt'] = 'substituted-attempt'
+            elif fault == 'native_request_sha256':
+                native_case['request_sha256'] = '0' * 64
+            elif fault == 'artifact_missing':
+                native_case['artifacts'].pop('stderr')
+            elif fault == 'artifact_invalid':
+                native_case['artifacts']['stdout']['sha256'] = '0' * 64
+            elif fault == 'measurement_missing':
+                native_case['measurements'].pop('duration_seconds')
+            elif fault == 'measurement_boolean':
+                native_case['measurements']['duration_seconds'] = True
+            else:
+                native_case['measurements']['duration_seconds'] = float('nan')
+            write(record_path, record)
+            _rewrite_reference(result, old_binding['path'],
+                               {'path': old_binding['path'], 'sha256': sha(record_path)})
+
+    _recompute_fault_conformance(case, copied_attempt, result, terminal)
+    _publish_fault_copy(copied_result_path, copied_terminal_path, result, terminal)
+    fault_terminal_before = copied_terminal_path.read_bytes()
+    case['active_evidence'] = fault_evidence
+    refused = _generated_public(case, 'intake')
+    error = _generated_error(refused)
+    if fault.startswith('proof_'):
+        assert error == 'Intake conformance is stale or substituted'
+    elif fault == 'definition_identity':
+        assert error == 'Intake completeness is stale or no longer supported'
+    elif fault.startswith('return_'):
+        assert error == 'Intake accepted inventory changed'
+    else:
+        assert error == 'Intake completeness is stale or no longer supported'
+    assert copied_terminal_path.read_bytes() == fault_terminal_before
+    assert result_path.read_bytes() == original_result
+    assert terminal_path.read_bytes() == original_terminal
+
+
+def test_public_generated_intake_refuses_changed_accepted_sources_and_restores_same_return(
+        adapter, tmp_path):
+    case = _write_generated_fixture(adapter, tmp_path)
+    _, result_path, terminal_path, result_value, terminal_value = _run_generated_fixture_to_terminal(case)
+    assert result_value['ready'] is True and terminal_value['review_ready'] is True
+    original_result = result_path.read_bytes()
+    original_terminal = terminal_path.read_bytes()
+    assignment = case['seed']['engineering_assignment']
+    anchor = case['definition']['engineering']['anchors']['R1']['original']
+    selected_inputs = [
+        ('accepted-plan', Path(case['seed']['accepted_engineering']['path'])),
+        ('selection', case['definition_path']),
+        ('approval', Path(assignment['planning_review']['approval']['path'])),
+        ('reviewer-report', Path(assignment['planning_review']['report']['path'])),
+        ('original-anchor', Path(anchor['path'])),
+    ]
+    for label, path in selected_inputs:
+        before = path.read_bytes()
+        try:
+            if label == 'selection':
+                changed = json.loads(before)
+                changed['engineering']['entries'][0]['owner'] = 'Changed after accepted generation'
+                write(path, changed)
+            else:
+                path.write_bytes(before + b'\n')
+            refused = _generated_public(case, 'intake')
+            assert _generated_error(refused) == 'Selected input mismatch: ' + str(path)
+            assert result_path.read_bytes() == original_result
+            assert terminal_path.read_bytes() == original_terminal
+        finally:
+            path.write_bytes(before)
+        restored = _generated_public(case, 'intake')
+        assert restored.returncode == 0, label + ': ' + restored.stdout + restored.stderr
+        assert result_path.read_bytes() == original_result
+        assert terminal_path.read_bytes() == original_terminal
+
+
+def test_public_generated_intake_refuses_selected_consumer_source_drift(adapter, tmp_path):
+    case = _write_generated_fixture(adapter, tmp_path)
+    controller = case['root'] / 'controller-copy'
+    _clone_public_controller(case, controller)
+    _, result_path, terminal_path, result_value, terminal_value = _run_generated_fixture_to_terminal(case)
+    assert result_value['ready'] is True and terminal_value['review_ready'] is True
+    original_result = result_path.read_bytes()
+    original_terminal = terminal_path.read_bytes()
+    source_path = case['controller_script']
+    source_before = source_path.read_bytes()
+    try:
+        source_path.write_bytes(source_before + b'\n# isolated selected-consumer source drift\n')
+        refused = _generated_public(case, 'intake')
+        assert _generated_error(refused) == 'Selected input mismatch: ' + str(source_path)
+        assert terminal_path.read_bytes() == original_terminal
+        assert result_path.read_bytes() == original_result
+    finally:
+        source_path.write_bytes(source_before)
+    restored = _generated_public(case, 'intake')
+    assert restored.returncode == 0, restored.stdout + restored.stderr
+    assert result_path.read_bytes() == original_result
+    assert terminal_path.read_bytes() == original_terminal
+
+
+@pytest.mark.parametrize('fault', ['interpreter', 'dependency'])
+def test_public_generated_runtime_and_dependency_drift_refuse_before_runner(adapter, tmp_path, fault):
+    case = _write_generated_fixture(adapter, tmp_path)
+    original_environment, environment = _clone_generated_helper_runtime(
+        case, case['root'] / 'selected-helper-runtime')
+    controller = case['root'] / 'controller-copy'
+    _clone_public_controller(case, controller, runtime_relocation=(original_environment, environment))
+
+    created = _generated_cli(case, 'create-workspace', '--request', case['seed_path'],
+                             '--evidence', case['evidence'], timeout=30)
+    assert created.returncode == 0, created.stdout + created.stderr
+    generated = _generated_cli(case, 'generate', '--request', case['seed_path'],
+                               '--definition', case['definition_path'], '--output', case['generated'],
+                               '--evidence', case['evidence'])
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    prepared = _generated_public(case, 'prepare')
+    assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+
+    receipt = json.loads((environment / 'nutrition-helper-runtime.json').read_text())
+    if fault == 'interpreter':
+        target = environment / 'bin/python'
+        expected_error = 'Selected helper interpreter/configuration changed'
+    else:
+        target = Path(next(name for name in receipt['observation']['files'] if name.endswith('.so')))
+        expected_error = 'Selected helper dependency artifact changed: ' + str(target)
+    target.write_bytes(target.read_bytes() + b'\n# isolated selected runtime drift\n')
+    edit = _apply_generated_fixture_edit(case)
+    failed = _generated_public(case, 'run')
+    assert _generated_error(failed) == expected_error
+    attempt = case['evidence'] / case['seed']['attempt']
+    assert git(case['workspace'], 'rev-parse', 'HEAD') == edit['base']
+    assert set(git(case['workspace'], 'diff', '--name-only', '--no-renames', edit['base']).splitlines()) == set(
+        edit['changed_paths'])
+    assert not (case['evidence'] / 'workspace-capture-result.json').exists()
+    assert not (attempt / 'LAUNCHED').exists()
+    assert not (attempt / 'NUTRITION_RESULT.json').exists()
+    assert not (attempt / 'RETURN.json').exists()
 
 
 def test_public_engineering_generate_prepare_run_and_same_read_only_intake(adapter, tmp_path):
