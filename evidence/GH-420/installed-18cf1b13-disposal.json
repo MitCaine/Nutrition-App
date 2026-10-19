@@ -1,0 +1,68 @@
+{
+  "owner_authority": "Direct human reply: Authorize these four deletions; publication previously authorized separately",
+  "source_commit": "18cf1b13f102634544ae0458133db2ee9f8a0f4e",
+  "publication": {
+    "repository": "MitCaine/Nutrition-App",
+    "branch": "codex/gh-420-installed-evidence",
+    "commit": "7bcd9e2ed4982b080742b0c0922b56e3bd4c02f4",
+    "archive_path": "evidence/GH-420/installed-18cf1b13-evidence.zip",
+    "archive_sha256": "41c7cd8cbef6f22cb489b73edeae372b5efea4bc6cbc33989f77674207b3f5fa",
+    "bytes": 28589520,
+    "fresh_download": "/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/issue-420-evidence/gh420-installed-evidence-github-readback-v2.zip",
+    "download_readback": "PASS: exact SHA256, ZIP CRC and retained file hashes",
+    "url": "https://github.com/MitCaine/Nutrition-App/blob/7bcd9e2ed4982b080742b0c0922b56e3bd4c02f4/evidence/GH-420/installed-18cf1b13-evidence.zip",
+    "prior_download_failure": "gh api binary response transform: short source buffer; failed download preserved, no repush",
+    "disposal": "not authorized; none performed"
+  },
+  "historical_verification": "preserved; full-tree verifier cannot be rerun after this later authorized disposal",
+  "items": [
+    {
+      "path": "/private/tmp/gh420-installed-18cf1b13-C18/native-lifecycle/quarantine/DerivedData",
+      "node": [
+        16777232,
+        137750219
+      ],
+      "allocated_kib_before": 3354952,
+      "open_handle_observation": "none observed; not universal containment",
+      "status": "deleted"
+    },
+    {
+      "path": "/private/tmp/gh420-installed-18cf1b13-C18/native-lifecycle/quarantine/harness-bin",
+      "node": [
+        16777232,
+        137750224
+      ],
+      "allocated_kib_before": 332,
+      "open_handle_observation": "none observed; not universal containment",
+      "status": "deleted"
+    },
+    {
+      "path": "/private/tmp/gh420-installed-18cf1b13-C18/native-lifecycle/retained-outputs/output-retained-32938cea9ddccdf43010",
+      "node": [
+        16777232,
+        137841712
+      ],
+      "allocated_kib_before": 3354040,
+      "open_handle_observation": "none observed; not universal containment",
+      "status": "deleted"
+    },
+    {
+      "path": "/private/tmp/gh420-installed-18cf1b13-C18/native-lifecycle/retained-outputs/output-retained-017c76c4cfa4df8a43fe",
+      "node": [
+        16777232,
+        137862872
+      ],
+      "allocated_kib_before": 332,
+      "open_handle_observation": "none observed; not universal containment",
+      "status": "deleted"
+    }
+  ],
+  "deletion_started": true,
+  "free_bytes_before": 453722124288,
+  "free_bytes_after": 460611432448,
+  "observed_volume_free_delta_bytes": 6889308160,
+  "allocated_kib_removed": 6709656,
+  "measurement_limit": "Observed whole-volume free-space delta, not exclusive physical attribution; APFS/shared blocks and concurrent activity may affect it.",
+  "registered_worktree_retained": true,
+  "completed": true
+}
