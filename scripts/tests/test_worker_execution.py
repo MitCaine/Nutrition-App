@@ -827,11 +827,15 @@ def test_public_generated_budget_and_bound_input_reuse(adapter, tmp_path, budget
     prerequisite_input = tmp_path / 'prerequisite-input.txt'
     configuration.write_text('{"mode":"fixture"}\n')
     prerequisite_input.write_text('known fixture prerequisite\n')
+    tool = tmp_path / 'observed-command-tool'
+    tool.write_text('#!' + sys.executable + '\nimport os,sys\n'
+                    'os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n')
+    tool.chmod(0o755)
     for path in (configuration, prerequisite_input):
         case['definition']['inputs'].append({'path': str(path), 'sha256': sha(path)})
     steps = case['definition']['check_request']['steps']
     steps[0]['runtime_budget_seconds'] = budget
-    steps[0]['argv'] = [sys.executable, '-c',
+    steps[0]['argv'] = [str(tool), '-c',
                         'import pathlib,sys,time; '
                         'assert all(pathlib.Path(p).read_text() for p in sys.argv[1:]); time.sleep(0.03)',
                         str(configuration), str(prerequisite_input)]
@@ -851,12 +855,23 @@ def test_public_generated_budget_and_bound_input_reuse(adapter, tmp_path, budget
     assert second['input_identity']['prerequisites'][0]['id'] == 'case_a'
     native_result = attempt / 'native/runs' / case['seed']['attempt'] / 'commands/case_a/result.json'
     assert second['input_identity']['prerequisites'][0]['result_sha256'] == sha(native_result)
+    assert first['input_identity']['executable'] == {'path': str(tool), 'sha256': sha(tool)}
     # Reuse eligibility here concerns these known fixture inputs only. This does
     # not skip commands or assert complete dependency coverage for arbitrary tools.
     for _ in range(2):
         unchanged = _generated_public(case, 'intake')
         assert unchanged.returncode == 0, unchanged.stdout + unchanged.stderr
         assert result_path.read_bytes() == original_result and terminal_path.read_bytes() == original_terminal
+    tool_before = tool.read_bytes()
+    try:
+        tool.write_bytes(tool_before + b'\n# changed relevant command tool\n')
+        refused = _generated_public(case, 'intake')
+        assert _generated_error(refused) == 'Runtime investigation tool identity changed'
+        assert result_path.read_bytes() == original_result and terminal_path.read_bytes() == original_terminal
+    finally:
+        tool.write_bytes(tool_before)
+    restored = _generated_public(case, 'intake')
+    assert restored.returncode == 0, restored.stdout + restored.stderr
     parked = tmp_path / 'retained-omitted-result.json'
     native_result.rename(parked)
     try:

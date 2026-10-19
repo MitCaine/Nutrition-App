@@ -1105,6 +1105,10 @@ def main(argv=None) -> int:
                             for item in projected['facts']['runtime_investigations']
                             if item['duration_seconds'] is not None),
                         'Unknown runtime investigation inputs cannot support reuse')
+                for item in projected['facts']['runtime_investigations']:
+                    for key in ('executable', 'runner'):
+                        _validated_binding(item['input_identity'].get(key),
+                                           'Runtime investigation tool')
             require(terminal.read_bytes() == before and identity(terminal) == terminal_identity,
                     'Read-only intake changed the original RETURN')
             result['request'] = identity(args.request)

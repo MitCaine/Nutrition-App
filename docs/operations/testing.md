@@ -432,7 +432,8 @@ The existing per-command input record binds the raw request, source observation,
 configuration, observed executable/runner bytes and prerequisite result hashes. These observations
 do not enumerate every dependency of an arbitrary child. Unknown bindings cannot support reuse.
 For generated requests, the same owning definition also binds selected original configuration,
-prerequisite inputs, tools and runtime. Read-only SAME intake revalidates those inputs and the budget
+prerequisite inputs, tools and runtime. Read-only SAME intake rechecks observed command/runner tool
+hashes and revalidates those inputs and the budget
 facts against retained native evidence, preserving the original RETURN. An unchanged-input result is
 reuse-eligible only after controller verification of all relevant transitive inputs/environment;
 changed relevant configuration or prerequisite inputs refuse intake. Successful intake authenticates
