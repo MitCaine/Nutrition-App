@@ -388,7 +388,7 @@ def integrated_controller_fixture(tmp_path: Path, *, attempt: str, candidate: st
 def test_gh420_o1_keeps_selected_helper_sources_separate():
     local_map = (ROOT / "docs/local_project_map.md").read_text(encoding="utf-8")
     assert "`949b838809bcddb01e2cbe161faed6f6f1f705fe`" in local_map
-    assert "Optional helper source revision: `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`" in local_map
+    assert "Optional helper source revision: `8db4d56323db31f27af151c542967b4ef13a79af`" in local_map
     current_sources = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text(encoding="utf-8")
     assert "00117a3b216b089e1e3a0a693c83efab9dcf12f0" in current_sources
     assert "20a5039" in current_sources
@@ -1413,12 +1413,7 @@ def changed_prepared_workspace_fixture(tmp_path: Path, *, attempt: str) -> dict:
     handoff = tmp_path / "handoff.md"
     handoff.write_text("synthetic authorized handoff\n", encoding="utf-8")
     workspace = tmp_path / "prepared-container" / "workspace"
-    selected_map = (ROOT / "docs/local_project_map.md").read_text(encoding="utf-8")
-    import re
-    source = {
-        "repository": re.search(r"authenticated RI checkout `([^`]+)`", selected_map).group(1),
-        "revision": re.search(r"Optional helper source revision: `([0-9a-f]{40})`", selected_map).group(1),
-    }
+    source = worker.map_selection()
     request_path = tmp_path / "worker-request.json"
     worker_home = tmp_path / "worker-home"
     worker_home.mkdir()
@@ -1532,10 +1527,10 @@ def selected_e0_prepared_workspace_conformance(tmp_path: Path) -> dict:
     handoff = tmp_path / "handoff.md"
     handoff.write_text("fixture authorization\n", encoding="utf-8")
     workspace = tmp_path / "new-workspace-container" / "workspace"
-    selected_map = (ROOT / "docs/local_project_map.md").read_text(encoding="utf-8")
-    import re
-    source = {"repository": re.search(r"authenticated RI checkout `([^`]+)`", selected_map).group(1),
-              "revision": re.search(r"Optional helper source revision: `([0-9a-f]{40})`", selected_map).group(1)}
+    # The --selected-e0 route retains its historical fixture label, but this fresh
+    # conformance request intentionally binds the current map-selected helper.
+    source = worker.map_selection()
+    assert "environment" in source
     assignment = "GH-420/implementation"
     worker_attempt = "GH-420-o2-workspace"
     worker_request = tmp_path / "worker-request.json"
@@ -1558,25 +1553,40 @@ def selected_e0_prepared_workspace_conformance(tmp_path: Path) -> dict:
                                 "runner_result": "NUTRITION_RESULT.json",
                                 "result_bindings": {key: [key] for key in
                                                     ("candidate", "workspace", "attempt", "request_sha256", "ready", "references")}})
-    worker = ROOT / "scripts/worker_execution.py"
-    create = subprocess.run([sys.executable, str(worker), "create-workspace", "--request", str(worker_request),
+    worker_script = ROOT / "scripts/worker_execution.py"
+    create = subprocess.run([sys.executable, str(worker_script), "create-workspace", "--request", str(worker_request),
                              "--evidence", str(evidence)], cwd=ROOT, env=worker_environment,
                             capture_output=True, text=True, timeout=60)
     assert create.returncode == 0, create.stdout + create.stderr
     owner_path = evidence / "workspace-owner.json"
     owner_before = owner_path.read_bytes()
     workspace_node = workspace.lstat().st_ino
-    collision = subprocess.run([sys.executable, str(worker), "create-workspace", "--request", str(worker_request),
+    collision = subprocess.run([sys.executable, str(worker_script), "create-workspace", "--request", str(worker_request),
                                 "--evidence", str(evidence)], cwd=ROOT, env=worker_environment,
                                capture_output=True, text=True, timeout=60)
     assert collision.returncode == 1 and "already exists" in collision.stdout
     assert owner_path.read_bytes() == owner_before and workspace.lstat().st_ino == workspace_node
-    prepared = subprocess.run([sys.executable, str(worker), "prepare", "--request", str(worker_request),
+    prepared = subprocess.run([sys.executable, str(worker_script), "prepare", "--request", str(worker_request),
                                "--evidence", str(evidence)], cwd=ROOT, env=worker_environment,
                               capture_output=True, text=True, timeout=60)
     assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+    prepared_path = evidence / worker_attempt / "PREPARED.json"
+    prepared_record = json.loads(prepared_path.read_text(encoding="utf-8"))
+    selected_environment = Path(source["environment"])
+    selected_python = selected_environment / "bin/python"
+    runtime_receipt = selected_environment / "nutrition-helper-runtime.json"
+    selected_helper_source = Path(source["repository"])
+    helper_worker_execution = selected_helper_source / "src/repository_intelligence/worker_execution.py"
+    prepared_inputs = {row["path"]: row["sha256"] for row in prepared_record["selected_inputs"]}
+    selected_operations = sorted({row["path"] for row in prepared_record["operations"]})
+    assert selected_operations == [str(selected_python)]
+    assert prepared_inputs[str(selected_python)] == sha(selected_python)
+    assert prepared_inputs[str(runtime_receipt)] == sha(runtime_receipt)
+    assert git(selected_helper_source, "rev-parse", "HEAD") == source["revision"]
+    assert not git(selected_helper_source, "status", "--porcelain")
+    assert prepared_inputs[str(helper_worker_execution)] == sha(helper_worker_execution)
     (workspace / "tracked.txt").write_text("captured\n", encoding="utf-8")
-    executed = subprocess.run([sys.executable, str(worker), "run", "--request", str(worker_request),
+    executed = subprocess.run([sys.executable, str(worker_script), "run", "--request", str(worker_request),
                                "--evidence", str(evidence)], cwd=ROOT, env=worker_environment,
                              capture_output=True, text=True, timeout=60)
     assert executed.returncode == 0, executed.stdout + executed.stderr
@@ -1668,7 +1678,23 @@ def selected_e0_prepared_workspace_conformance(tmp_path: Path) -> dict:
             capture_case_root, capture_case,
         )
         capture_results[capture_case] = "PASS"
-    return {"status": "PASS", "source": source, "workspace": str(workspace),
+    return {"status": "PASS", "selection_semantics":
+            "fresh current-map conformance; legacy --selected-e0 flag and fixture identifiers retained",
+            "source": source,
+            "selected_source_identity": {"repository": source["repository"],
+                                         "revision": source["revision"],
+                                         "head": git(selected_helper_source, "rev-parse", "HEAD"),
+                                         "worker_execution": {"path": str(helper_worker_execution),
+                                                              "sha256": sha(helper_worker_execution)}},
+            "selected_runtime_identity": {"environment": str(selected_environment),
+                                          "operations": selected_operations,
+                                          "python": {"path": str(selected_python),
+                                                     "sha256": sha(selected_python)},
+                                          "runtime_receipt": {"path": str(runtime_receipt),
+                                                              "sha256": sha(runtime_receipt)},
+                                          "prepared_record": {"path": str(prepared_path),
+                                                              "sha256": sha(prepared_path)}},
+            "workspace": str(workspace),
             "owner_record": str(owner_path), "prepare_exit": prepared.returncode,
             "run_exit": executed.returncode, "closeout_mode": report["mode"],
             "repeat_status": [item["status"] for item in repeat_report["items"]],
@@ -3196,6 +3222,8 @@ def test_gh420_o7_public_guidance_and_cli_are_linked():
 
 
 def _run_selected_conformance(argv: list[str]) -> int:
+    # Keep the historical CLI and fixture labels; --selected-e0 now checks a fresh
+    # conformance request against the current worker.map_selection() binding.
     if argv not in (["--selected-ri949"], ["--selected-e0"]):
         print("usage: test_output_lifecycle.py --selected-ri949|--selected-e0", file=sys.stderr)
         return 2
