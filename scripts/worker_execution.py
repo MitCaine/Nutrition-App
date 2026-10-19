@@ -13,13 +13,16 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import zipfile
 
 from lib import review_commands as native
+from lib import task_output_cleanup as output_owner
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = Path(__file__).resolve()
-TOOLS = ("scripts/run-review.sh", "scripts/lib/common.sh", "scripts/lib/review_commands.py")
+TOOLS = ("scripts/run-review.sh", "scripts/lib/common.sh", "scripts/lib/review_commands.py",
+         "scripts/lib/task_output_cleanup.py")
 
 
 def require(condition: bool, message: str) -> None:
@@ -77,7 +80,7 @@ def selected_ri(selection=None):
     return module, paths
 
 
-def binding(path: Path, *, preparing: bool = False) -> tuple:
+def binding(path: Path, *, preparing: bool = False, evidence: Path | None = None) -> tuple:
     """Complete the selected RI request with this consumer's actual operations."""
     value = read(path)
     selection = value.pop("ri_source")
@@ -89,6 +92,7 @@ def binding(path: Path, *, preparing: bool = False) -> tuple:
     root = native._canonical_root(value["workspace"])
     require(root == Path(value["workspace"]), "Workspace must be canonical")
     require(not path.is_relative_to(root), "Execution request must be outside the disposable workspace")
+    require(evidence is not None and evidence.is_absolute(), "Absolute evidence directory required")
     require(not git(root, "branch", "--show-current"), "Capture workspace must have detached HEAD")
     for name in TOOLS:
         require((root / name).read_bytes() == (ROOT / name).read_bytes(), "Substituted native runner tool: " + name)
@@ -105,18 +109,21 @@ def binding(path: Path, *, preparing: bool = False) -> tuple:
     env = native._validate_env(value["environment"], "worker environment")
     require(not any(name.startswith("GIT_") for name in env), "Git environment redirection is unsupported")
     inputs = list(value["inputs"])
+    owner_record = evidence / "workspace-owner.json"
+    owned_inputs = [owner_record] if owner_record.is_file() else []
     for item in [path, SCRIPT, executable,
-                 *(root / name for name in TOOLS), *helper_paths]:
+                 *(root / name for name in TOOLS), *helper_paths, *owned_inputs]:
         record = identity(item)
         existing = [entry for entry in inputs if entry.get("path") == record["path"]]
         require(not existing or existing == [record], "Conflicting selected input identity")
         if not existing:
             inputs.append(record)
     value.update(route="interactive", environment=env, inputs=inputs,
-                 capture={"argv": command + ["capture", "--request", str(path)],
+                 capture={"argv": command + ["capture", "--request", str(path), "--evidence", str(evidence)],
                           "executable_sha256": identity(executable)["sha256"]},
                  runner={"argv": command + ["runner", "--request", str(path), "--check-request", "{check_request}",
-                                            "--attempt-dir", "{attempt}", "--candidate", "{candidate}"],
+                                            "--attempt-dir", "{attempt}", "--candidate", "{candidate}",
+                                            "--evidence", str(evidence)],
                          "executable_sha256": identity(executable)["sha256"]},
                  conformance=["facts"],
                  required_outcomes={step["id"]: step["designation"] == "mandatory" for step in plan["steps"]})
@@ -161,6 +168,64 @@ def capture(request: dict) -> str:
     candidate = git(root, "rev-parse", "HEAD")
     require(not git(root, "status", "--porcelain"), "Capture did not freeze a clean source")
     return candidate
+
+
+def record_capture(request_path: Path, evidence: Path, request: dict, candidate: str) -> dict:
+    """Bind the actual captured candidate without changing the creation receipt."""
+    owner_path = evidence / "workspace-owner.json"
+    owner = output_owner._json(owner_path)
+    request_binding = identity(request_path)
+    attempt = request.get("attempt")
+    assignment = request.get("assignment", attempt)
+    base = request.get("base")
+    root = native._canonical_root(request.get("workspace", ""))
+    protected = native._canonical_root(request.get("protected_repository", ""))
+    require(owner.get("task") == output_owner.task_identifier(assignment)
+            and owner.get("attempt") == attempt, "Capture owner identity changed")
+    receipts = [item for item in owner.get("owned_outputs", [])
+                if isinstance(item, dict) and item.get("path") == str(root)]
+    require(len(receipts) == 1 and receipts[0].get("git_worktree", {}).get("head") == base,
+            "Capture creation provenance is missing or changed")
+    require(receipts[0].get("definition") == {"path": request_binding["path"],
+                                                "sha256": request_binding["sha256"]},
+            "Capture request differs from immutable creation request")
+    head = git(root, "rev-parse", "HEAD")
+    require(candidate == head and native.COMMIT_RE.fullmatch(candidate) is not None,
+            "Captured candidate differs from detached workspace HEAD")
+    parents = git(root, "rev-list", "--parents", "-n", "1", candidate).split()
+    require(len(parents) == 2 and parents[0] == candidate,
+            "Captured candidate must have one authenticated parent")
+    parent = parents[1]
+    changed = sorted(filter(None, git(root, "diff", "--name-only", base, candidate).splitlines()))
+    allowed = request.get("allowed_changes")
+    if candidate == base:
+        require(git(protected, "merge-base", "--is-ancestor", parent, base) == "",
+                "Unchanged candidate is outside the immutable base lineage")
+    else:
+        require(changed and git(protected, "merge-base", "--is-ancestor", base, parent) == "",
+                "Captured candidate parent is outside the immutable base lineage")
+    require(isinstance(allowed, list) and set(changed) <= set(allowed),
+            "Captured candidate exceeds the request's exact source inventory")
+    status = git(root, "status", "--porcelain=v1", "--untracked-files=all")
+    flags = native._git(root, "ls-files", "-v", "-z").split(b"\0")
+    require(not status and not any(value and (value[:1].islower() or value[:1] == b"S")
+                                   for value in flags),
+            "Captured candidate has uncommitted or hidden-index source")
+    tree = git(root, "rev-parse", candidate + "^{tree}")
+    value = {"schema_version": 1, "task": owner["task"], "attempt": attempt,
+             "request": request_binding, "workspace": str(root),
+             "protected_repository": str(protected), "creation_base": base,
+             "candidate": candidate, "candidate_parent": parent, "candidate_tree": tree,
+             "allowed_changes": sorted(set(allowed)), "changed_paths": changed,
+             "status_clean": True, "hidden_index_flags": False}
+    path = evidence / "workspace-capture-result.json"
+    raw_value = native._json_bytes(value)
+    if path.exists() or path.is_symlink():
+        require(not path.is_symlink() and path.read_bytes() == raw_value,
+                "Captured candidate receipt already changed")
+    else:
+        native._write_exclusive(path, raw_value)
+    return identity(path)
 
 
 def project(request_path: Path, directory: Path, candidate: str) -> dict:
@@ -252,7 +317,7 @@ def project(request_path: Path, directory: Path, candidate: str) -> dict:
                       "request_digests": {"raw_file_sha256": native._sha256(request_path.read_bytes())}}}
 
 
-def runner(args) -> int:
+def _run_bound_runner(args) -> int:
     spec = read(args.request)
     root = native._canonical_root(spec["workspace"])
     environment = dict(spec["environment"], NUTRITION_REVIEW_OUTPUT_DIR=str(args.attempt_dir / "native"))
@@ -265,6 +330,18 @@ def runner(args) -> int:
         result = project(args.check_request, directory, args.candidate)
         require(completed.returncode == (0 if result["native_status"] == "passed" else 1),
                 "Native runner exit contradicts completed evidence")
+        if args.evidence is not None:
+            capture_path = args.evidence / "workspace-capture-result.json"
+            if capture_path.is_file() and not capture_path.is_symlink():
+                capture_binding = identity(capture_path)
+                capture = read(capture_path)
+                request_binding = identity(args.request)
+                require(capture.get("request") == request_binding
+                        and capture.get("candidate") == args.candidate
+                        and capture.get("workspace") == str(root)
+                        and capture.get("attempt") == spec.get("attempt"),
+                        "Captured candidate receipt does not bind this runner")
+                result["candidate_capture"] = capture_binding
     except (native.RequestError, OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         result = {"ready": False, "error": str(error), "references": [], "native_attempt": str(directory)}
     result["native_runner_exit_code"] = completed.returncode
@@ -272,9 +349,135 @@ def runner(args) -> int:
     return 0 if result["ready"] else 1
 
 
+def runner(args) -> int:
+    spec = read(args.request)
+    if args.evidence is None:
+        raise native.RequestError("Evidence directory required for the worker runner")
+    verify_workspace_owner(args.request, args.evidence, spec, expected_head=args.candidate)
+    owner_record = args.evidence / "workspace-owner.json"
+    if owner_record.is_file():
+        with output_owner.owner_lock(owner_record):
+            return _run_bound_runner(args)
+    # Existing workspaces are compatible, but absence of a creation receipt
+    # means this runner call cannot establish ownership for cleanup.
+    return _run_bound_runner(args)
+
+
+def create_workspace(request_path: Path, evidence: Path) -> dict:
+    """Create a new exclusive container and its detached registered child."""
+    raw = request_path.read_bytes()
+    if len(raw) > native.MAX_REQUEST_BYTES:
+        raise native.RequestError("request exceeds its byte limit")
+    spec = native._parse_json(raw)
+    require(isinstance(spec, dict), "Workspace request must be a JSON object")
+    workspace = Path(spec.get("workspace", ""))
+    require(workspace.is_absolute(), "New workspace must be an explicit absolute path")
+    native._no_symlink_components(workspace)
+    container = workspace.parent
+    require(not container.exists() and not container.is_symlink(),
+            "Workspace container already exists; existing workspaces are never adopted")
+    container_parent = container.parent.resolve(strict=True)
+    require(container == container_parent / container.name, "Workspace container path must be canonical")
+    protected = native._canonical_root(spec.get("protected_repository"))
+    base = spec.get("base")
+    require(isinstance(base, str) and native.COMMIT_RE.fullmatch(base) is not None,
+            "Workspace base must be a full commit identity")
+    require(git(protected, "rev-parse", base + "^{commit}") == base,
+            "Workspace base is not an exact commit in the protected repository")
+    require(git(protected, "rev-parse", "HEAD") == base,
+            "Protected source HEAD differs from the requested workspace base")
+    evidence = evidence.absolute()
+    native._no_symlink_components(evidence)
+    require(evidence.is_dir(), "Workspace evidence directory must already exist")
+    require(not native._paths_overlap(protected, container)
+            and not native._paths_overlap(evidence, container),
+            "Workspace container overlaps a protected or evidence root")
+    attempt = spec.get("attempt")
+    assignment = spec.get("assignment", attempt)
+    require(isinstance(attempt, str) and attempt and isinstance(assignment, str) and assignment,
+            "Workspace task and attempt bindings are required")
+    task = output_owner.task_identifier(assignment)
+    owner_record = evidence / "workspace-owner.json"
+    request_identity = {"path": str(request_path.resolve()), "sha256": native._sha256(raw), "bytes": len(raw)}
+    definition = {"path": request_identity["path"], "sha256": request_identity["sha256"]}
+    container_receipt = output_owner.create_owned_output(
+        container, task=task, attempt=attempt, definition=definition, owner_record=owner_record,
+    )
+    nonce = output_owner.begin_registered_worktree(
+        owner_record, workspace, task=task, attempt=attempt,
+        definition=definition,
+    )
+    try:
+        native._git(protected, "worktree", "add", "--detach", "--", str(workspace), base)
+    except native.RequestError:
+        # The persisted intent and any partially created checkout remain for
+        # authenticated reconciliation; this command never removes them.
+        raise
+    workspace_receipt = output_owner.finish_registered_worktree(
+        owner_record, workspace, nonce=nonce, repository=protected, expected_head=base,
+    )
+    created = {"schema_version": 1, "task": task, "attempt": attempt,
+               "request": request_identity, "container_receipt": container_receipt,
+               "workspace_receipt": workspace_receipt,
+               "owner_record": str(owner_record), "status": "created"}
+    result_path = evidence / "workspace-create-result.json"
+    native._write_exclusive(result_path, native._json_bytes(created))
+    return created
+
+
+def verify_workspace_owner(
+    request_path: Path,
+    evidence: Path,
+    spec: dict,
+    *,
+    expected_head: str | None = None,
+) -> dict | None:
+    """Authenticate a creation receipt when present; leave legacy workspaces unknown."""
+    owner_record = evidence / "workspace-owner.json"
+    if not owner_record.exists() and not owner_record.is_symlink():
+        return None
+    record = output_owner._json(owner_record)
+    raw = request_path.read_bytes()
+    attempt = spec.get("attempt")
+    assignment = spec.get("assignment", attempt)
+    task = output_owner.task_identifier(assignment) if isinstance(assignment, str) else None
+    request_identity = {"path": str(request_path.resolve()), "sha256": native._sha256(raw), "bytes": len(raw)}
+    require(record.get("task") == task and record.get("attempt") == attempt,
+            "Workspace owner record does not match this task and attempt")
+    receipts = record.get("owned_outputs", [])
+    container = Path(spec["workspace"]).parent
+    workspace = Path(spec["workspace"])
+    container_receipts = [item for item in receipts if isinstance(item, dict) and item.get("path") == str(container)]
+    workspace_receipts = [item for item in receipts if isinstance(item, dict) and item.get("path") == str(workspace)]
+    require(len(container_receipts) == len(workspace_receipts) == 1,
+            "Workspace owner receipts are missing or ambiguous")
+    require(container_receipts[0].get("definition") == {"path": request_identity["path"],
+                                                          "sha256": request_identity["sha256"]},
+            "Workspace receipt request identity changed")
+    output_owner.verify_receipt(container_receipts[0])
+    output_owner.verify_receipt(workspace_receipts[0])
+    observed_head = git(workspace, "rev-parse", "HEAD")
+    selected_head = expected_head or spec.get("base")
+    require(workspace_receipts[0].get("git_worktree", {}).get("head") == spec.get("base")
+            and observed_head == selected_head
+            and (selected_head == spec.get("base")
+                 or (native.COMMIT_RE.fullmatch(selected_head) is not None
+                     and subprocess.run(["git", "-C", str(workspace), "merge-base", "--is-ancestor",
+                                         spec.get("base"), selected_head],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                        check=False).returncode == 0))
+            and not git(workspace, "branch", "--show-current"),
+            "Workspace registration or detached source identity changed")
+    registered = git(Path(spec["protected_repository"]), "worktree", "list", "--porcelain")
+    require(registered.splitlines().count("worktree " + str(workspace)) == 1,
+            "Workspace Git registration changed")
+    return {"owner_record": str(owner_record), "sha256": native._hash_file(owner_record),
+            "container_receipt": container_receipts[0], "workspace_receipt": workspace_receipts[0]}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("prepare", "run", "capture", "runner", "project"))
+    parser.add_argument("mode", choices=("create-workspace", "prepare", "run", "capture", "runner", "project"))
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--check-request", type=Path)
@@ -283,23 +486,71 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         args.request = args.request.absolute()
+        if args.evidence is not None:
+            args.evidence = args.evidence.absolute()
         native._no_symlink_components(args.request)
+        if args.mode == "create-workspace":
+            require(args.evidence is not None, "Evidence directory required")
+            result = create_workspace(args.request, args.evidence)
+            print(json.dumps(result, sort_keys=True))
+            return 0
         if args.mode in ("prepare", "run"):
             require(args.evidence is not None, "Evidence directory required")
-            request, module = binding(args.request, preparing=args.mode == "prepare")
+            verify_workspace_owner(args.request, args.evidence, read(args.request))
+            request, module = binding(args.request, preparing=args.mode == "prepare", evidence=args.evidence)
             native._external_output_path(Path(request["workspace"]), args.evidence)
-            result = module.execute(request, args.evidence, args.mode)
+            owner_record = args.evidence / "workspace-owner.json"
+            if owner_record.is_file():
+                if args.mode == "prepare":
+                    with output_owner.owner_lock(owner_record):
+                        result = module.execute(request, args.evidence, args.mode)
+                else:
+                    result = module.execute(request, args.evidence, args.mode)
+                    if args.mode == "run":
+                        attempt = request.get("attempt")
+                        result_path = args.evidence / str(attempt) / "NUTRITION_RESULT.json"
+                        result_binding = identity(result_path) if result_path.is_file() and not result_path.is_symlink() else None
+                        with output_owner.owner_lock(owner_record):
+                            record = output_owner._json(owner_record)
+                            record["status"] = "complete" if result.get("review_ready") is True else "failed"
+                            record["terminal_result"] = result_binding
+                            record["native_result_ready"] = result.get("review_ready") is True
+                            record["updated_monotonic_ns"] = time.monotonic_ns()
+                            output_owner._atomic_json(owner_record, record)
+            else:
+                # Existing workspaces retain their historical behavior but have
+                # no Nutrition creation receipt and cannot be treated as owned.
+                result = module.execute(request, args.evidence, args.mode)
             print(json.dumps(result, sort_keys=True))
             return 0 if args.mode == "prepare" or result["review_ready"] else 1
         if args.mode == "capture":
-            print(json.dumps({"candidate": capture(read(args.request))}))
+            candidate_binding = None
+            request = read(args.request)
+            if args.evidence is None:
+                # Preserve the established capture interface for existing
+                # workspaces; without the selected creation evidence path it
+                # cannot assert that Nutrition owns the output.
+                candidate = capture(request)
+            else:
+                verify_workspace_owner(args.request, args.evidence, request)
+                owner_record = args.evidence / "workspace-owner.json"
+                if owner_record.is_file():
+                    with output_owner.owner_lock(owner_record):
+                        candidate = capture(request)
+                        candidate_binding = record_capture(args.request, args.evidence, request, candidate)
+                else:
+                    candidate = capture(request)
+                    candidate_binding = None
+            if args.evidence is not None and not owner_record.is_file():
+                candidate_binding = None
+            print(json.dumps({"candidate": candidate, "capture_receipt": candidate_binding}, sort_keys=True))
             return 0
         if args.mode == "runner":
             return runner(args)
         result = project(args.request, args.attempt_dir, args.candidate)
         print(json.dumps(result, sort_keys=True))
         return 0 if result["ready"] else 1
-    except (native.RequestError, OSError, ValueError, KeyError, TypeError, ImportError,
+    except (native.RequestError, output_owner.OutputError, OSError, ValueError, KeyError, TypeError, ImportError,
             subprocess.SubprocessError, zipfile.BadZipFile) as error:
         print(json.dumps({"ready": False, "error": str(error)}))
         return 1

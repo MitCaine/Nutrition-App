@@ -288,6 +288,29 @@ integration or issue completion. The controller consumes the actual returned sou
 qualification and independent review, separately approves, integrates and verifies installed closeout.
 The one bounded integration exercise used to establish this binding is not a routine per-task stage.
 
+### Owned task-output receipts and closeout
+
+The public authored runner records exclusive creation receipts for its attempt directory and bundle
+stage in the existing attempt state. For a new worker workspace, use the selected Nutrition wrapper
+with `create-workspace --request REQUEST --evidence EVIDENCE` before `prepare` and `run`; the request
+creates one absent container and a detached registered child, and its receipt is retained in the
+existing evidence directory. Existing workspaces remain usable without a receipt and therefore have
+unknown output ownership. Creation collisions are refused rather than adopted.
+
+`./scripts/task output-closeout ISSUE --execution-record PATH --durable-evidence PATH` is a
+per-receipt dry-run. It reports observed logical bytes and why each output remains retained. The
+optional `--shared-helper` mode authenticates the distinct RI949 checkout from the local map and
+refuses if that selected checkout is unavailable, dirty or at another revision; consumer-only mode
+does not import it. Execution requires both `--execute` and `--human-owner-authorized`, then rechecks
+the current issue state, live owner lock, exact creation identity, protected inputs and retained
+evidence under the issue checkpoint transaction. Eligible plain outputs move by same-filesystem
+rename into a verified quarantine; registered worktrees move through Git so their registrations
+remain coherent. The command records intent before movement and authenticates current contents and
+retained evidence when it reconciles a retry. Unknown assignment, source, process, protected-input
+or reference facts retain that item and leave cleanup incomplete. Logical file sizes are not physical
+reclaimed bytes; recoverable quarantine reports zero physical reclamation. A dry-run reports observed
+receipts and reasons but does not establish cleanup eligibility or issue completion.
+
 ### Authored command review attempts
 
 Authored results report `opt_in_qualification_status: unspecified` and omit a fixed

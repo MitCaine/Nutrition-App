@@ -38,6 +38,16 @@ fabricate that authenticated comment or a passed check.
   evidence through the existing runner. It does not authenticate authority, determine test adequacy,
   accept a candidate, verify it, approve it or integrate it. Mandatory and advisory outcomes, source
   drift and incomplete attempts retain their documented evidence semantics in the testing guide.
+- `task output-closeout ISSUE --execution-record PATH --durable-evidence PATH` reports one
+  authenticated owner record's output receipts, defaulting to a read-only dry-run. `--shared-helper`
+  selects the separately pinned RI949 source; there is no fallback to consumer-only mode when that
+  binding is missing or changed. Execution additionally requires `--execute
+  --human-owner-authorized`; any output without current terminal, owner, protection, retention and
+  recovery proof remains retained. Eligible plain outputs enter recoverable quarantine by same-filesystem
+  rename; registered worktrees move through Git and retain their registration. The command records
+  intent before movement and reauthenticates contents and retained evidence during retry. Unknown
+  facts or failed readback leave cleanup incomplete. This command does not replace legacy C/R/T
+  closeout or establish task acceptance from an output record.
 - `task rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2`
   handles an authorized corrected candidate under the canonical
   [state, concurrency and recovery rules](#state-concurrency-and-recovery).

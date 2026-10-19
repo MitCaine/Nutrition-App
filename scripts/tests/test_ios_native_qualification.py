@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import plistlib
@@ -31,6 +32,7 @@ from lib.task_authorization import (  # noqa: E402
     required_profiles_for_paths,
 )
 from lib import native_process_lifecycle as lifecycle  # noqa: E402
+from lib import task_output_cleanup as output_cleanup  # noqa: E402
 
 
 MACOS_NATIVE_FIXTURE_ONLY = unittest.skipUnless(
@@ -42,6 +44,94 @@ MACOS_NATIVE_FIXTURE_ONLY = unittest.skipUnless(
 class IosNativeQualificationTests(
     unittest.TestCase
 ):
+    def test_native_proof_digest_from_scan_matches_independent_producer_digest(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a9-proof-digest-") as directory:
+            root = Path(directory) / "DerivedData"
+            compile_root = root / "Products" / "ZCompile"
+            link_root = compile_root / "nested" / "AApp"
+            (compile_root / "nested" / "ZStoryboard").mkdir(parents=True)
+            link_root.mkdir(parents=True)
+            (root / "Products" / "AOther").mkdir()
+            (root / "Products" / "AOther" / "unrelated.bin").write_bytes(b"unrelated\n")
+            (link_root / "z-last.bin").write_bytes(b"link z\n")
+            (compile_root / "nested" / "ZStoryboard" / "b-last.bin").write_bytes(b"compile b\n")
+            (compile_root / "a-first.bin").write_bytes(b"compile a\n")
+            (link_root / "a-first.bin").write_bytes(b"link a\n")
+            external = Path(directory) / "external-sentinel.bin"
+            external.write_bytes(b"link target remains outside scan\n")
+            (root / "outside-link").symlink_to(external)
+
+            expected_compile = output_cleanup._native_directory_sha256(compile_root)
+            expected_link = output_cleanup._native_directory_sha256(link_root)
+            hashed_paths: list[Path] = []
+            original_sha_file = output_cleanup._sha_file
+
+            def record_hash(path: Path) -> str:
+                hashed_paths.append(path)
+                return original_sha_file(path)
+
+            with patch.object(output_cleanup, "_sha_file", side_effect=record_hash):
+                _total, entries = output_cleanup._walk_native_tree(
+                    root, root.stat().st_dev, proof_output_roots=(compile_root, link_root),
+                )
+                observed_compile = output_cleanup._native_directory_sha256_from_entries(
+                    compile_root, root=root, entries=entries,
+                )
+                observed_link = output_cleanup._native_directory_sha256_from_entries(
+                    link_root, root=root, entries=entries,
+                )
+
+            self.assertEqual(observed_compile, expected_compile)
+            self.assertEqual(observed_link, expected_link)
+            self.assertEqual(len(hashed_paths), 5)  # all regular files in one root walk
+            self.assertTrue(any(item.get("path") == "outside-link" and item.get("kind") == "symlink"
+                                for item in entries))
+            self.assertEqual(external.read_bytes(), b"link target remains outside scan\n")
+
+    def test_native_proof_scan_preserves_unreadable_link_and_special_refusals(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a9-proof-refusal-") as directory:
+            root = Path(directory) / "DerivedData"
+            proof = root / "Products" / "App"
+            proof.mkdir(parents=True)
+            unreadable = proof / "unreadable.bin"
+            unreadable.write_bytes(b"required bytes\n")
+            unreadable.chmod(0)
+            try:
+                with self.assertRaisesRegex(output_cleanup.OutputError, "NATIVE_PROOF_OUTPUT_UNREADABLE"):
+                    output_cleanup._walk_native_tree(
+                        root, root.stat().st_dev, proof_output_roots=(proof,),
+                    )
+            finally:
+                unreadable.chmod(0o600)
+
+            unreadable.unlink()
+            target = Path(directory) / "outside-target.bin"
+            target.write_bytes(b"outside\n")
+            (proof / "linked.bin").symlink_to(target)
+            _total, entries = output_cleanup._walk_native_tree(
+                root, root.stat().st_dev, proof_output_roots=(proof,),
+            )
+            with self.assertRaisesRegex(output_cleanup.OutputError, "NATIVE_PROOF_OUTPUT_SYMLINK"):
+                output_cleanup._native_directory_sha256_from_entries(proof, root=root, entries=entries)
+
+            (proof / "linked.bin").unlink()
+            if hasattr(os, "mkfifo"):
+                os.mkfifo(root / "unrelated-fifo")
+                with self.assertRaisesRegex(output_cleanup.OutputError, "OUTPUT_TREE_SPECIAL_OR_HARDLINK"):
+                    output_cleanup._walk_native_tree(
+                        root, root.stat().st_dev, proof_output_roots=(proof,),
+                    )
+                (root / "unrelated-fifo").unlink()
+
+            first = proof / "first.bin"
+            second = proof / "second.bin"
+            first.write_bytes(b"hardlinked bytes\n")
+            os.link(first, second)
+            with self.assertRaisesRegex(output_cleanup.OutputError, "OUTPUT_TREE_SPECIAL_OR_HARDLINK"):
+                output_cleanup._walk_native_tree(
+                    root, root.stat().st_dev, proof_output_roots=(proof,),
+                )
+
     def test_profile_registry(self):
         self.assertEqual(
             PROFILE_CHECKS["ios-native"],
@@ -291,6 +381,872 @@ class IosNativeQualificationTests(
             selection["runtime_executable"],
             str(Path(sys.executable).resolve()),
         )
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_quarantines_owned_outputs_and_preserves_link_target(self):
+        result, evidence, evidence_parent = self._run_fixture_qualification(
+            "symlink-output", return_evidence_parent=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        cleanup = manifest["cleanup_disposition"]
+        self.assertEqual(cleanup["status"], "PASS")
+        owner_path = evidence / "native-lifecycle" / "output-owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        self.assertEqual(owner["status"], "complete")
+        self.assertTrue(owner["native_result_ready"])
+        self.assertEqual(len(owner["owned_outputs"]), 3)
+        generated = owner["nutrition_generated_outputs"]
+        self.assertEqual(len(generated), 1)
+        expo_receipt = Path(generated[0]["receipt"]["path"])
+        self.assertEqual(expo_receipt.name, "nutrition-expo-output.json")
+        self.assertEqual(json.loads(expo_receipt.read_text(encoding="utf-8"))["status"], "observed")
+        quarantine = Path(owner["quarantine_parent"]["path"])
+        self.assertEqual(cleanup["quarantined_roots"], [
+            str(quarantine / "Nutrition App Native"),
+            str(quarantine / "DerivedData"),
+            str(quarantine / "harness-bin"),
+        ])
+
+        worktree_receipt = next(item for item in owner["owned_outputs"] if "git_worktree" in item)
+        original_worktree = Path(worktree_receipt["path"])
+        moved_worktree = quarantine / original_worktree.name
+        self.assertFalse(original_worktree.exists())
+        self.assertEqual(moved_worktree.stat().st_ino, worktree_receipt["node"][1])
+        listed = subprocess.run(
+            ["git", "-C", worktree_receipt["git_worktree"]["repository"], "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, check=True,
+        ).stdout.splitlines()
+        self.assertEqual(listed.count("worktree " + str(moved_worktree)), 1)
+        checkout_head = subprocess.check_output(
+            ["git", "-C", str(moved_worktree), "rev-parse", "--verify", "HEAD"], text=True,
+        ).strip()
+        self.assertEqual(checkout_head, worktree_receipt["git_worktree"]["head"])
+        self.assertEqual(subprocess.check_output(
+            ["git", "-C", str(moved_worktree), "branch", "--show-current"], text=True,
+        ).strip(), "")
+
+        derived_receipt = next(item for item in owner["owned_outputs"]
+                               if Path(item["path"]).name == "DerivedData")
+        original_derived = Path(derived_receipt["path"])
+        moved_derived = quarantine / original_derived.name
+        self.assertFalse(original_derived.exists())
+        self.assertEqual(moved_derived.stat().st_ino, derived_receipt["node"][1])
+        link = moved_derived / "native-output-link"
+        sentinel = evidence_parent / "outside-native-sentinel"
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(os.readlink(link), str(sentinel))
+        self.assertEqual(sentinel.read_bytes(), b"outside native target remains unchanged\n")
+
+        harness_receipt = next(item for item in owner["owned_outputs"]
+                               if Path(item["path"]).name == "harness-bin")
+        self.assertFalse(Path(harness_receipt["path"]).exists())
+        self.assertEqual((quarantine / "harness-bin").stat().st_ino, harness_receipt["node"][1])
+        proof = evidence / "native-lifecycle" / "full-build-proof.json"
+        self.assertTrue(proof.is_file() and proof.stat().st_size > 0)
+        output_inventory = manifest["native_process_lifecycle"]["nutrition_output_lifecycle"]
+        self.assertEqual(output_inventory["owner"]["content"]["status"], "complete")
+        operations = output_inventory["operations"]
+        self.assertGreaterEqual(len(operations), 3)
+        self.assertTrue(all(item["status"] == "complete" for item in operations))
+        for binding in operations:
+            operation_path = Path(binding["path"])
+            self.assertEqual(hashlib.sha256(operation_path.read_bytes()).hexdigest(), binding["sha256"])
+            operation = json.loads(operation_path.read_text(encoding="utf-8"))
+            self.assertTrue(operation["result_persisted"])
+            self.assertEqual(operation["physical_bytes_reclaimed"], 0)
+            for entry in operation["evidence_entries"]:
+                retained_path = Path(operation.get("current_evidence", operation["destination"])) / entry["path"]
+                moved_path = Path(operation["destination"]) / entry["path"]
+                if entry["kind"] == "symlink":
+                    self.assertTrue(retained_path.is_symlink())
+                    self.assertTrue(moved_path.is_symlink())
+                    self.assertEqual(os.readlink(retained_path), entry["target"])
+                    self.assertEqual(os.readlink(moved_path), entry["target"])
+                elif entry["kind"] == "file":
+                    self.assertEqual(hashlib.sha256(retained_path.read_bytes()).hexdigest(), entry["sha256"])
+                    self.assertEqual(hashlib.sha256(moved_path.read_bytes()).hexdigest(), entry["sha256"])
+
+        proof_inventory = manifest["native_process_lifecycle"]["full_build_proof"]
+        proof = Path(proof_inventory["path"])
+        self.assertEqual(hashlib.sha256(proof.read_bytes()).hexdigest(), proof_inventory["sha256"])
+        self.assertEqual(proof_inventory["status"], "PASS")
+        fresh_verify = evidence / "native-lifecycle" / "cleanup-verify-harness-bin-quarantine.stdout.log"
+        self.assertEqual(json.loads(fresh_verify.read_text(encoding="utf-8"))["status"], "PASS")
+        phase_names = ("producer-finished", "worktree-removed", "derived-data-removed", "harness-bin-removed")
+        phase_records = [json.loads((evidence / "native-lifecycle" / "phases" / f"{name}.json").read_text(
+            encoding="utf-8")) for name in phase_names]
+        phase_mtimes = [(evidence / "native-lifecycle" / "phases" / f"{name}.json").stat().st_mtime_ns
+                        for name in phase_names]
+        self.assertEqual([record["phase"] for record in phase_records], list(phase_names))
+        self.assertEqual(phase_mtimes, sorted(phase_mtimes))
+        for record in phase_records[1:]:
+            operation_binding = record["quarantine_operation"]
+            operation_path = Path(operation_binding["path"])
+            self.assertEqual(hashlib.sha256(operation_path.read_bytes()).hexdigest(), operation_binding["sha256"])
+            self.assertEqual(json.loads(operation_path.read_text(encoding="utf-8"))["status"], "complete")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_finalized_native_stage_snapshot_survives_complete_readback(self):
+        result, evidence = self._run_fixture_qualification("success")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+
+        stage_path = evidence / "stages.jsonl"
+        stage_bytes = stage_path.read_bytes()
+        stages = [json.loads(line) for line in stage_bytes.decode("utf-8").splitlines() if line.strip()]
+        self.assertEqual(stages[-1]["stage"], "cleanup")
+        self.assertEqual(stages[-1]["status"], "PASS")
+        self.assertEqual(stages[-1]["exit_code"], 0)
+        self.assertEqual(manifest["stages"], stages)
+
+        owner_path = evidence / "native-lifecycle" / "output-owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        generated = owner["nutrition_generated_outputs"]
+        self.assertEqual(len(generated), 1)
+        expected_snapshot = evidence / "native-lifecycle" / "producer-stages.jsonl"
+        for row in generated:
+            binding = row["stages"]
+            snapshot_path = Path(binding["path"])
+            self.assertEqual(snapshot_path, expected_snapshot)
+            self.assertEqual(hashlib.sha256(snapshot_path.read_bytes()).hexdigest(), binding["sha256"])
+
+        command = [
+            sys.executable,
+            str(SCRIPTS / "lib" / "task_output_cleanup.py"),
+            "native-quarantine-verify",
+            "--owner-record", str(owner_path),
+            "--invocation-record", str(evidence / "native-lifecycle" / "invocation.json"),
+            "--durable-evidence", str(evidence / "native-lifecycle" / "retained-outputs"),
+            "--require-complete",
+        ]
+        environment = os.environ.copy()
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        environment["TMPDIR"] = "/private/tmp"
+        def verify_complete():
+            return subprocess.run(command, cwd=ROOT, env=environment, capture_output=True, text=True, check=False)
+
+        readback = verify_complete()
+        self.assertEqual(readback.returncode, 0, readback.stdout + readback.stderr)
+        self.assertEqual(json.loads(readback.stdout)["status"], "PASS")
+
+        snapshot_bytes = expected_snapshot.read_bytes()
+        snapshot_mode = stat.S_IMODE(expected_snapshot.stat().st_mode)
+        owner_bytes = owner_path.read_bytes()
+
+        def assert_refusal(expected_reason: str):
+            refused = verify_complete()
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+            self.assertEqual(json.loads(refused.stderr)["reason"], expected_reason)
+
+        with self.subTest(snapshot_fault="tampered"):
+            expected_snapshot.write_bytes(snapshot_bytes + b"tampered\n")
+            tampered = expected_snapshot.read_bytes()
+            assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+            self.assertEqual(expected_snapshot.read_bytes(), tampered)
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            expected_snapshot.write_bytes(snapshot_bytes)
+
+        with self.subTest(snapshot_fault="missing"):
+            expected_snapshot.unlink()
+            assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+            self.assertFalse(expected_snapshot.exists())
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            expected_snapshot.write_bytes(snapshot_bytes)
+            expected_snapshot.chmod(snapshot_mode)
+
+        with self.subTest(snapshot_fault="unreadable"):
+            expected_snapshot.chmod(0)
+            assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+            self.assertEqual(stat.S_IMODE(expected_snapshot.stat().st_mode), 0)
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            expected_snapshot.chmod(snapshot_mode)
+
+        with self.subTest(snapshot_fault="changed-producer-prefix"):
+            final_stage_bytes = stage_path.read_bytes()
+            changed_stage_bytes = b"X" + final_stage_bytes[1:]
+            stage_path.write_bytes(changed_stage_bytes)
+            assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+            self.assertEqual(stage_path.read_bytes(), changed_stage_bytes)
+            self.assertEqual(expected_snapshot.read_bytes(), snapshot_bytes)
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            stage_path.write_bytes(final_stage_bytes)
+
+        for field, replacement in (
+            ("path", str(evidence / "stages.jsonl")),
+            ("sha256", "0" * 64),
+        ):
+            with self.subTest(snapshot_fault=f"wrong-{field}"):
+                changed_owner = json.loads(owner_bytes)
+                changed_owner["nutrition_generated_outputs"][0]["stages"][field] = replacement
+                changed_owner_bytes = (json.dumps(changed_owner, sort_keys=True, indent=2) + "\n").encode()
+                owner_path.write_bytes(changed_owner_bytes)
+                assert_refusal("NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED")
+                self.assertEqual(owner_path.read_bytes(), changed_owner_bytes)
+                self.assertEqual(expected_snapshot.read_bytes(), snapshot_bytes)
+                owner_path.write_bytes(owner_bytes)
+
+        def snapshot_tree(root: Path) -> dict[str, tuple]:
+            observed: dict[str, tuple] = {}
+
+            def visit(path: Path) -> None:
+                item = path.lstat()
+                identity = (
+                    item.st_dev, item.st_ino, item.st_mode, item.st_nlink,
+                    item.st_size, item.st_mtime_ns, item.st_ctime_ns,
+                )
+                if stat.S_ISLNK(item.st_mode):
+                    value = ("symlink", identity, os.readlink(path))
+                elif stat.S_ISDIR(item.st_mode):
+                    value = ("directory", identity)
+                    observed[str(path)] = value
+                    for child in sorted(path.iterdir(), key=lambda candidate: candidate.name):
+                        visit(child)
+                    return
+                elif stat.S_ISREG(item.st_mode):
+                    value = ("file", identity, hashlib.sha256(path.read_bytes()).hexdigest())
+                else:
+                    value = ("special", identity)
+                observed[str(path)] = value
+
+            visit(root)
+            return observed
+
+        retained = evidence / "native-lifecycle" / "retained-outputs"
+        phases = evidence / "native-lifecycle" / "phases"
+        record_paths = sorted((*retained.rglob("*.json"), *phases.rglob("*.json")))
+        record_state = {
+            str(path): (path.read_bytes(), hashlib.sha256(path.read_bytes()).hexdigest(),
+                        path.stat(follow_symlinks=False).st_ino)
+            for path in record_paths
+        }
+        quarantine_root = Path(owner["quarantine_parent"]["path"])
+        quarantine_state = snapshot_tree(quarantine_root)
+        saved_stage_bytes = stage_path.read_bytes()
+        saved_stage_hash = hashlib.sha256(saved_stage_bytes).hexdigest()
+        saved_stage_mode = stat.S_IMODE(stage_path.stat(follow_symlinks=False).st_mode)
+        saved_snapshot_mode = stat.S_IMODE(expected_snapshot.stat(follow_symlinks=False).st_mode)
+        recovery_copy = evidence.parent / "a15-original-stages.jsonl"
+        recovery_copy.write_bytes(saved_stage_bytes)
+        self.assertEqual(hashlib.sha256(recovery_copy.read_bytes()).hexdigest(), saved_stage_hash)
+        snapshot_recovery_copy = evidence.parent / "a16-original-producer-stages.jsonl"
+        snapshot_recovery_copy.write_bytes(snapshot_bytes)
+        snapshot_sha256 = hashlib.sha256(snapshot_bytes).hexdigest()
+
+        def restore_snapshot() -> None:
+            if os.path.lexists(expected_snapshot):
+                expected_snapshot.unlink()
+            expected_snapshot.write_bytes(snapshot_recovery_copy.read_bytes())
+            expected_snapshot.chmod(saved_snapshot_mode)
+
+        def assert_preserved() -> None:
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            self.assertEqual(expected_snapshot.read_bytes(), snapshot_bytes)
+            self.assertEqual(hashlib.sha256(expected_snapshot.read_bytes()).hexdigest(), snapshot_sha256)
+            self.assertEqual(snapshot_recovery_copy.read_bytes(), snapshot_bytes)
+            self.assertEqual(stage_path.read_bytes(), saved_stage_bytes)
+            self.assertEqual(recovery_copy.read_bytes(), saved_stage_bytes)
+            self.assertEqual(
+                {
+                    str(path): (path.read_bytes(), hashlib.sha256(path.read_bytes()).hexdigest(),
+                                path.stat(follow_symlinks=False).st_ino)
+                    for path in record_paths
+                },
+                record_state,
+            )
+            self.assertEqual(snapshot_tree(quarantine_root), quarantine_state)
+
+        def run_injected_cli(name: str, source: str, target: Path):
+            injection_directory = evidence.parent / name
+            injection_directory.mkdir()
+            (injection_directory / "sitecustomize.py").write_text(source, encoding="utf-8")
+            marker = evidence.parent / f"{name}-triggered"
+            fault_environment = dict(environment)
+            fault_environment["PYTHONPATH"] = (
+                str(injection_directory) + os.pathsep + fault_environment.get("PYTHONPATH", "")
+            )
+            fault_environment["GH420_A16_FAULT_TARGET"] = str(target)
+            fault_environment["GH420_A16_FAULT_MARKER"] = str(marker)
+            try:
+                return subprocess.run(
+                    command, cwd=ROOT, env=fault_environment, capture_output=True, text=True,
+                    check=False, timeout=5,
+                ), False, marker
+            except subprocess.TimeoutExpired:
+                return None, True, marker
+
+        fifo_open_injection = "\n".join((
+            "import os",
+            "from pathlib import Path",
+            "target = os.environ['GH420_A16_FAULT_TARGET']",
+            "marker = Path(os.environ['GH420_A16_FAULT_MARKER'])",
+            "real_open = os.open",
+            "def swap_at_open(path, flags, *args, **kwargs):",
+            "    if os.fspath(path) == target and not marker.exists():",
+            "        marker.write_text('snapshot os.open reached\\n', encoding='utf-8')",
+            "        Path(target).unlink()",
+            "        os.mkfifo(target)",
+            "    return real_open(path, flags, *args, **kwargs)",
+            "os.open = swap_at_open",
+        ))
+        with self.subTest(snapshot_fault="snapshot-fifo-at-first-hash-open"):
+            refused = None
+            timed_out = False
+            try:
+                refused, timed_out, marker = run_injected_cli(
+                    "a16-snapshot-open-fault", fifo_open_injection, expected_snapshot,
+                )
+            finally:
+                restore_snapshot()
+            self.assertTrue(marker.is_file())
+            assert_preserved()
+            self.assertFalse(timed_out, "snapshot hash acquisition blocked on a substituted FIFO")
+            self.assertIsNotNone(refused)
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+            self.assertEqual(
+                json.loads(refused.stderr)["reason"],
+                "NATIVE_EXPO_OUTPUT_STAGE_BINDING_CHANGED",
+            )
+
+        parser_reopen_injection = "\n".join((
+            "import os",
+            "from pathlib import Path",
+            "target = os.environ['GH420_A16_FAULT_TARGET']",
+            "marker = Path(os.environ['GH420_A16_FAULT_MARKER'])",
+            "real_read_text = Path.read_text",
+            "def replace_before_read_text(path, *args, **kwargs):",
+            "    if os.fspath(path) == target and not marker.exists():",
+            "        marker.write_text('snapshot parser reopen reached\\n', encoding='utf-8')",
+            "        path.unlink()",
+            "        os.mkfifo(path)",
+            "    return real_read_text(path, *args, **kwargs)",
+            "Path.read_text = replace_before_read_text",
+        ))
+        with self.subTest(snapshot_fault="parser-reopen-boundary"):
+            refused = None
+            timed_out = False
+            try:
+                refused, timed_out, marker = run_injected_cli(
+                    "a16-parser-reopen-fault", parser_reopen_injection, expected_snapshot,
+                )
+            finally:
+                restore_snapshot()
+            assert_preserved()
+            self.assertFalse(timed_out, "snapshot parser reopened a substituted FIFO")
+            self.assertFalse(marker.exists(), "stage parser bypassed authenticated snapshot bytes")
+            self.assertIsNotNone(refused)
+            self.assertEqual(refused.returncode, 0, refused.stdout + refused.stderr)
+            self.assertEqual(json.loads(refused.stdout)["status"], "PASS")
+
+        with self.subTest(snapshot_fault="current-stage-fifo"):
+            stage_path.unlink()
+            os.mkfifo(stage_path)
+            self.assertTrue(stat.S_ISFIFO(stage_path.lstat().st_mode))
+            timed_out = False
+            refused = None
+            try:
+                refused = subprocess.run(
+                    command, cwd=ROOT, env=environment, capture_output=True, text=True,
+                    check=False, timeout=5,
+                )
+            except subprocess.TimeoutExpired:
+                timed_out = True
+            finally:
+                if os.path.lexists(stage_path):
+                    stage_path.unlink()
+                stage_path.write_bytes(recovery_copy.read_bytes())
+                stage_path.chmod(saved_stage_mode)
+
+            self.assertEqual(stage_path.read_bytes(), saved_stage_bytes)
+            self.assertEqual(hashlib.sha256(stage_path.read_bytes()).hexdigest(), saved_stage_hash)
+            self.assertEqual(owner_path.read_bytes(), owner_bytes)
+            self.assertEqual(hashlib.sha256(expected_snapshot.read_bytes()).hexdigest(),
+                             generated[0]["stages"]["sha256"])
+            self.assertEqual(expected_snapshot.read_bytes(), snapshot_bytes)
+            self.assertEqual(
+                {
+                    str(path): (path.read_bytes(), hashlib.sha256(path.read_bytes()).hexdigest(),
+                                path.stat(follow_symlinks=False).st_ino)
+                    for path in record_paths
+                },
+                record_state,
+            )
+            self.assertEqual(snapshot_tree(quarantine_root), quarantine_state)
+            self.assertFalse(timed_out, "complete native readback blocked on current-stage FIFO")
+            self.assertIsNotNone(refused)
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+            self.assertEqual(
+                json.loads(refused.stderr)["reason"],
+                "NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE",
+            )
+
+    @unittest.skipUnless(
+        hasattr(os, "mkfifo") and hasattr(os, "O_NONBLOCK"),
+        "FIFO open-race control requires POSIX nonblocking FIFOs",
+    )
+    def test_native_stage_reader_refuses_fifo_substitution_during_open(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a15-stage-open-race-") as temporary:
+            stage_path = Path(temporary) / "stages.jsonl"
+            stage_path.write_bytes(b"authenticated stage bytes\n")
+            original = stage_path.read_bytes()
+            script = "\n".join((
+                "import os, sys",
+                "from pathlib import Path",
+                "sys.path.insert(0, sys.argv[1])",
+                "from lib import task_output_cleanup as cleanup",
+                "stage = Path(sys.argv[2])",
+                "real_open = os.open",
+                "swapped = False",
+                "def race_open(path, flags, *args, **kwargs):",
+                "    global swapped",
+                "    if os.fspath(path) == str(stage) and not swapped:",
+                "        swapped = True",
+                "        stage.unlink()",
+                "        os.mkfifo(stage)",
+                "        if not flags & os.O_NONBLOCK:",
+                "            raise AssertionError('stage descriptor was not opened nonblocking')",
+                "    return real_open(path, flags, *args, **kwargs)",
+                "os.open = race_open",
+                "try:",
+                "    cleanup._read_native_stage_bytes(stage)",
+                "except cleanup.OutputError as error:",
+                "    print(str(error))",
+                "    raise SystemExit(2)",
+                "raise SystemExit(0)",
+            ))
+            timed_out = False
+            try:
+                try:
+                    result = subprocess.run(
+                        [sys.executable, "-c", script, str(SCRIPTS), str(stage_path)],
+                        cwd=ROOT, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                        capture_output=True, text=True, check=False, timeout=5,
+                    )
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    result = None
+            finally:
+                if os.path.lexists(stage_path):
+                    stage_path.unlink()
+                stage_path.write_bytes(original)
+
+            self.assertFalse(timed_out, "stage reader blocked after FIFO substitution at open")
+            self.assertIsNotNone(result)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), "NATIVE_EXPO_OUTPUT_STAGE_SNAPSHOT_UNREADABLE")
+            self.assertEqual(stage_path.read_bytes(), original)
+
+    @unittest.skipUnless(
+        hasattr(os, "mkfifo") and hasattr(os, "O_NONBLOCK"),
+        "FIFO open-race control requires POSIX nonblocking FIFOs",
+    )
+    def test_generic_sha_file_refuses_fifo_substitution_during_open(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a16-sha-open-race-") as temporary:
+            path = Path(temporary) / "definition.json"
+            original = b"authenticated definition bytes\n"
+            path.write_bytes(original)
+            script = "\n".join((
+                "import os, sys",
+                "from pathlib import Path",
+                "sys.path.insert(0, sys.argv[1])",
+                "from lib import task_output_cleanup as cleanup",
+                "target = Path(sys.argv[2])",
+                "real_open = os.open",
+                "swapped = False",
+                "def race_open(path, flags, *args, **kwargs):",
+                "    global swapped",
+                "    if os.fspath(path) == str(target) and not swapped:",
+                "        swapped = True",
+                "        target.unlink()",
+                "        os.mkfifo(target)",
+                "    return real_open(path, flags, *args, **kwargs)",
+                "os.open = race_open",
+                "try:",
+                "    cleanup._sha_file(target)",
+                "except cleanup.OutputError as error:",
+                "    print(str(error))",
+                "    raise SystemExit(2)",
+                "raise SystemExit(0)",
+            ))
+            timed_out = False
+            try:
+                try:
+                    result = subprocess.run(
+                        [sys.executable, "-c", script, str(SCRIPTS), str(path)],
+                        cwd=ROOT, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                        capture_output=True, text=True, check=False, timeout=5,
+                    )
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    result = None
+            finally:
+                if os.path.lexists(path):
+                    path.unlink()
+                path.write_bytes(original)
+
+            self.assertFalse(timed_out, "generic _sha_file blocked after FIFO substitution")
+            self.assertIsNotNone(result)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), "FILE_IDENTITY_CHANGED_DURING_HASH")
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_native_stage_snapshot_final_binding_uses_authenticated_readback_bytes(self):
+        with tempfile.TemporaryDirectory(prefix="gh420-a16-snapshot-final-binding-") as temporary:
+            snapshot = Path(temporary) / "native-lifecycle" / "producer-stages.jsonl"
+            snapshot.parent.mkdir()
+            producer_bytes = b'{"stage":"prebuild_plugins","status":"PASS","exit_code":0}\n'
+            with patch.object(
+                output_cleanup,
+                "_sha_file",
+                side_effect=AssertionError("stage snapshot binding reopened by generic hash"),
+            ):
+                binding = output_cleanup._write_native_stage_snapshot(snapshot, producer_bytes)
+            self.assertEqual(snapshot.read_bytes(), producer_bytes)
+            self.assertEqual(binding, {
+                "path": str(snapshot), "sha256": hashlib.sha256(producer_bytes).hexdigest(),
+            })
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_authenticates_absent_expo_stage_without_path_reopen(self):
+        result, evidence, evidence_parent = self._run_fixture_qualification(
+            "expo-absent", return_evidence_parent=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+        self.assertFalse((evidence_parent / "a16-absent-stage-readtext-attempt").exists())
+        owner_path = evidence / "native-lifecycle" / "output-owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        self.assertFalse(owner.get("nutrition_generated_outputs"))
+        invocation_path = evidence / "native-lifecycle" / "invocation.json"
+        receipt_path = invocation_path.parent / "nutrition-expo-output.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipt["status"], "absent")
+        stage_rows = [json.loads(line) for line in (evidence / "stages.jsonl").read_text(
+            encoding="utf-8").splitlines() if line.strip()]
+        producer_rows = [row for row in stage_rows if row.get("stage") == "prebuild_plugins"]
+        self.assertEqual(len(producer_rows), 1)
+        self.assertEqual(producer_rows[0]["status"], "PASS")
+        self.assertEqual(stage_rows[-1]["stage"], "cleanup")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_native_complete_worktree_verification_reuses_one_observation(self):
+        result, evidence = self._run_fixture_qualification("success", trace_worktree_walks=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+        owner_path = evidence / "native-lifecycle" / "output-owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        receipt = next(item for item in owner["owned_outputs"] if "git_worktree" in item)
+        destination = Path(owner["quarantine_parent"]["path"]) / Path(receipt["path"]).name
+        operation_path = evidence / "native-lifecycle" / "retained-outputs" / (
+            f"worktree-quarantine-{receipt['node'][1]}.json")
+        operation = json.loads(operation_path.read_text(encoding="utf-8"))
+        self.assertEqual(operation["status"], "complete")
+        self.assertTrue(operation["result_persisted"])
+        expected_hash_bytes = sum(
+            item.get("bytes", 0) for item in operation["evidence_entries"]
+            if item["kind"] == "file"
+        ) + destination.joinpath(".git").stat().st_size
+        walk_trace = [json.loads(line) for line in (evidence / "adapter-walk-trace.jsonl").read_text(
+            encoding="utf-8").splitlines()]
+        complete_invocations = {
+            item["pid"] for item in walk_trace
+            if "native-quarantine-verify" in item["argv"]
+            and "--require-complete" in item["argv"]
+        }
+        self.assertTrue(complete_invocations, walk_trace)
+        for pid in complete_invocations:
+            worktree_walks = [item for item in walk_trace
+                              if item["pid"] == pid and item["root"] == str(destination)]
+            self.assertEqual(len(worktree_walks), 1, worktree_walks)
+            self.assertEqual(worktree_walks[0]["hash_bytes"], expected_hash_bytes)
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_recovers_native_worktree_move_before_adapter_result_and_phase(self):
+        result, evidence = self._run_fixture_qualification(
+            "native-worktree-move-result-interrupted", trace_worktree_walks=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+        self.assertEqual((evidence / "movement-events.jsonl").read_text(encoding="utf-8").count("WORKTREE_MOVE:"), 1)
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(encoding="utf-8"))
+        receipt = next(item for item in owner["owned_outputs"] if "git_worktree" in item)
+        original = Path(receipt["path"])
+        destination = Path(owner["quarantine_parent"]["path"]) / original.name
+        self.assertFalse(original.exists())
+        self.assertEqual(destination.stat().st_ino, receipt["node"][1])
+        listed = subprocess.run(
+            ["git", "-C", receipt["git_worktree"]["repository"], "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, check=True,
+        ).stdout.splitlines()
+        self.assertEqual(listed.count("worktree " + str(destination)), 1)
+        operation_path = evidence / "native-lifecycle" / "retained-outputs" / (
+            f"worktree-quarantine-{receipt['node'][1]}.json")
+        operation = json.loads(operation_path.read_text(encoding="utf-8"))
+        self.assertEqual(operation["status"], "complete")
+        self.assertTrue(operation["result_persisted"])
+        phase_path = evidence / "native-lifecycle" / "phases" / "worktree-removed.json"
+        phase = json.loads(phase_path.read_text(encoding="utf-8"))
+        self.assertEqual(phase["quarantine_operation"]["sha256"], hashlib.sha256(
+            operation_path.read_bytes()).hexdigest())
+        reconciliation_records = [json.loads(line) for line in (evidence / "native-lifecycle" /
+                                    "worktree-phase-reconciliation.stdout.log").read_text(
+                                        encoding="utf-8").splitlines()]
+        reconciliation = next(item for item in reconciliation_records
+                              if item.get("status") == "reconciled")
+        self.assertEqual(Path(reconciliation["destination"]), destination)
+        self.assertEqual(reconciliation["node"], receipt["node"])
+        self.assertEqual(reconciliation["operation"]["sha256"], hashlib.sha256(
+            operation_path.read_bytes()).hexdigest())
+        walk_trace = [json.loads(line) for line in (evidence / "adapter-walk-trace.jsonl").read_text(
+            encoding="utf-8").splitlines()]
+        recovery_walks = [item for item in walk_trace
+                          if item["root"] == str(destination)
+                          and "native-worktree-phase-reconcile" in item["argv"]]
+        self.assertEqual(len(recovery_walks), 1, recovery_walks)
+        fresh_verify = evidence / "native-lifecycle" / "cleanup-verify-derived-data-quarantine.stdout.log"
+        self.assertEqual(json.loads(fresh_verify.read_text(encoding="utf-8"))["status"], "PASS")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_recovers_native_worktree_result_complete_before_phase(self):
+        result, evidence = self._run_fixture_qualification("native-worktree-phase-write-interrupted")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "PASS")
+        self.assertEqual((evidence / "movement-events.jsonl").read_text(encoding="utf-8").count("WORKTREE_MOVE:"), 1)
+        reconciliation_records = [json.loads(line) for line in (evidence / "native-lifecycle" /
+                                    "worktree-phase-reconciliation.stdout.log").read_text(
+                                        encoding="utf-8").splitlines()]
+        reconciliation = next(item for item in reconciliation_records
+                              if item.get("status") == "reconciled")
+        operation_path = Path(reconciliation["operation"]["path"])
+        operation_before = json.loads(operation_path.read_text(encoding="utf-8"))
+        self.assertEqual(operation_before["status"], "complete")
+        self.assertTrue(operation_before["result_persisted"])
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_refuses_mutated_destination_during_native_worktree_recovery(self):
+        result, evidence = self._run_fixture_qualification("native-worktree-move-destination-mutated")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("NATIVE_QUARANTINE_RECOVERY_DESTINATION_CONTENT_CHANGED",
+                      manifest["cleanup_disposition"]["reason"])
+        self.assertEqual((evidence / "movement-events.jsonl").read_text(encoding="utf-8").count("WORKTREE_MOVE:"), 1)
+        self.assertTrue((evidence / "Nutrition App Native").exists() is False)
+        self.assertTrue((evidence / "DerivedData").is_dir())
+        self.assertTrue((evidence / "harness-bin").is_dir())
+        self.assertFalse((evidence / "native-lifecycle" / "phases" / "worktree-removed.json").exists())
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_retains_unique_untracked_and_ignored_worktree_sources(self):
+        result, evidence, evidence_parent = self._run_fixture_qualification(
+            "native-worktree-unique-source", return_evidence_parent=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("fixture-unique-untracked.txt", manifest["cleanup_disposition"]["reason"])
+        self.assertIn("fixture-unique-ignored.txt", manifest["cleanup_disposition"]["reason"])
+
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        receipt = next(item for item in owner["owned_outputs"] if "git_worktree" in item)
+        worktree = Path(receipt["path"])
+        self.assertTrue(worktree.is_dir())
+        untracked = worktree / "fixture-unique-untracked.txt"
+        ignored = worktree / "fixture-unique-ignored.txt"
+        self.assertEqual(untracked.read_bytes(), b"unique untracked source bytes\n")
+        self.assertEqual(ignored.read_bytes(), b"unique ignored source bytes\n")
+        self.assertEqual(
+            (evidence / "movement-events.jsonl").read_text(encoding="utf-8").count("WORKTREE_MOVE:"),
+            0,
+        )
+        self.assertEqual(
+            subprocess.run(["git", "-C", str(worktree), "status", "--porcelain=v1", "--ignored=matching",
+                            "--untracked-files=normal"], capture_output=True, text=True, check=True).stdout.count(
+                                "fixture-unique-"),
+            2,
+        )
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_revalidates_moved_worktree_before_derived_data_cleanup(self):
+        result, evidence, _ = self._run_fixture_qualification(
+            "native-worktree-unregistered-during-derived-readback", return_evidence_parent=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("IOS_NATIVE_QUALIFICATION=PASS", result.stdout)
+        self.assertIn("IOS_NATIVE_CLEANUP=INCOMPLETE", result.stdout)
+        self.assertNotIn("IOS_NATIVE_CLEANUP=PASS", result.stdout)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("NATIVE_QUARANTINE_COMPLETED_LOCATIONS_NOT_EXCLUSIVE",
+                      manifest["cleanup_disposition"]["reason"], manifest["cleanup_disposition"])
+        marker = evidence / "fixture-worktree-unregistered.json"
+        self.assertTrue(marker.is_file(), manifest["cleanup_disposition"])
+        moved_worktree = Path(marker.read_text(encoding="utf-8").strip())
+        self.assertFalse(moved_worktree.exists())
+        self.assertTrue((evidence / "DerivedData").is_dir())
+        self.assertTrue((evidence / "harness-bin").is_dir())
+        events = (evidence / "movement-events.jsonl").read_text(encoding="utf-8")
+        self.assertEqual(events.count("WORKTREE_MOVE:"), 1)
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        derived_receipt = next(item for item in owner["owned_outputs"]
+                               if Path(item["path"]).name == "DerivedData")
+        derived_operation = (evidence / "native-lifecycle" / "retained-outputs" /
+                             f"output-quarantine-{derived_receipt['node'][1]}.json")
+        self.assertFalse(derived_operation.exists())
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_authenticates_expo_output_and_retains_unique_sibling(self):
+        result, evidence, _ = self._run_fixture_qualification(
+            "expo-unique-sibling", return_evidence_parent=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+        self.assertIn("fixture-expo-sibling.bin", manifest["cleanup_disposition"]["reason"])
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        receipt = owner["nutrition_generated_outputs"][0]["receipt"]
+        output_record = json.loads(Path(receipt["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(output_record["producer_command"], [
+            "npm", "exec", "--", "expo", "prebuild", "--clean", "--platform", "ios", "--no-install",
+        ])
+        self.assertEqual(output_record["status"], "observed")
+        worktree_receipt = next(item for item in owner["owned_outputs"] if "git_worktree" in item)
+        self.assertEqual(output_record["source_commit"], worktree_receipt["git_worktree"]["head"])
+        worktree = Path(worktree_receipt["path"])
+        self.assertEqual((worktree / "apps/mobile/fixture-expo-sibling.bin").read_bytes(),
+                         b"unique sibling source stays in place\n")
+        self.assertTrue((worktree / "apps/mobile/.expo/settings.json").is_file())
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_native_proof_readback_precedes_uncertain_process_observation(self):
+        for mode, expected_error in (
+            ("proof-fault-tampered-observation-unavailable", "NATIVE_RELOCATED_PROOF_OUTPUT_HASH_MISMATCH"),
+            ("proof-fault-unreadable-observation-unavailable", "NATIVE_PROOF_OUTPUT_UNREADABLE"),
+        ):
+            with self.subTest(mode=mode):
+                result, evidence, _ = self._run_fixture_qualification(mode, return_evidence_parent=True)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+                self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
+                self.assertIn("required compile/link proof readback refused",
+                              manifest["cleanup_disposition"]["reason"])
+                proof_error_paths = sorted((evidence / "native-lifecycle").glob(
+                    "cleanup-proof-verify-*.stderr.log"))
+                proof_error = "\n".join(path.read_text(encoding="utf-8") for path in proof_error_paths)
+                self.assertIn(expected_error, proof_error, {
+                    path.name: path.read_text(encoding="utf-8") for path in proof_error_paths
+                })
+                for operation in ("worktree-quarantine", "derived-data-quarantine"):
+                    self.assertTrue((evidence / "native-lifecycle" /
+                                     f"cleanup-proof-verify-{operation}.stdout.log").is_file())
+                    self.assertEqual((evidence / "native-lifecycle" /
+                                      f"cleanup-proof-verify-{operation}.stderr.log").read_text(
+                                          encoding="utf-8"), "")
+                self.assertTrue((evidence / "native-lifecycle" /
+                                 "cleanup-proof-verify-harness-bin-quarantine.stderr.log").is_file())
+                self.assertFalse((evidence / "native-lifecycle" /
+                                  "cleanup-verify-harness-bin-quarantine.stdout.log").exists())
+                self.assertNotIn("harness-bin", manifest["cleanup_disposition"]["quarantined_roots"])
+
+                owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+                    encoding="utf-8"))
+                origin = json.loads(Path(owner["native_proof_origin"]["path"]).read_text(encoding="utf-8"))
+                proof_path = Path(origin["proof"]["path"])
+                self.assertEqual(hashlib.sha256(proof_path.read_bytes()).hexdigest(), origin["proof"]["sha256"])
+                fault = json.loads((evidence / "fixture-post-move-proof-fault.json").read_text(
+                    encoding="utf-8"))
+                self.assertEqual(fault["mode"], mode)
+                self.assertNotEqual(fault["path"], "")
+                if "tampered" in mode:
+                    self.assertNotEqual(fault["after_sha256"], fault["before_sha256"])
+                else:
+                    self.assertEqual(fault["mode_after"] & 0o444, 0)
+
+                invocation = evidence / "native-lifecycle" / "invocation.json"
+                helper = evidence.parent / "repository/scripts/lib/native_process_lifecycle.py"
+                self.assertEqual(helper.read_bytes(), (ROOT / "scripts/lib/native_process_lifecycle.py").read_bytes())
+                helper_environment = os.environ.copy()
+                helper_environment.update({
+                    "IOS_NATIVE_FIXTURE_MODE": mode,
+                    "IOS_NATIVE_FIXTURE_EVIDENCE_DIR": str(evidence),
+                    "IOS_NATIVE_FIXTURE_BIN": str(evidence.parent / "bin"),
+                    "IOS_NATIVE_FIXTURE_DEVELOPER_DIR": str(evidence.parent / "bin" / "Developer"),
+                    "DEVELOPER_DIR": str(evidence.parent / "bin" / "Developer"),
+                    "REAL_PYTHON": str(Path(sys.executable).resolve()),
+                })
+                uncertain = subprocess.run(
+                    [str(evidence.parent / "bin" / "python3"), str(helper), "verify",
+                     "--invocation-record", str(invocation)],
+                    capture_output=True, text=True, check=False, env=helper_environment,
+                )
+                self.assertNotEqual(uncertain.returncode, 0, uncertain.stdout + uncertain.stderr)
+                self.assertIn("PROCESS_EXECUTABLE_UNAVAILABLE", uncertain.stdout + uncertain.stderr)
+                observed = json.loads((evidence / "fixture-observation-uncertainty.json").read_text(
+                    encoding="utf-8"))
+                self.assertNotEqual(observed["status"], 0)
+                self.assertIn("PROCESS_EXECUTABLE_UNAVAILABLE", observed["stderr"])
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_reconciles_interrupted_derived_data_quarantine(self):
+        result, evidence = self._run_fixture_qualification(
+            "symlink-output", interrupt_after_derived_move=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["result"], "PASS")
+        cleanup = manifest["cleanup_disposition"]
+        self.assertEqual(cleanup["status"], "INCOMPLETE")
+        self.assertIn("DerivedData quarantine failed", cleanup["reason"])
+        owner_path = evidence / "native-lifecycle" / "output-owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        receipt = next(item for item in owner["owned_outputs"] if Path(item["path"]).name == "DerivedData")
+        source = Path(receipt["path"])
+        destination = Path(owner["quarantine_parent"]["path"]) / source.name
+        self.assertFalse(source.exists())
+        retained = evidence / "native-lifecycle" / "retained-outputs"
+        operation_path = retained / ("output-quarantine-" + str(receipt["node"][1]) + ".json")
+        self.assertEqual(json.loads(operation_path.read_text(encoding="utf-8"))["status"], "intent")
+        reconciled = output_cleanup.execute_native_quarantine(
+            owner_path, output_path=source, destination=destination, durable_evidence=retained,
+            task=owner["task"], attempt=owner["attempt"],
+        )
+        self.assertEqual(reconciled["status"], "already_quarantined")
+        self.assertEqual(reconciled["newly_removed_bytes"], 0)
+        operation = json.loads(operation_path.read_text(encoding="utf-8"))
+        self.assertEqual(operation["status"], "complete")
+        self.assertTrue(operation["result_persisted"])
+        self.assertEqual(destination.stat().st_ino, receipt["node"][1])
+        phase_path = evidence / "native-lifecycle" / "phases" / "derived-data-removed.json"
+        phase = json.loads(phase_path.read_text(encoding="utf-8"))
+        self.assertEqual(phase["phase"], "derived-data-removed")
+        self.assertEqual(phase["root"], str(source))
+        self.assertEqual(phase["destination"], str(destination))
+        self.assertEqual(phase["quarantine_operation"], output_cleanup.file_binding(operation_path))
+        proof_readback = output_cleanup.verify_native_proof_readback(
+            owner_path,
+            invocation_record=Path(owner["quarantine_parent"]["invocation"]["path"]),
+            durable_evidence=retained,
+        )
+        self.assertTrue(proof_readback)
+        self.assertTrue(all(Path(item["current_path"]).is_relative_to(destination)
+                            for item in proof_readback))
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_selects_exact_versioned_command_when_unconfigured(self):
@@ -578,6 +1534,16 @@ class IosNativeQualificationTests(
         self.assertEqual(statuses["cleanup"], "PASS")
         self.assertFalse((evidence / "Nutrition App Native").exists())
         self.assertFalse((evidence / "DerivedData").exists())
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        generated = owner["nutrition_generated_outputs"]
+        self.assertEqual(len(generated), 1)
+        self._assert_finalized_producer_stage_snapshot(evidence, owner)
+        receipt = json.loads(Path(generated[0]["receipt"]["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt["status"], "observed")
+        self.assertEqual(receipt["producer_exit_code"], 17)
+        quarantine = Path(owner["quarantine_parent"]["path"])
+        self.assertTrue((quarantine / "Nutrition App Native/apps/mobile/.expo/settings.json").is_file())
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_retains_signal_and_cleanup(self):
@@ -586,9 +1552,51 @@ class IosNativeQualificationTests(
         manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["result"], "SIGNAL")
         statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
-        self.assertEqual(statuses["prebuild_plugins"], "SIGNAL")
+        self.assertEqual(statuses["xcode_build"], "PASS")
+        self.assertEqual(statuses["swift_harnesses"], "SIGNAL")
         self.assertEqual(statuses["cleanup"], "PASS")
         self.assertFalse((evidence / "Nutrition App Native").exists())
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(owner["status"], "failed")
+        self.assertIn("native_proof_origin", owner)
+        self._assert_finalized_producer_stage_snapshot(evidence, owner)
+        self.assertEqual(manifest["native_process_lifecycle"]["full_build_proof"]["status"], "PASS")
+
+    @MACOS_NATIVE_FIXTURE_ONLY
+    def test_qualifier_retains_valid_fullbuild_proof_after_harness_failure(self):
+        result, evidence = self._run_fixture_qualification("harness-failure")
+        self.assertEqual(result.returncode, 17, result.stderr)
+        manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+        statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
+        self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+        self.assertEqual(statuses["xcode_build"], "PASS")
+        self.assertEqual(statuses["swift_harnesses"], "FAILURE")
+        self.assertEqual(statuses["cleanup"], "PASS")
+        self.assertEqual(manifest["native_process_lifecycle"]["full_build_proof"]["status"], "PASS")
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(owner["status"], "failed")
+        self._assert_finalized_producer_stage_snapshot(evidence, owner)
+        origin = json.loads(Path(owner["native_proof_origin"]["path"]).read_text(encoding="utf-8"))
+        proof = Path(origin["proof"]["path"])
+        self.assertEqual(hashlib.sha256(proof.read_bytes()).hexdigest(), origin["proof"]["sha256"])
+        self.assertTrue(origin["outputs"])
+
+    def _assert_finalized_producer_stage_snapshot(self, evidence: Path, owner: dict) -> None:
+        generated = owner["nutrition_generated_outputs"]
+        self.assertEqual(len(generated), 1)
+        snapshot = evidence / "native-lifecycle" / "producer-stages.jsonl"
+        for output in generated:
+            binding = output["stages"]
+            self.assertEqual(binding["path"], str(snapshot))
+            self.assertEqual(hashlib.sha256(snapshot.read_bytes()).hexdigest(), binding["sha256"])
+        final_stages = [
+            json.loads(line)
+            for line in (evidence / "stages.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertEqual(final_stages[-1]["stage"], "cleanup")
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_qualifier_parent_signal_runs_cleanup(self):
@@ -610,9 +1618,13 @@ class IosNativeQualificationTests(
         self.assertEqual(manifest["result"], "PASS")
         self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
         self.assertIn("Nutrition App Native", manifest["cleanup_disposition"]["retained_roots"][0])
-        self.assertIn("git worktree remove failed", manifest["cleanup_disposition"]["reason"])
+        self.assertIn("registered worktree quarantine failed", manifest["cleanup_disposition"]["reason"])
         self.assertNotIn("all generated outputs removed", manifest["cleanup_disposition"]["reason"])
         self.assertTrue((evidence / "Nutrition App Native").exists())
+        self.assertEqual(manifest["cleanup_disposition"]["quarantined_roots"], [])
+        owner = json.loads((evidence / "native-lifecycle" / "output-owner.json").read_text(encoding="utf-8"))
+        self.assertEqual(owner["status"], "complete")
+        self._assert_finalized_producer_stage_snapshot(evidence, owner)
         statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
         self.assertEqual(statuses["xcode_build"], "PASS")
         self.assertEqual(statuses["cleanup"], "INCOMPLETE")
@@ -647,11 +1659,13 @@ class IosNativeQualificationTests(
         cleanup = manifest["cleanup_disposition"]
         self.assertEqual(manifest["result"], "PASS")
         self.assertEqual(cleanup["status"], "INCOMPLETE")
-        self.assertIn("completed removals before refusal", cleanup["reason"])
-        self.assertIn("removal failed; retained", cleanup["reason"])
+        self.assertIn("completed recoverable quarantine moves", cleanup["reason"])
+        self.assertIn("DerivedData quarantine failed; retained", cleanup["reason"])
         self.assertFalse((evidence / "Nutrition App Native").exists())
         self.assertTrue((evidence / "DerivedData").exists())
         self.assertTrue((evidence / "harness-bin").exists())
+        self.assertEqual(len(cleanup["quarantined_roots"]), 1)
+        self.assertTrue(Path(cleanup["quarantined_roots"][0]).is_dir())
 
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_live_writer_retention_keeps_product_pass_and_cleanup_incomplete(self):
@@ -757,9 +1771,8 @@ class IosNativeQualificationTests(
             events = events_path.read_text(encoding="utf-8").splitlines()
             self.assertLess(events.index("VERIFY_REFUSED"), events.index("NOTE_EXIT_CONFIRMED"))
             self.assertLess(events.index("NOTE_EXIT_CONFIRMED"), events.index("VERIFY_PASS"))
-            self.assertLess(events.index("VERIFY_PASS"), events.index("WORKTREE_REMOVE"))
-            self.assertLess(events.index("WORKTREE_REMOVE"), events.index("WORKTREE_PRUNE"))
-            self.assertTrue(any(item.startswith("FILESYSTEM_REMOVE:") for item in events))
+            self.assertLess(events.index("VERIFY_PASS"), events.index("WORKTREE_MOVE:" + str(evidence / "native-lifecycle" / "quarantine" / "Nutrition App Native")))
+            self.assertFalse(any(item.startswith("FILESYSTEM_REMOVE:") for item in events))
         finally:
             stop.touch()
             release.touch()
@@ -906,7 +1919,7 @@ class IosNativeQualificationTests(
                 )
                 self.assertFalse(
                     any(
-                        event.startswith(("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE"))
+                        event.startswith(("WORKTREE_MOVE:", "FILESYSTEM_REMOVE"))
                         for event in movement_events
                     ),
                     movement_events,
@@ -967,7 +1980,7 @@ class IosNativeQualificationTests(
                 )
                 self.assertFalse(
                     any(
-                        event.startswith(("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE"))
+                        event.startswith(("WORKTREE_MOVE:", "FILESYSTEM_REMOVE"))
                         for event in movement_events
                     ),
                     movement_events,
@@ -976,14 +1989,30 @@ class IosNativeQualificationTests(
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_post_proof_full_build_path_and_hash_shapes_are_required_failures(self):
         cases = (
-            ("post-proof-full-build-invocation-path-null", "build_invocation"),
-            ("post-proof-full-build-log-path-object", "build_log"),
-            ("post-proof-full-build-output-path-outside", "output"),
-            ("post-proof-full-build-log-hash-invalid", "build_log"),
+            (
+                "post-proof-full-build-invocation-path-null",
+                "build_invocation",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-log-path-object",
+                "build_log",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-output-path-outside",
+                "output",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-log-hash-invalid",
+                "build_log",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
         )
         evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         preserve_root = Path(evidence_root) / "proof-consumers-c8" if evidence_root else None
-        for mode, selected_field in cases:
+        for mode, selected_field, expected_error in cases:
             with self.subTest(mode=mode):
                 result, evidence = self._run_fixture_qualification(mode)
                 preserved = preserve_root / mode if preserve_root is not None else None
@@ -1017,7 +2046,10 @@ class IosNativeQualificationTests(
                 self.assertEqual(manifest["simulator_build"], "PASS")
                 self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
                 self.assertEqual(manifest["propagation_proof"]["exit_code"], 2)
-                self.assertIn("REQUIRED_EVIDENCE_INVALID", manifest["propagation_proof"]["reason"])
+                self.assertEqual(
+                    json.loads(manifest["propagation_proof"]["reason"]),
+                    {"status": "refused", "reason": expected_error},
+                )
                 self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
                 self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
                 movement_events_path = evidence / "movement-events.jsonl"
@@ -1028,7 +2060,7 @@ class IosNativeQualificationTests(
                 )
                 self.assertFalse(
                     any(
-                        event.startswith(("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE"))
+                        event.startswith(("WORKTREE_MOVE:", "FILESYSTEM_REMOVE"))
                         for event in movement_events
                     ),
                     movement_events,
@@ -1101,7 +2133,7 @@ class IosNativeQualificationTests(
                 self.assertFalse(
                     any(
                         event.startswith(
-                            ("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE")
+                            ("WORKTREE_MOVE:", "FILESYSTEM_REMOVE")
                         )
                         for event in movement_events
                     ),
@@ -1111,24 +2143,48 @@ class IosNativeQualificationTests(
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_post_proof_decoded_call_and_storyboard_output_shapes_are_required_failures(self):
         cases = (
-            "post-proof-call-stage-object",
-            "post-proof-call-stage-null",
-            "post-proof-call-argv-null",
-            "post-proof-call-argv-object",
-            "post-proof-call-argv-nonstring",
-            "post-proof-full-build-storyboard-outputs-null",
-            "post-proof-full-build-storyboard-outputs-object",
-            "post-proof-full-build-storyboard-output-entry-nonobject",
-            "post-proof-full-build-storyboard-output-entry-field-object",
-            "post-proof-full-build-storyboard-outputs-null-observation-unavailable",
-            "post-proof-full-build-storyboard-outputs-null-known-helper-live",
+            ("post-proof-call-stage-object", "call", "CALL_STAGE_SHAPE_INVALID"),
+            ("post-proof-call-stage-null", "call", "CALL_STAGE_SHAPE_INVALID"),
+            ("post-proof-call-argv-null", "call", "CALL_ARGV_SHAPE_INVALID"),
+            ("post-proof-call-argv-object", "call", "CALL_ARGV_SHAPE_INVALID"),
+            ("post-proof-call-argv-nonstring", "call", "CALL_ARGV_SHAPE_INVALID"),
+            (
+                "post-proof-full-build-storyboard-outputs-null",
+                "adapter",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-storyboard-outputs-object",
+                "adapter",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-storyboard-output-entry-nonobject",
+                "adapter",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-storyboard-output-entry-field-object",
+                "adapter",
+                "NATIVE_FULL_BUILD_PROOF_CHANGED_OR_UNREADABLE",
+            ),
+            (
+                "post-proof-full-build-storyboard-outputs-null-observation-unavailable",
+                "producer",
+                "FULL_BUILD_PROOF_INVALID:REQUIRED_EVIDENCE_INVALID:FULL_BUILD_PROOF:FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISSING",
+            ),
+            (
+                "post-proof-full-build-storyboard-outputs-null-known-helper-live",
+                "producer",
+                "FULL_BUILD_PROOF_INVALID:REQUIRED_EVIDENCE_INVALID:FULL_BUILD_PROOF:FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_BINDING_MISSING",
+            ),
         )
         evidence_root = os.environ.get("GH421_IMPL_R10_GREEN_EVIDENCE")
         preserved_root = (
             Path(evidence_root) / "post-proof-decoded-shapes" if evidence_root else None
         )
         observations = []
-        for mode in cases:
+        for mode, expected_owner, expected_error in cases:
             with self.subTest(mode=mode):
                 result, evidence = self._run_fixture_qualification(mode)
                 preserved = preserved_root / mode if preserved_root is not None else None
@@ -1187,11 +2243,26 @@ class IosNativeQualificationTests(
                 self.assertNotEqual(result.returncode, 0, json.dumps(observation, sort_keys=True))
                 self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
                 self.assertEqual(manifest["propagation_proof"]["exit_code"], 2)
-                self.assertIn(
-                    "REQUIRED_EVIDENCE_INVALID",
-                    manifest["propagation_proof"]["reason"],
-                    json.dumps(observation, sort_keys=True),
-                )
+                actual_reason = manifest["propagation_proof"]["reason"]
+                if expected_owner == "call":
+                    call_id = mutation["selected_evidence"]["call_id"]
+                    self.assertEqual(
+                        actual_reason,
+                        f"REQUIRED_EVIDENCE_INVALID:PROCESS_CALL:{expected_error}:{call_id}",
+                        json.dumps(observation, sort_keys=True),
+                    )
+                elif expected_owner == "adapter":
+                    self.assertEqual(
+                        json.loads(actual_reason),
+                        {"status": "refused", "reason": expected_error},
+                        json.dumps(observation, sort_keys=True),
+                    )
+                else:
+                    self.assertEqual(
+                        actual_reason,
+                        expected_error,
+                        json.dumps(observation, sort_keys=True),
+                    )
                 self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
                 self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
                 for name, root_name in (
@@ -1205,7 +2276,7 @@ class IosNativeQualificationTests(
                     self.assertEqual(before["inode"], retained[name]["inode"], root_name)
                 self.assertFalse(
                     any(
-                        event.startswith(("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE"))
+                        event.startswith(("WORKTREE_MOVE:", "FILESYSTEM_REMOVE"))
                         for event in movement_events
                     ),
                     movement_events,
@@ -1234,20 +2305,35 @@ class IosNativeQualificationTests(
     @MACOS_NATIVE_FIXTURE_ONLY
     def test_post_proof_mandatory_read_errors_are_required_failures(self):
         cases = (
-            ("post-proof-full-build-output-read-denied", "FULL_BUILD_OUTPUT_UNREADABLE"),
+            (
+                "post-proof-full-build-output-read-denied",
+                "adapter",
+                "NATIVE_PROOF_OUTPUT_UNREADABLE",
+            ),
             (
                 "post-proof-full-build-compile-output-read-denied",
-                "FULL_BUILD_STORYBOARD_COMPILE_OUTPUT_UNREADABLE",
+                "adapter",
+                "NATIVE_PROOF_OUTPUT_UNREADABLE",
             ),
-            ("post-proof-full-build-build-log-read-denied", "BUILD_LOG_UNREADABLE"),
+            (
+                "post-proof-full-build-build-log-read-denied",
+                "producer-path-error",
+                "FULL_BUILD_PROOF_INVALID:REQUIRED_EVIDENCE_INVALID:FULL_BUILD_PROOF:BUILD_LOG_UNREADABLE",
+            ),
             (
                 "post-proof-capability-storyboard-read-denied",
-                "CAPABILITY_PROOF_STORYBOARD_UNREADABLE",
+                "producer-path-error",
+                "REQUIRED_EVIDENCE_INVALID:CAPABILITY_PROOF:CAPABILITY_PROOF_STORYBOARD_UNREADABLE",
             ),
-            ("post-proof-call-output-read-denied", "PROCESS_OUTPUT_STDOUT_UNREADABLE"),
+            (
+                "post-proof-call-output-read-denied",
+                "producer-path-error",
+                "REQUIRED_EVIDENCE_INVALID:PROCESS_OUTPUT:PROCESS_OUTPUT_STDOUT_UNREADABLE",
+            ),
             (
                 "post-proof-full-build-output-read-denied-observation-unavailable",
-                "FULL_BUILD_OUTPUT_UNREADABLE",
+                "producer-direct",
+                "FULL_BUILD_PROOF_INVALID:REQUIRED_EVIDENCE_INVALID:FULL_BUILD_PROOF:FULL_BUILD_OUTPUT_UNREADABLE",
             ),
         )
         evidence_root = os.environ.get("GH421_IMPL_R12_GREEN_EVIDENCE")
@@ -1268,7 +2354,7 @@ class IosNativeQualificationTests(
                     source.chmod(original_mode)
                     destination.chmod(original_mode)
 
-        for mode, expected_detail in cases:
+        for mode, expected_owner, expected_error in cases:
             with self.subTest(mode=mode):
                 result, evidence = self._run_fixture_qualification(mode)
                 preserved = preserved_root / mode if preserved_root is not None else None
@@ -1302,7 +2388,22 @@ class IosNativeQualificationTests(
                 self.assertEqual(manifest["simulator_build"], "PASS")
                 self.assertEqual(manifest["propagation_proof"]["status"], "FAILURE")
                 self.assertEqual(manifest["propagation_proof"]["exit_code"], 2)
-                self.assertIn(expected_detail, manifest["propagation_proof"]["reason"])
+                actual_reason = manifest["propagation_proof"]["reason"]
+                if expected_owner == "adapter":
+                    self.assertEqual(
+                        json.loads(actual_reason),
+                        {
+                            "status": "refused",
+                            "reason": f"{expected_error}:{fault['path']}",
+                        },
+                    )
+                elif expected_owner == "producer-path-error":
+                    self.assertEqual(
+                        actual_reason,
+                        f"{expected_error}:{fault['path']}:{fault['error']}",
+                    )
+                else:
+                    self.assertEqual(actual_reason, f"{expected_error}:{fault['error']}")
                 self.assertEqual(manifest["cleanup_disposition"]["status"], "INCOMPLETE")
                 self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
                 self.assertNotEqual(result.returncode, 0)
@@ -1327,7 +2428,7 @@ class IosNativeQualificationTests(
                 self.assertFalse(
                     any(
                         event.startswith(
-                            ("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE")
+                            ("WORKTREE_MOVE:", "FILESYSTEM_REMOVE")
                         )
                         for event in movement
                     ),
@@ -1342,7 +2443,8 @@ class IosNativeQualificationTests(
                     "xcode_build": mutation["stage_statuses_before_mutation"]["xcode_build"],
                     "swift_harnesses": mutation["stage_statuses_before_mutation"]["swift_harnesses"],
                     "proof": manifest["propagation_proof"],
-                    "expected_detail": expected_detail,
+                    "expected_owner": expected_owner,
+                    "expected_error": expected_error,
                     "required_read_failure": True,
                     "cleanup": manifest["cleanup_disposition"],
                     "aggregate": manifest["result"],
@@ -1519,7 +2621,7 @@ class IosNativeQualificationTests(
                 self.assertFalse(
                     any(
                         event.startswith(
-                            ("WORKTREE_REMOVE", "WORKTREE_PRUNE", "FILESYSTEM_REMOVE")
+                            ("WORKTREE_MOVE:", "FILESYSTEM_REMOVE")
                         )
                         for event in movement_events
                     ),
@@ -2073,7 +3175,20 @@ EOF
         ;;
     esac
     ;;
-  exec) mkdir -p "$(pwd)/ios/Nutrition App.xcodeproj"; printf '%s\n' 'Expo Constants generates a CocoaPods script phase through' 'Nutrition App iOS path portability: React Native Info.plist discovery' 'Nutrition App iOS path portability: CocoaPods XCFramework diagnostics' 'Find.find(project_folder_path)' '::NewArchitectureHelper.define_singleton_method' 'basename "$basepath"' > "$(pwd)/ios/Podfile"; printf '%s\n' '<document type="storyboard"/>' > "$(pwd)/ios/SplashScreen.storyboard"; echo 'REACT_NATIVE_XCODE_SCRIPT=' > "$(pwd)/ios/Nutrition App.xcodeproj/project.pbxproj"; case "${IOS_NATIVE_FIXTURE_MODE-}" in failure) exit 17 ;; signal) kill -TERM $$ ;; esac ;;
+  exec)
+    mkdir -p "$(pwd)/ios/Nutrition App.xcodeproj"
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" != "expo-absent" ]; then
+      mkdir -p "$(pwd)/.expo"
+      printf '%s\n' 'fixture Expo generated settings' > "$(pwd)/.expo/settings.json"
+    fi
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "expo-unique-sibling" ]; then
+      printf '%s\n' 'unique sibling source stays in place' > "$(pwd)/fixture-expo-sibling.bin"
+    fi
+    printf '%s\n' 'Expo Constants generates a CocoaPods script phase through' 'Nutrition App iOS path portability: React Native Info.plist discovery' 'Nutrition App iOS path portability: CocoaPods XCFramework diagnostics' 'Find.find(project_folder_path)' '::NewArchitectureHelper.define_singleton_method' 'basename "$basepath"' > "$(pwd)/ios/Podfile"
+    printf '%s\n' '<document type="storyboard"/>' > "$(pwd)/ios/SplashScreen.storyboard"
+    echo 'REACT_NATIVE_XCODE_SCRIPT=' > "$(pwd)/ios/Nutrition App.xcodeproj/project.pbxproj"
+    case "${IOS_NATIVE_FIXTURE_MODE-}" in failure) exit 17 ;; esac
+    ;;
 esac
 """)
         write("ruby", 'echo ruby 3.4.0\n')
@@ -2281,11 +3396,11 @@ import native_process_lifecycle as lifecycle
 probe_root = evidence / "Nutrition App Native"
 stop = evidence / "qualifier-writer-stop"
 ready = evidence / "qualifier-writer-ready"
-writes = probe_root / "qualifier-writer.log"
+writes = probe_root / "apps" / "mobile" / "ios" / "qualifier-writer.log"
 writer = (
     "import pathlib,sys,time\\n"
     "root,stop,ready=map(pathlib.Path,sys.argv[1:])\\n"
-    "path=root/'qualifier-writer.log'\\n"
+    "path=root/'apps'/'mobile'/'ios'/'qualifier-writer.log'\\n"
     "with path.open('a',encoding='utf-8') as output:\\n"
     "  while not stop.exists():\\n"
     "    output.write('writer-active\\\\n'); output.flush(); ready.touch(); time.sleep(.02)\\n"
@@ -2397,6 +3512,14 @@ PY
   else
     printf "Ld NutritionApp -lNutritionOcr\\nBUILD SUCCEEDED\\n"
   fi
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "partial-cleanup-failure" ]; then
+    printf 'retained hardlink fixture\\n' > "$derived/cleanup-retention-source"
+    ln "$derived/cleanup-retention-source" "$derived/cleanup-retention-hardlink"
+  fi
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "symlink-output" ]; then
+    ln -s "${IOS_NATIVE_FIXTURE_OUTSIDE_SENTINEL:?}" \
+      "$derived/native-output-link"
+  fi
 fi
 """)
         write("xcrun", """
@@ -2429,6 +3552,7 @@ case "$0" in
     if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "harness-failure" ]; then exit 17; fi
     if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "missing-full-proof" ]; then rm -f "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/native-lifecycle/full-build-proof.json"; fi
     if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "corrupt-capability-proof" ]; then printf '{broken' > "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/native-lifecycle/capability-proof.json"; fi
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "signal" ]; then kill -TERM "${IOS_NATIVE_QUALIFIER_PID:?}"; fi
     echo "NutritionOcrGeometryTests passed" ;;
   *image-quality) echo "NutritionImageQualityTests passed" ;;
   *vision-runtime) echo "NutritionOcrVisionRuntimeTests passed" ;;
@@ -2457,6 +3581,129 @@ fi
 """)
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
         write("python3", r'''
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "native-worktree-phase-write-interrupted" ] &&
+  [ "${1-}" = "-" ] && [ "${4-}" = "worktree-removed" ] &&
+  ! test -e "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-worktree-phase-write-interrupted"
+then
+  : > "$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/fixture-worktree-phase-write-interrupted"
+  exit 74
+fi
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "native-worktree-unregistered-during-derived-readback" ] &&
+  [ "${1-}" = "-" ] && [ "${11-}" = "derived-data" ]; then
+  moved_worktree="$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/native-lifecycle/quarantine/Nutrition App Native"
+  marker="$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/fixture-worktree-unregistered.json"
+  if [ -d "$moved_worktree" ] && [ ! -e "$marker" ]; then
+    printf '%s\n' "$moved_worktree" > "$marker"
+    "$REAL_GIT" -C "$IOS_NATIVE_FIXTURE_REPO_ROOT" worktree remove --force "$moved_worktree"
+  fi
+fi
+case "$IOS_NATIVE_FIXTURE_MODE" in
+  proof-fault-tampered-observation-unavailable|proof-fault-unreadable-observation-unavailable)
+    case "$1" in
+      */task_output_cleanup.py)
+        if [ "${2-}" = "native-proof-verify" ] &&
+          ! test -e "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-post-move-proof-fault.json"
+        then
+          "$REAL_PYTHON" - "$@" <<'PY'
+import hashlib
+import json
+import os
+import sys
+from pathlib import Path
+
+arguments = sys.argv[1:]
+owner_path = Path(arguments[arguments.index("--owner-record") + 1])
+durable = Path(arguments[arguments.index("--durable-evidence") + 1])
+owner = json.loads(owner_path.read_text(encoding="utf-8"))
+receipt = next(item for item in owner["owned_outputs"]
+               if Path(item["path"]).name == "DerivedData")
+operation_path = durable / f"output-quarantine-{receipt['node'][1]}.json"
+if not operation_path.is_file():
+    raise SystemExit(0)
+operation = json.loads(operation_path.read_text(encoding="utf-8"))
+if operation.get("status") != "complete" or operation.get("operation") != "native-quarantine":
+    raise SystemExit(0)
+invocation = Path(owner["quarantine_parent"]["invocation"]["path"])
+phase = invocation.parent / "phases" / "derived-data-removed.json"
+if not phase.is_file():
+    raise SystemExit(0)
+origin_path = Path(owner["native_proof_origin"]["path"])
+origin = json.loads(origin_path.read_text(encoding="utf-8"))
+proof_output = origin["outputs"][0]
+directory = Path(operation["destination"]) / proof_output["relative_path"]
+files = sorted(item for item in directory.rglob("*") if item.is_file() and not item.is_symlink())
+if not files:
+    raise SystemExit("fixture proof output has no regular files")
+target = files[0]
+before = target.read_bytes()
+mode = os.environ["IOS_NATIVE_FIXTURE_MODE"]
+if "tampered" in mode:
+    target.write_bytes(before + b"\npost-move proof tamper\n")
+    after_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
+else:
+    target.chmod(target.stat().st_mode & ~0o444)
+    after_sha256 = hashlib.sha256(before).hexdigest()
+evidence = Path(os.environ["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"])
+(evidence / "fixture-post-move-proof-fault.json").write_text(
+    json.dumps({"mode": mode, "path": str(target), "expected_sha256": proof_output["sha256"],
+                "before_sha256": hashlib.sha256(before).hexdigest(),
+                "after_sha256": after_sha256,
+                "mode_after": target.stat().st_mode & 0o777}, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+        fi
+        ;;
+      */native_process_lifecycle.py)
+        if [ "${2-}" = "verify" ] &&
+          test -f "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-post-move-proof-fault.json"
+        then
+          exec "$REAL_PYTHON" - "$@" <<'PY'
+import contextlib
+import io
+import json
+import os
+import sys
+from pathlib import Path
+
+arguments = sys.argv[1:]
+helper = Path(arguments[0]).resolve(strict=True)
+binding = Path(arguments[arguments.index("--invocation-record") + 1]).resolve(strict=True)
+sys.path.insert(0, str(helper.parent))
+import native_process_lifecycle as lifecycle
+
+document = json.loads(binding.read_text(encoding="utf-8"))
+records = [json.loads(path.read_text(encoding="utf-8"))
+           for path in sorted((Path(document["invocation"]["root"]) / "records").glob("*.record.json"))]
+selected = next(record for record in records
+                if record.get("stage") == "compile" and record.get("kind") == "compile")
+selected_pid = selected["process"]["pid"]
+original_identity = lifecycle.process_identity
+
+def unavailable(candidate):
+    if candidate == selected_pid:
+        raise lifecycle.LifecycleError(f"PROCESS_EXECUTABLE_UNAVAILABLE:{candidate}:fixture-injected")
+    return original_identity(candidate)
+
+lifecycle.process_identity = unavailable
+output = io.StringIO()
+errors = io.StringIO()
+with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+    status = lifecycle.verify_command(binding, [])
+result = {"status": status, "stdout": output.getvalue(), "stderr": errors.getvalue(),
+          "injected_observation": "PROCESS_EXECUTABLE_UNAVAILABLE"}
+Path(os.environ["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"], "fixture-observation-uncertainty.json").write_text(
+    json.dumps(result, sort_keys=True) + "\n", encoding="utf-8",
+)
+sys.stdout.write(output.getvalue())
+sys.stderr.write(errors.getvalue())
+raise SystemExit(status)
+PY
+        fi
+        ;;
+    esac
+    ;;
+esac
 case "$IOS_NATIVE_FIXTURE_MODE" in
   post-proof-ib-child-observation-unavailable|post-proof-ib-child-observation-birth-unavailable|post-proof-full-build-*-observation-unavailable|post-proof-full-build-*-known-helper-live)
   case "$1" in
@@ -2613,13 +3860,70 @@ exec "$REAL_PYTHON" "$@"
         write("git", r'''
 if [ -n "${IOS_NATIVE_FIXTURE_EVENTS-}" ]; then
   case " $* " in
-    *" worktree remove "*) printf '%s\n' WORKTREE_REMOVE >> "$IOS_NATIVE_FIXTURE_EVENTS" ;;
-    *" worktree prune "*) printf '%s\n' WORKTREE_PRUNE >> "$IOS_NATIVE_FIXTURE_EVENTS" ;;
+    *" worktree move "*)
+      previous=""
+      last=""
+      for argument in "$@"; do previous="$last"; last="$argument"; done
+      printf 'WORKTREE_MOVE:%s\n' "$last" >> "$IOS_NATIVE_FIXTURE_EVENTS"
+      ;;
+  esac
+fi
+case "${IOS_NATIVE_FIXTURE_MODE-}" in
+  native-worktree-move-result-interrupted|native-worktree-move-destination-mutated)
+    case " $* " in
+      *" worktree move "*)
+        previous=""
+        last=""
+        for argument in "$@"; do previous="$last"; last="$argument"; done
+        "$REAL_GIT" "$@"
+        status="$?"
+        if [ "$status" -eq 0 ] &&
+          ! test -e "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-worktree-move-interrupted"
+        then
+          : > "$IOS_NATIVE_FIXTURE_EVIDENCE_DIR/fixture-worktree-move-interrupted"
+          if [ "$IOS_NATIVE_FIXTURE_MODE" = "native-worktree-move-destination-mutated" ]; then
+            printf 'mutated after native worktree move\n' >> "$last/tracked.txt"
+          fi
+          exit 97
+        fi
+        exit "$status"
+        ;;
+    esac
+    ;;
+esac
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "native-worktree-unique-source" ]; then
+  case " $* " in
+    *" worktree add "*)
+      previous=""
+      last=""
+      for argument in "$@"; do previous="$last"; last="$argument"; done
+      "$REAL_GIT" "$@"
+      status="$?"
+      if [ "$status" -eq 0 ]; then
+        printf 'unique untracked source bytes\n' > "$previous/fixture-unique-untracked.txt"
+        printf 'unique ignored source bytes\n' > "$previous/fixture-unique-ignored.txt"
+      fi
+      exit "$status"
+      ;;
   esac
 fi
 case "${IOS_NATIVE_FIXTURE_MODE-}" in
   post-proof-*)
-    if printf '%s\n' "$*" | grep -Fq "worktree list --porcelain" &&
+    mutation_trigger=0
+    case "${IOS_NATIVE_FIXTURE_MODE-}" in
+      post-proof-full-build-*-observation-unavailable|post-proof-full-build-*-known-helper-live)
+        if printf '%s\n' "$*" | grep -Fq "status --porcelain=v1 -uall"; then
+          mutation_trigger=1
+        fi
+        ;;
+      *)
+        if printf '%s\n' "$*" | grep -Fq "worktree list --porcelain"; then
+          mutation_trigger=1
+        fi
+        ;;
+    esac
+    if test "$mutation_trigger" -eq 1 &&
+      test -f "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/native-lifecycle/full-build-proof.json" &&
       ! test -e "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/fixture-post-proof-mutation.json"
     then
       "$REAL_PYTHON" - "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}" "${IOS_NATIVE_FIXTURE_MODE}" <<'PY'
@@ -2897,7 +4201,7 @@ PY
     fi
     ;;
 esac
-if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree remove"; then exit 17; fi
+if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree move"; then exit 17; fi
 exec "${REAL_GIT:-/usr/bin/git}" "$@"
 ''')
         write("rm", r'''
@@ -2910,7 +4214,6 @@ if [ -n "${IOS_NATIVE_FIXTURE_EVENTS-}" ]; then
     esac
   done
 fi
-if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "partial-cleanup-failure" ] && printf "%s\n" "$*" | grep -Fq "/DerivedData"; then exit 17; fi
 exec /bin/rm "$@"
 ''')
 
@@ -2922,6 +4225,9 @@ exec /bin/rm "$@"
         asynchronous: bool = False,
         wrong_runtime: bool = False,
         versioned_python: bool = False,
+        interrupt_after_derived_move: bool = False,
+        return_evidence_parent: bool = False,
+        trace_worktree_walks: bool = False,
     ):
         evidence_parent = Path(tempfile.mkdtemp(prefix="ios-native-fixture-"))
         evidence = evidence_parent / "evidence"
@@ -2962,11 +4268,114 @@ exec /bin/rm "$@"
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
         environment["IOS_NATIVE_FIXTURE_EVENTS"] = str(evidence / "movement-events.jsonl")
+        if mode == "expo-absent":
+            stage_readtext_guard = evidence_parent / "stage-readtext-guard"
+            stage_readtext_guard.mkdir()
+            (stage_readtext_guard / "sitecustomize.py").write_text(
+                "import os\n"
+                "import inspect\n"
+                "from pathlib import Path\n"
+                "target = os.environ['IOS_NATIVE_FIXTURE_STAGE_READTEXT_TARGET']\n"
+                "marker = Path(os.environ['IOS_NATIVE_FIXTURE_STAGE_READTEXT_MARKER'])\n"
+                "original_read_text = Path.read_text\n"
+                "def guarded_read_text(path, *args, **kwargs):\n"
+                "    if os.fspath(path) == target and any(\n"
+                "            frame.function == '_native_prebuild_stage'\n"
+                "            for frame in inspect.stack()):\n"
+                "        marker.write_text('stage path reopened for parsing\\n', encoding='utf-8')\n"
+                "        raise RuntimeError('stage parser must consume authenticated bytes')\n"
+                "    return original_read_text(path, *args, **kwargs)\n"
+                "Path.read_text = guarded_read_text\n",
+                encoding="utf-8",
+            )
+            environment["IOS_NATIVE_FIXTURE_STAGE_READTEXT_TARGET"] = str(evidence / "stages.jsonl")
+            environment["IOS_NATIVE_FIXTURE_STAGE_READTEXT_MARKER"] = str(
+                evidence_parent / "a16-absent-stage-readtext-attempt"
+            )
+            environment["PYTHONPATH"] = (
+                str(stage_readtext_guard) + os.pathsep + environment.get("PYTHONPATH", "")
+            )
+        if trace_worktree_walks:
+            trace_runtime = evidence_parent / "walk-trace-runtime"
+            trace_runtime.mkdir()
+            (trace_runtime / "sitecustomize.py").write_text(
+                "import json, os, stat, sys, time\n"
+                "_native_original_walk = os.walk\n"
+                "def _native_traced_walk(top, *args, **kwargs):\n"
+                "    started = time.monotonic_ns()\n"
+                "    file_count = 0\n"
+                "    hash_bytes = 0\n"
+                "    failure = None\n"
+                "    try:\n"
+                "        for base, directories, files in _native_original_walk(top, *args, **kwargs):\n"
+                "            for name in files:\n"
+                "                try:\n"
+                "                    observed = os.lstat(os.path.join(base, name))\n"
+                "                except OSError:\n"
+                "                    continue\n"
+                "                if stat.S_ISREG(observed.st_mode) and observed.st_nlink == 1:\n"
+                "                    file_count += 1\n"
+                "                    hash_bytes += observed.st_size\n"
+                "            yield base, directories, files\n"
+                "    except BaseException as error:\n"
+                "        failure = repr(error)\n"
+                "        raise\n"
+                "    finally:\n"
+                "        trace = os.environ.get('IOS_NATIVE_FIXTURE_WALK_TRACE')\n"
+                "        if trace:\n"
+                "            row = {'root': os.fspath(top), 'argv': sys.argv, 'pid': os.getpid(),\n"
+                "                   'file_count': file_count, 'hash_bytes': hash_bytes,\n"
+                "                   'elapsed_ns': time.monotonic_ns() - started, 'error': failure}\n"
+                "            with open(trace, 'a', encoding='utf-8') as stream:\n"
+                "                stream.write(json.dumps(row, sort_keys=True) + '\\n')\n"
+                "os.walk = _native_traced_walk\n",
+                encoding="utf-8",
+            )
+            environment["PYTHONPATH"] = (
+                str(trace_runtime) + os.pathsep + environment.get("PYTHONPATH", "")
+            )
+            environment["IOS_NATIVE_FIXTURE_WALK_TRACE"] = str(evidence / "adapter-walk-trace.jsonl")
+        if mode == "symlink-output":
+            sentinel = evidence_parent / "outside-native-sentinel"
+            sentinel.write_bytes(b"outside native target remains unchanged\n")
+            environment["IOS_NATIVE_FIXTURE_OUTSIDE_SENTINEL"] = str(sentinel)
+        if interrupt_after_derived_move:
+            injection = evidence_parent / "python-injection"
+            injection.mkdir()
+            (injection / "sitecustomize.py").write_text(
+                "import os\n"
+                "from pathlib import Path\n"
+                "if os.environ.get('IOS_NATIVE_FIXTURE_INTERRUPT_DERIVED_MOVE') == '1':\n"
+                "    _rename = os.rename\n"
+                "    _marker = Path(os.environ['IOS_NATIVE_FIXTURE_DERIVED_MOVE_MARKER'])\n"
+                "    def _rename_after_move(source, destination, *args, **kwargs):\n"
+                "        result = _rename(source, destination, *args, **kwargs)\n"
+                "        if (Path(source).name == 'DerivedData' and Path(destination).name == 'DerivedData'\n"
+                "                and not _marker.exists()):\n"
+                "            _marker.write_text('moved before result persistence\\n')\n"
+                "            raise OSError('injected interruption after DerivedData move')\n"
+                "        return result\n"
+                "    os.rename = _rename_after_move\n",
+                encoding="utf-8",
+            )
+            environment["PYTHONPATH"] = str(injection) + os.pathsep + environment.get("PYTHONPATH", "")
+            environment["IOS_NATIVE_FIXTURE_INTERRUPT_DERIVED_MOVE"] = "1"
+            environment["IOS_NATIVE_FIXTURE_DERIVED_MOVE_MARKER"] = str(evidence_parent / "derived-move-marker")
         if mode in {"known-writer", "known-writer-detached"}:
             environment["IOS_NATIVE_FIXTURE_VERIFY_READY"] = str(evidence / "verify-refused-ready")
             environment["IOS_NATIVE_FIXTURE_VERIFY_RELEASE"] = str(evidence / "verify-release")
         if mode in {"known-writer", "known-writer-detached", "known-writer-retained"}:
             (evidence / "movement-events.jsonl").write_text("", encoding="utf-8")
+        if mode == "native-worktree-unique-source":
+            (evidence / "movement-events.jsonl").write_text("", encoding="utf-8")
+            ignore_file = evidence_parent / "fixture-git-ignore"
+            ignore_file.write_text("fixture-unique-ignored.txt\n", encoding="utf-8")
+            git_config = evidence_parent / "fixture-git-config"
+            subprocess.run([shutil.which("git") or "/usr/bin/git", "config", "--file",
+                            str(git_config), "core.excludesFile", str(ignore_file)], check=True)
+            environment["GIT_CONFIG_GLOBAL"] = str(git_config)
+        if mode == "expo-unique-sibling":
+            environment["IOS_NATIVE_FIXTURE_EXPO_SIBLING"] = "1"
         if mode in {"known-writer", "known-writer-detached", "known-writer-retained"}:
             (evidence / "movement-events.jsonl").write_text("", encoding="utf-8")
         environment["IOS_NATIVE_FIXTURE_LIPO"] = str(fake_bin / "lipo")
@@ -3029,6 +4438,8 @@ exec /bin/rm "$@"
             )
         self.addCleanup(shutil.rmtree, evidence_parent, ignore_errors=True)
         if asynchronous:
+            return result, evidence, evidence_parent
+        if return_evidence_parent:
             return result, evidence, evidence_parent
         return result, evidence
 

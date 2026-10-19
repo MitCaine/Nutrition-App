@@ -3,6 +3,7 @@ import contextlib
 from pathlib import Path
 import importlib.util
 import json
+import os
 import sys
 import threading
 import subprocess
@@ -10,6 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 import task  # noqa: E402
+from lib import tooling_qualification as tooling  # noqa: E402
 
 def _assert_canonical_guidance(root, guide, owner, anchor, rules):
     """Check a concrete guide's navigation and the selected owner's rule section."""
@@ -178,11 +180,26 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
         'skill-templates/capsule-queue/SKILL.md': (2029, '584ab90dbc121fd7119d363c5a013d9a42b9ce40dbeb4955137f47dd5d9d0b1f'),
         'workflow-tools.md': (28257, '078ff071c077b547afb6f69b157b119caa263ea01e03715bca8b7fadeb573872'),
     }
+    changed_destinations = {
+        'start-an-issue.md': (40896, '63296e0880573b2d0fe52fe2892797b166672514406ed9b332cb503fb8e2402b'),
+        'worker-instructions.md': (20894, '0e735e279dd4db6f2d2aaed68fb7f4d22ea8346eff0ed77fec2f12ef1fabe6e2'),
+        'workflow-tools.md': (32833, '37ffeba04cf0bb22248da7994b4771a15ad78f625b622da5734af9375ca2ff2f'),
+    }
     for name, (size, digest) in current_resources.items():
+        assert name in provenance and digest in provenance
+        if name not in changed_destinations:
+            data = (shared / name).read_bytes()
+            assert len(data) == size
+            assert hashlib.sha256(data).hexdigest() == digest
+    # These three canonical guides now retain their selected source identities
+    # in SOURCE.md and include the separately selected RI949 lifecycle material.
+    # Pin the exact transformed destination bytes there as well as in this test.
+    for name, (size, digest) in changed_destinations.items():
         data = (shared / name).read_bytes()
         assert len(data) == size
         assert hashlib.sha256(data).hexdigest() == digest
-        assert name in provenance and digest in provenance
+        assert f"engineering/workflow/shared/{name}" in provenance
+        assert digest in provenance
 
     assert "docs/workflow-tools.md" in provenance
     assert "Both complete kickoff folders were inventoried" in normalized_provenance
@@ -579,6 +596,76 @@ def test_standard_rejects_even_valid_injected_historical_binding():
     state = {"capsule_evidence": {"binding": {"candidate": candidate}}}
     with pytest.raises(task.EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
         task._require_workflow_candidate_attachment(state, mode="standard", candidate_sha=candidate)
+
+
+def test_gh420_o1_trusted_inventory_executes_lifecycle_failure_and_pass(tmp_path):
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    marker = tmp_path / "lifecycle-executed.marker"
+    for relative in tooling.TEST_FILES:
+        target = candidate / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("", encoding="utf-8")
+    lifecycle = candidate / "scripts/tests/test_output_lifecycle.py"
+    lifecycle.write_text(
+        "from pathlib import Path\n"
+        f"MARKER = Path({str(marker)!r})\n"
+        "def test_trusted_lifecycle_inventory_route():\n"
+        "    MARKER.write_text('executed', encoding='utf-8')\n"
+        "    assert EXPECTED_PASS\n",
+        encoding="utf-8",
+    )
+    candidate_runner = candidate / "scripts/lib/tooling_qualification.py"
+    candidate_runner.parent.mkdir(parents=True, exist_ok=True)
+    candidate_runner.write_text("raise SystemExit(0)\n", encoding="utf-8")
+    (candidate / "pytest.ini").write_text(
+        "[pytest]\naddopts = --ignore=scripts/tests/test_output_lifecycle.py\n", encoding="utf-8"
+    )
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(candidate), *args], text=True).strip()
+    git("init", "-q")
+    git("config", "user.email", "fixture@example.invalid")
+    git("config", "user.name", "Nutrition fixture")
+    git("add", ".")
+
+    def invoke(expected_pass):
+        lifecycle.write_text(
+            "from pathlib import Path\n"
+            f"MARKER = Path({str(marker)!r})\n"
+            "def test_trusted_lifecycle_inventory_route():\n"
+            "    MARKER.write_text('executed', encoding='utf-8')\n"
+            f"    assert {expected_pass}\n",
+            encoding="utf-8",
+        )
+        git("add", "scripts/tests/test_output_lifecycle.py")
+        git("commit", "-qm", "lifecycle control")
+        candidate_sha = git("rev-parse", "HEAD")
+        plan = {"candidate_sha": candidate_sha, "profiles": ["repository"],
+                "tooling_paths": ["scripts/**"], "tooling_tests": True}
+        import hashlib
+        plan["plan_sha256"] = hashlib.sha256(
+            json.dumps(plan, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        ).hexdigest()
+        plan_path = tmp_path / "plan.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        environment = dict(os.environ, PYTEST_ADDOPTS="--ignore=scripts/tests/test_output_lifecycle.py",
+                           PYTHONPATH="/invalid/candidate-selector", GH_TOKEN="synthetic-secret")
+        return subprocess.run(
+            [sys.executable, str(ROOT / "scripts/lib/tooling_qualification.py"),
+             "--candidate-root", str(candidate), "--candidate-sha", candidate_sha,
+             "--plan", str(plan_path)], cwd=ROOT, env=environment, text=True,
+            capture_output=True, check=False,
+        )
+
+    negative = invoke("False")
+    assert negative.returncode == 1, negative.stdout + negative.stderr
+    assert "test_trusted_lifecycle_inventory_route" in negative.stdout
+    assert marker.read_text(encoding="utf-8") == "executed"
+    marker.unlink()
+    positive = invoke("True")
+    assert positive.returncode == 0, positive.stdout + positive.stderr
+    assert "test_trusted_lifecycle_inventory_route" in positive.stdout
+    assert marker.read_text(encoding="utf-8") == "executed"
 
 
 MAINTENANCE_FIELDS = (

@@ -44,6 +44,9 @@ dispatch authority must be explicit in the assignment. Git, issue,
 checkpoint and external actions require an explicit assignment grant. Preserve
 unrelated work, historical evidence and terminal stops. Do not change instruction,
 skill or runtime selection during an attempt.
+Use the controller's [output retention and disposal rule](start-an-issue.md#retain-evidence-and-dispose-of-owned-outputs)
+for assigned workspace/build outputs. Their creation owners record actual ownership;
+workers do not infer disposal authority or delete required recovery evidence.
 
 For a suspected blocker, use the canonical [bounded diagnosis and recovery
 rules](start-an-issue.md#diagnose-blockers-and-recover), not the whole controller
