@@ -95,12 +95,15 @@ def _run(
     output_root: Path,
     *,
     extra_env: dict[str, str] | None = None,
+    remove_env: tuple[str, ...] = (),
     timeout: float = 30,
 ) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     for name in tuple(environment):
         if name.startswith("GIT_"):
             environment.pop(name)
+    for name in remove_env:
+        environment.pop(name, None)
     environment["NUTRITION_REVIEW_OUTPUT_DIR"] = str(output_root)
     if extra_env:
         environment.update(extra_env)
@@ -451,7 +454,13 @@ else:
         [_step("mutate", [sys.executable, "-c", script, mutation])],
     )
 
-    result = _run(authored_repo, request_path, f"drift-{mutation}", output_root)
+    result = _run(
+        authored_repo,
+        request_path,
+        f"drift-{mutation}",
+        output_root,
+        remove_env=("PYTHONDONTWRITEBYTECODE",),
+    )
 
     assert result.returncode == 1, result.stdout + result.stderr
     attempt_dir = _attempt_dir(output_root, f"drift-{mutation}")
@@ -460,6 +469,38 @@ else:
     assert results["authored_commands"]["source_observation"]["status"] == "changed"
     assert not (attempt_dir / "review-bundle.zip").exists()
     assert not (attempt_dir / "complete.json").exists()
+
+
+def test_control_imports_do_not_write_source_bytecode_without_ambient_flag(
+    authored_repo: Path, tmp_path: Path
+):
+    output_root = tmp_path / "evidence"
+    request_path = _write_request(
+        authored_repo,
+        tmp_path / "request.json",
+        "no-bytecode-imports",
+        [_step("observe", [sys.executable, "-c", "import os; print(os.getenv('PYTHONDONTWRITEBYTECODE'))"])],
+    )
+    before_status = _git(authored_repo, "status", "--porcelain=v1", "--untracked-files=all")
+
+    result = _run(
+        authored_repo,
+        request_path,
+        "no-bytecode-imports",
+        output_root,
+        remove_env=("PYTHONDONTWRITEBYTECODE",),
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    attempt_dir = _attempt_dir(output_root, "no-bytecode-imports")
+    results = json.loads((attempt_dir / "results.json").read_text())
+    step_result = results["authored_commands"]["steps"][0]
+    assert (attempt_dir / step_result["stdout_log"]).read_text() == "None\n"
+    assert results["eligible"] is True
+    assert results["authored_commands"]["source_observation"]["status"] == "stable"
+    assert json.loads((attempt_dir / "complete.json").read_text())["status"] == "passed"
+    assert _git(authored_repo, "status", "--porcelain=v1", "--untracked-files=all") == before_status
+    assert not list(authored_repo.rglob("*.pyc"))
 
 
 def test_public_cli_allows_cold_ignored_file_creation_without_directory_size_drift(
@@ -628,6 +669,7 @@ def test_output_alias_to_source_is_rejected_without_source_writes(
         request_path,
         f"alias-{alias_kind}",
         output_root,
+        remove_env=("PYTHONDONTWRITEBYTECODE",),
     )
 
     assert result.returncode != 0

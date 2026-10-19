@@ -17,6 +17,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/worker_execution.py"
+ENGINEERING_FIXTURE_BASE = "18cf1b13f102634544ae0458133db2ee9f8a0f4e"
 
 
 def git(root, *args):
@@ -578,6 +579,7 @@ def _write_generated_fixture(adapter, tmp_path, *, capsule=False, missing_comman
     protected = tmp_path / 'protected'
     subprocess.run(['git', 'clone', '--quiet', '--shared', str(ROOT), str(protected)], check=True,
                    capture_output=True, text=True)
+    git(protected, 'checkout', '--quiet', '--detach', ENGINEERING_FIXTURE_BASE)
     base = git(protected, 'rev-parse', 'HEAD')
     workspace = tmp_path / 'owned-container/workspace'
     evidence = tmp_path / 'evidence'
@@ -735,6 +737,44 @@ def _generated_public(case, mode, *extra):
     )
 
 
+def _apply_generated_fixture_edit(case):
+    workspace = case['workspace']
+    base = case['seed']['base']
+    assert base == ENGINEERING_FIXTURE_BASE
+    assert git(workspace, 'rev-parse', 'HEAD') == base
+    assert git(workspace, 'status', '--porcelain=v1', '--untracked-files=all') == ''
+    base_tree = git(workspace, 'rev-parse', f'{base}^{{tree}}')
+    relative_paths = ('scripts/worker_execution.py', 'scripts/lib/review_commands.py')
+    expected_paths = []
+    for relative in relative_paths:
+        base_bytes = subprocess.check_output(
+            ['git', '-C', str(workspace), 'show', f'{base}:{relative}']
+        )
+        source_bytes = (ROOT / relative).read_bytes()
+        if source_bytes != base_bytes:
+            shutil.copy2(ROOT / relative, workspace / relative)
+            expected_paths.append(relative)
+    expected_paths.sort()
+    changed_paths = git(workspace, 'diff', '--name-only', '--no-renames', base).splitlines()
+    assert expected_paths
+    assert changed_paths == expected_paths
+    assert set(changed_paths) <= set(case['seed']['allowed_changes'])
+    return {'base': base, 'base_tree': base_tree, 'changed_paths': changed_paths}
+
+
+def _assert_generated_fixture_capture(case, edit):
+    capture_path = case['evidence'] / 'workspace-capture-result.json'
+    capture = json.loads(capture_path.read_text())
+    assert capture['candidate'] != edit['base']
+    assert capture['candidate_parent'] == edit['base']
+    assert capture['candidate_tree'] != edit['base_tree']
+    assert capture['changed_paths'] == edit['changed_paths']
+    assert set(capture['changed_paths']) <= set(capture['allowed_changes'])
+    assert capture['status_clean'] is True and capture['hidden_index_flags'] is False
+    assert git(case['workspace'], 'rev-parse', 'HEAD') == capture['candidate']
+    assert git(case['workspace'], 'status', '--porcelain=v1', '--untracked-files=all') == ''
+
+
 def test_public_engineering_generate_prepare_run_and_same_read_only_intake(adapter, tmp_path):
     case = _write_generated_fixture(adapter, tmp_path)
     before_protected = git(case['protected'], 'rev-parse', 'HEAD')
@@ -768,11 +808,11 @@ def test_public_engineering_generate_prepare_run_and_same_read_only_intake(adapt
     assert _generated_public(case, 'prepare').returncode == 1
     assert prepared_path.read_bytes() == prepared_before
 
-    # Apply the bounded intended source edit only after the single PREPARED record exists.
-    for relative in ('scripts/worker_execution.py', 'scripts/lib/review_commands.py'):
-        target = case['workspace'] / relative
-        shutil.copy2(ROOT / relative, target)
+    # Start from the accepted integration baseline so the bounded tool update
+    # remains a real post-PREPARED edit against a clean frozen candidate.
+    edit = _apply_generated_fixture_edit(case)
     executed = _generated_public(case, 'run')
+    _assert_generated_fixture_capture(case, edit)
     assert executed.returncode == 0, executed.stdout + executed.stderr
 
     attempt = case['evidence'] / case['seed']['attempt']
@@ -860,9 +900,9 @@ def test_public_accepted_missing_command_keeps_null_exit_failure_and_blocked_dep
     assert generated.returncode == 0, generated.stdout + generated.stderr
     prepared = _generated_public(case, 'prepare')
     assert prepared.returncode == 0, prepared.stdout + prepared.stderr
-    for relative in ('scripts/worker_execution.py', 'scripts/lib/review_commands.py'):
-        shutil.copy2(ROOT / relative, case['workspace'] / relative)
+    edit = _apply_generated_fixture_edit(case)
     executed = _generated_public(case, 'run')
+    _assert_generated_fixture_capture(case, edit)
     assert executed.returncode == 1
 
     attempt = case['evidence'] / 'GH-422-accepted-flow'
@@ -898,9 +938,9 @@ def test_public_intake_refuses_changed_definition_or_check_inventory_without_rew
     assert generated.returncode == 0, generated.stdout + generated.stderr
     prepared = _generated_public(case, 'prepare')
     assert prepared.returncode == 0, prepared.stdout + prepared.stderr
-    for relative in ('scripts/worker_execution.py', 'scripts/lib/review_commands.py'):
-        shutil.copy2(ROOT / relative, case['workspace'] / relative)
+    edit = _apply_generated_fixture_edit(case)
     executed = _generated_public(case, 'run')
+    _assert_generated_fixture_capture(case, edit)
     assert executed.returncode == 0, executed.stdout + executed.stderr
     terminal_path = case['evidence'] / 'GH-422-accepted-flow/RETURN.json'
     terminal_before = terminal_path.read_bytes()

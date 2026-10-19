@@ -20,10 +20,14 @@ import time
 from typing import Any
 import zipfile
 
+# The control tool can run inside a deliberately sanitized authored-command
+# environment. Its own imports must not create bytecode in the observed source.
+sys.dont_write_bytecode = True
+
 # This file is also executed directly by run-review.sh. Make the scripts
 # package root available before importing its shared lifecycle adapter.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lib import task_output_cleanup
+from lib import task_output_cleanup  # noqa: E402
 
 
 SCHEMA_VERSION = 1
