@@ -1430,6 +1430,85 @@ def test_public_accepted_missing_command_keeps_null_exit_failure_and_blocked_dep
     assert {row['id']: row['status'] for row in result['facts']['outcomes']}['R1'] != 'passed'
 
 
+@pytest.mark.parametrize('scenario', [
+    'extra_mandatory_failure',
+    'extra_mandatory_missing_with_blocked_dependent',
+    'extra_mandatory_pass',
+    'extra_advisory_failure',
+])
+def test_public_generated_readiness_preserves_native_mandatory_gate(adapter, tmp_path, scenario):
+    case = _write_generated_fixture(adapter, tmp_path)
+    first = step("print('first actual native proof')", name='case_a')
+    if scenario == 'extra_mandatory_failure':
+        extra = step("raise SystemExit(17)", name='case_b')
+        steps = [first, extra]
+        expected_run = 1
+    elif scenario == 'extra_mandatory_missing_with_blocked_dependent':
+        missing = step(name='case_b')
+        missing['argv'] = [str(tmp_path / 'missing-extra-native-command')]
+        dependent = step("raise AssertionError('blocked command must not run')",
+                         name='case_c', prerequisites=['case_b'])
+        steps = [first, missing, dependent]
+        expected_run = 1
+    elif scenario == 'extra_mandatory_pass':
+        steps = [first, step("print('extra mandatory command passed')", name='case_b')]
+        expected_run = 0
+    else:
+        steps = [first, step("raise SystemExit(17)", name='case_b', mandatory=False)]
+        expected_run = 0
+
+    attempt_id = 'GH-422-readiness-' + scenario
+    _configure_generated_output_fixture(
+        case, steps=steps, entry_ids=['R1', 'S1', 'P1', 'R4'], attempt=attempt_id)
+    attempt, _, terminal_path, result, terminal = _run_generated_fixture_to_terminal(
+        case, expected_run=expected_run)
+    native = attempt / 'native/runs' / attempt_id
+    native_rows = {
+        step_id: json.loads((native / 'commands' / step_id / 'result.json').read_text())
+        for step_id in (step['id'] for step in steps)
+    }
+    runner_operation = terminal['operations'][-1]
+    assert runner_operation['operation'] == 'runner'
+
+    if scenario in ('extra_mandatory_failure',
+                    'extra_mandatory_missing_with_blocked_dependent'):
+        assert result['native_status'] == 'failed'
+        assert result['native_runner_exit_code'] == 1
+        assert result['ready'] is False
+        assert runner_operation['status'] == 'failed' and runner_operation['exit_code'] == 1
+        assert terminal['review_ready'] is False
+        assert terminal['status'] == 'blocked'
+        if scenario == 'extra_mandatory_failure':
+            assert native_rows['case_b']['status'] == 'failed'
+            assert native_rows['case_b']['exit_code'] == 17
+        else:
+            assert native_rows['case_b']['exit_code'] is None
+            assert native_rows['case_b']['child_return_code'] is None
+            assert native_rows['case_c']['status'] == 'blocked'
+        terminal_before = terminal_path.read_bytes()
+        intake = _generated_public(case, 'intake')
+        assert intake.returncode == 1, intake.stdout + intake.stderr
+        assert terminal_path.read_bytes() == terminal_before
+        return
+
+    assert runner_operation['status'] == 'passed' and runner_operation['exit_code'] == 0
+    assert terminal['review_ready'] is True
+    if scenario == 'extra_mandatory_pass':
+        assert result['native_status'] == 'passed'
+        assert result['ready'] is True
+        assert native_rows['case_b']['status'] == 'passed'
+    else:
+        assert result['native_status'] == 'failed'
+        assert result['native_runner_exit_code'] == 1
+        assert result['ready'] is True
+        assert native_rows['case_b']['designation'] == 'advisory'
+        assert native_rows['case_b']['status'] == 'failed'
+    terminal_before = terminal_path.read_bytes()
+    intake = _generated_public(case, 'intake')
+    assert intake.returncode == 0, intake.stdout + intake.stderr
+    assert terminal_path.read_bytes() == terminal_before
+
+
 @pytest.mark.parametrize('mutation', ['definition', 'native_inventory'])
 def test_public_intake_refuses_changed_definition_or_check_inventory_without_rewriting_return(
         adapter, tmp_path, mutation):

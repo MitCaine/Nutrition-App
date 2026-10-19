@@ -798,7 +798,8 @@ def project(request_path: Path, directory: Path, candidate: str,
             facts['outcomes'] = _accepted_facts(accepted_inventory, observed_by_id, result_files,
                                                 candidate, accepted['attempt'], request_id['sha256'],
                                                 definition_identity)
-            ready = all(not row['mandatory'] or row['status'] == 'passed' for row in facts['outcomes'])
+            ready = ready and all(not row['mandatory'] or row['status'] == 'passed'
+                                  for row in facts['outcomes'])
     result = {"candidate": candidate, "workspace": str(root), "attempt": accepted["attempt"],
             "request_sha256": native._sha256(request_path.read_bytes()), "ready": ready, "references": refs,
             "native_status": native_status,
