@@ -1730,3 +1730,18 @@ def test_adopted_role_defaults_and_mechanical_corrections_have_canonical_owners(
             "never edit concurrently with an active worker or bypass a frozen candidate",
             "fresh nonauthor review must cover the actual corrected candidate",
         ))
+
+
+def test_pinned_external_destinations_are_complete_urls_without_nested_relocation():
+    import re
+    from urllib.parse import unquote
+    lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
+    text = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
+    match = re.search(r"\[closeout checks\]\(([^)]+)\)", text)
+    expected = ("https://github.com/MitCaine/repository-intelligence/blob/"
+                "c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/"
+                "capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes")
+    assert match is not None and match.group(1) == expected
+    for item in lock["resources"]:
+        for target in re.findall(r"\]\((https?://[^)]+)\)", (ROOT / item["destination"]).read_text()):
+            assert unquote(target).count("https://") + unquote(target).count("http://") == 1, target

@@ -151,8 +151,8 @@
       "destination": "engineering/workflow/shared/skill-templates/README.md",
       "source_bytes": 9977,
       "source_sha256": "bd0124e6e213dbaf1d6984578d2e2d07a329b2023095153306785bf3fb28e6f4",
-      "destination_bytes": 11091,
-      "destination_sha256": "18833223087a089564e68ad4f1dc693895a795daaf26d1ec25a85153897f8ddc",
+      "destination_bytes": 10972,
+      "destination_sha256": "127cdcbc62c1cd7982649f19b2a1e813d033c6836c73d8fad08fce26714ffd93",
       "relocations": [
         {
           "from": "ri-capsule-creator/SKILL.md",

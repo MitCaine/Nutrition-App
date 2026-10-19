@@ -78,7 +78,7 @@ lacks native completion and has a verified destination; it is unnecessary for
 these subagents.
 
 The preflight folder includes a read-only [evidence checker and adapter contract](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/references/evidence-contract.md).
-Its [closeout checks](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes)
+Its [closeout checks](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes)
 cover consumer-exported history metadata and required installed-workflow probes.
 Copy its supporting resources with the skill and connect it to the consumer's
 trusted records before treating it as a blocking gate. The scope-review skill
