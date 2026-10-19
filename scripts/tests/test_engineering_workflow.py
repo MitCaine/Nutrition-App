@@ -202,19 +202,51 @@ def _inspector_fixture(tmp_path, history='existing', owner_profiles=None):
             assert (repository, issue_number) == ('owner/repo', 422)
             return [comment]
 
-        def withhold_predecessor_acceptance(self, return_reference):
+        def withhold_predecessor_acceptance(self, return_reference, *, result_reference=None,
+                                             native_references=()):
             report_path = Path(return_reference['path'])
             report = json.loads(report_path.read_text())
             observed_hash = hashlib.sha256(report_path.read_bytes()).hexdigest()
             assert observed_hash == return_reference['sha256']
+            evidence = None
+            if result_reference is not None:
+                result_path = Path(result_reference['path'])
+                result = json.loads(result_path.read_text())
+                assert hashlib.sha256(result_path.read_bytes()).hexdigest() == result_reference['sha256']
+                assert result['candidate'] == report['candidate']
+                assert result['attempt'] == report['attempt']
+                assert result['ready'] is False
+                observed_native = []
+                for reference in native_references:
+                    native_path = Path(reference['path'])
+                    record = json.loads(native_path.read_text())
+                    native_case = record['native_case']
+                    assert hashlib.sha256(native_path.read_bytes()).hexdigest() == reference['sha256']
+                    assert native_case['candidate'] == report['candidate']
+                    assert native_case['attempt'] == report['attempt']
+                    observed_native.append({
+                        'reference': reference,
+                        'case': native_case['case'],
+                        'status': native_case['status'],
+                        'request_sha256': native_case['request_sha256'],
+                    })
+                evidence = {
+                    'result': result_reference,
+                    'native_cases': observed_native,
+                    'review_ready': report.get('review_ready'),
+                    'completeness_ready': report.get('completeness', {}).get('ready'),
+                }
             if report.get('review_ready') is False and report.get('completeness', {}).get('ready') is False:
                 decision = 'interrupted'
             else:
                 decision = 'accepted'
-            self.predecessor_decisions.append({
+            observed = {
                 'candidate': report.get('candidate'), 'return': return_reference,
                 'decision': decision,
-            })
+            }
+            if evidence is not None:
+                observed['evidence'] = evidence
+            self.predecessor_decisions.append(observed)
             return decision
 
     state_dir = tmp_path / 'state'
@@ -313,6 +345,194 @@ def test_partial_public_return_keeps_predecessor_unaccepted_through_fixture_tran
     assert _state_snapshot(fixture) == state_before
     assert not (fixture['state_dir'] / assignment['attempt']).exists()
     assert terminal_path.read_bytes() == original_return
+
+
+def test_combined_public_interaction_failure_withholds_predecessor_acceptance(
+        tmp_path, monkeypatch, capsys):
+    worker_tests = _worker_test_helpers()
+
+    def run_individual(label, case_id, attempt_name, expected):
+        root = tmp_path / label
+        root.mkdir()
+        case = worker_tests._write_generated_fixture(worker_execution, root)
+        output = root / 'scratch' / 'OUTPUT.txt'
+        worker_tests._configure_generated_output_portion_fixture(
+            case, attempt=attempt_name, case_id=case_id, output_path=output)
+        attempt, result_path, return_path, result, returned = (
+            worker_tests._run_generated_fixture_to_terminal(case))
+        proof_id = 'P1' if case_id == 'case_a' else 'P1b'
+        outcomes = {row['id']: row for row in result['facts']['outcomes']}
+        assert result['ready'] is True and returned['review_ready'] is True
+        assert returned['completeness']['ready'] is True
+        assert outcomes[proof_id]['status'] == 'passed'
+        assert output.read_text() == expected
+        run_dir = attempt / 'native/runs' / attempt_name
+        native_request = run_dir / 'request.json'
+        record_path = run_dir / 'commands' / case_id / 'result.json'
+        record = json.loads(record_path.read_text())
+        native_case = record['native_case']
+        request_sha = hashlib.sha256(native_request.read_bytes()).hexdigest()
+        assert native_case['case'] == case_id
+        assert native_case['candidate'] == returned['candidate']
+        assert native_case['attempt'] == attempt_name
+        assert native_case['request_sha256'] == request_sha
+        assert native_case['status'] == 'passed'
+        reference = {'path': str(record_path),
+                     'sha256': hashlib.sha256(record_path.read_bytes()).hexdigest()}
+        return {
+            'candidate': returned['candidate'], 'attempt': attempt_name,
+            'request_sha256': request_sha, 'native_reference': reference,
+            'native_bytes': record_path.read_bytes(), 'return_bytes': return_path.read_bytes(),
+            'result_bytes': result_path.read_bytes(), 'case': case,
+            'attempt_path': attempt, 'native_case': native_case,
+        }
+
+    individual_a = run_individual(
+        'individual-a', 'case_a', 'GH-422-interaction-portion-a', 'portion-a')
+    individual_b = run_individual(
+        'individual-b', 'case_b', 'GH-422-interaction-portion-b', 'portion-b')
+
+    collision_root = tmp_path / 'combined-collision'
+    collision_root.mkdir()
+    collision_case = worker_tests._write_generated_fixture(worker_execution, collision_root)
+    shared_output = collision_root / 'scratch' / 'OUTPUT.txt'
+    worker_tests._configure_generated_interaction_fixture(
+        collision_case, attempt='GH-422-interaction-collision',
+        output_a=shared_output, output_b=shared_output)
+    combined_attempt, combined_result_path, combined_return_path, combined_result, combined_return = (
+        worker_tests._run_generated_fixture_to_terminal(collision_case, expected_run=1))
+    assert combined_result['ready'] is False
+    assert combined_return['review_ready'] is False
+    assert combined_return['completeness']['ready'] is False
+    assert shared_output.read_text() == 'portion-b'
+    combined_outcomes = {row['id']: row for row in combined_result['facts']['outcomes']}
+    assert combined_outcomes['P1']['status'] == 'passed'
+    assert combined_outcomes['P1b']['status'] == 'passed'
+    assert combined_outcomes['P1c']['status'] == 'failed'
+    assert combined_outcomes['R1']['status'] == 'failed'
+
+    run_dir = combined_attempt / 'native/runs' / collision_case['seed']['attempt']
+    native_request = run_dir / 'request.json'
+    request_sha = hashlib.sha256(native_request.read_bytes()).hexdigest()
+    combined_records = {}
+    for case_id, expected_status in (
+            ('case_a', 'passed'), ('case_b', 'passed'), ('case_interaction', 'failed')):
+        record_path = run_dir / 'commands' / case_id / 'result.json'
+        record_bytes = record_path.read_bytes()
+        record = json.loads(record_bytes)
+        native_case = record['native_case']
+        assert native_case['case'] == case_id
+        assert native_case['candidate'] == combined_return['candidate']
+        assert native_case['attempt'] == collision_case['seed']['attempt']
+        assert native_case['request_sha256'] == request_sha
+        assert native_case['status'] == expected_status
+        assert record['status'] == expected_status
+        if case_id == 'case_interaction':
+            assert record['exit_code'] == 1 and record['child_return_code'] == 1
+            stderr_binding = native_case['artifacts']['stderr']
+            stderr_path = Path(stderr_binding['path'])
+            stderr_bytes = stderr_path.read_bytes()
+            assert hashlib.sha256(stderr_bytes).hexdigest() == stderr_binding['sha256']
+            assert (b"AssertionError: interaction outputs were overwritten: "
+                    b"first='portion-b', second='portion-b'") in stderr_bytes
+            interaction_stderr = stderr_bytes
+        else:
+            assert record['exit_code'] == 0 and record['child_return_code'] == 0
+        combined_records[case_id] = {
+            'reference': {'path': str(record_path),
+                          'sha256': hashlib.sha256(record_bytes).hexdigest()},
+            'bytes': record_bytes,
+        }
+
+    distinct_root = tmp_path / 'combined-distinct'
+    distinct_root.mkdir()
+    distinct_case = worker_tests._write_generated_fixture(worker_execution, distinct_root)
+    distinct_a = distinct_root / 'scratch' / 'OUTPUT-A.txt'
+    distinct_b = distinct_root / 'scratch' / 'OUTPUT-B.txt'
+    worker_tests._configure_generated_interaction_fixture(
+        distinct_case, attempt='GH-422-interaction-distinct',
+        output_a=distinct_a, output_b=distinct_b)
+    distinct_attempt, distinct_result_path, distinct_return_path, distinct_result, distinct_return = (
+        worker_tests._run_generated_fixture_to_terminal(distinct_case))
+    distinct_outcomes = {row['id']: row for row in distinct_result['facts']['outcomes']}
+    assert distinct_result['ready'] is True
+    assert distinct_return['review_ready'] is True
+    assert distinct_return['completeness']['ready'] is True
+    assert all(distinct_outcomes[key]['status'] == 'passed' for key in ('P1', 'P1b', 'P1c'))
+    assert distinct_a.read_text() == 'portion-a' and distinct_b.read_text() == 'portion-b'
+    distinct_run_dir = distinct_attempt / 'native/runs' / distinct_case['seed']['attempt']
+    distinct_request_sha = hashlib.sha256((distinct_run_dir / 'request.json').read_bytes()).hexdigest()
+    for case_id in ('case_a', 'case_b', 'case_interaction'):
+        record_path = distinct_run_dir / 'commands' / case_id / 'result.json'
+        record = json.loads(record_path.read_text())
+        native_case = record['native_case']
+        assert native_case['case'] == case_id
+        assert native_case['candidate'] == distinct_return['candidate']
+        assert native_case['attempt'] == distinct_case['seed']['attempt']
+        assert native_case['request_sha256'] == distinct_request_sha
+        assert native_case['status'] == record['status'] == 'passed'
+        assert record['exit_code'] == record['child_return_code'] == 0
+
+    combined_return_bytes = combined_return_path.read_bytes()
+    combined_result_bytes = combined_result_path.read_bytes()
+    inspector_root = tmp_path / 'inspector'
+    inspector_root.mkdir()
+    fixture = _inspector_fixture(inspector_root)
+    return_reference = {
+        'path': str(combined_return_path),
+        'sha256': hashlib.sha256(combined_return_bytes).hexdigest(),
+    }
+    result_reference = {
+        'path': str(combined_result_path),
+        'sha256': hashlib.sha256(combined_result_bytes).hexdigest(),
+    }
+    native_references = [combined_records[case_id]['reference'] for case_id in
+                         ('case_a', 'case_b', 'case_interaction')]
+    decision = fixture['transport'].withhold_predecessor_acceptance(
+        return_reference, result_reference=result_reference,
+        native_references=native_references)
+    assert decision == 'interrupted'
+    transport_observation = fixture['transport'].predecessor_decisions
+    assert len(transport_observation) == 1
+    observed = transport_observation[0]
+    assert observed['candidate'] == combined_return['candidate']
+    assert observed['return'] == return_reference and observed['decision'] == 'interrupted'
+    assert observed['evidence']['result'] == result_reference
+    assert observed['evidence']['review_ready'] is False
+    assert observed['evidence']['completeness_ready'] is False
+    observed_native = observed['evidence']['native_cases']
+    assert [(row['case'], row['status'], row['request_sha256']) for row in observed_native] == [
+        ('case_a', 'passed', request_sha), ('case_b', 'passed', request_sha),
+        ('case_interaction', 'failed', request_sha),
+    ]
+
+    assignment = json.loads(json.dumps(fixture['state']['execution']['engineering_assignment']))
+    assignment['predecessor']['decision'] = decision
+    assignment['predecessor']['review']['report'] = return_reference
+    assignment['predecessor']['due_evidence'] = [return_reference, result_reference, *native_references]
+    _save_assignment(fixture, assignment)
+    checkpoint_before = fixture['checkpoint'].read_bytes()
+    state_before = _state_snapshot(fixture)
+    assert _run_assignment_inspector(fixture, monkeypatch) == 1
+    refused = json.loads(capsys.readouterr().out)
+    assert refused['result'] == 'FAIL'
+    assert refused['error'] == 'ENGINEERING_PREDECESSOR_NOT_ACCEPTED'
+    assert fixture['checkpoint'].read_bytes() == checkpoint_before
+    assert _state_snapshot(fixture) == state_before
+    assert not (fixture['state_dir'] / assignment['attempt']).exists()
+    assert combined_return_path.read_bytes() == combined_return_bytes
+    assert combined_result_path.read_bytes() == combined_result_bytes
+    assert Path(combined_records['case_a']['reference']['path']).read_bytes() == combined_records['case_a']['bytes']
+    assert Path(combined_records['case_b']['reference']['path']).read_bytes() == combined_records['case_b']['bytes']
+    assert Path(combined_records['case_interaction']['reference']['path']).read_bytes() == combined_records['case_interaction']['bytes']
+    assert interaction_stderr == Path(
+        json.loads(combined_records['case_interaction']['bytes'])['native_case']['artifacts']['stderr']['path']
+    ).read_bytes()
+    for retained in (individual_a, individual_b):
+        record_path = Path(retained['native_reference']['path'])
+        assert record_path.read_bytes() == retained['native_bytes']
+        assert Path(retained['case']['evidence'] / retained['case']['seed']['attempt'] / 'RETURN.json').read_bytes() == retained['return_bytes']
+        assert Path(retained['case']['evidence'] / retained['case']['seed']['attempt'] / 'NUTRITION_RESULT.json').read_bytes() == retained['result_bytes']
 
 
 def test_public_inspector_accepts_existing_specification_modification(tmp_path, monkeypatch, capsys):

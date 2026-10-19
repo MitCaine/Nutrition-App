@@ -820,6 +820,78 @@ def _run_generated_fixture_to_terminal(case, *, second_case_failure=None, expect
     return attempt, result_path, terminal_path, result, terminal
 
 
+def _configure_generated_output_fixture(case, *, steps, entry_ids, attempt):
+    """Bind one output fixture's authored steps and exact selected proof inventory."""
+    assignment = case['seed']['engineering_assignment']
+    selection = case['definition']['engineering']
+    selected = {entry['id']: entry for entry in selection['entries']}
+    selection['entries'] = [selected[entry_id] for entry_id in entry_ids]
+    selection_sha256 = hashlib.sha256(
+        json.dumps(selection, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    approval_path = Path(assignment['planning_review']['approval']['path'])
+    approval = json.loads(approval_path.read_text())
+    approval['selection_sha256'] = selection_sha256
+    write(approval_path, approval)
+    approval_binding = {'path': str(approval_path.resolve()), 'sha256': sha(approval_path)}
+    assignment['attempt'] = attempt
+    assignment['selection_sha256'] = selection_sha256
+    assignment['planning_review']['selection_sha256'] = selection_sha256
+    assignment['planning_review']['approval'] = approval_binding
+    case['definition']['check_request']['steps'] = steps
+    case['seed']['attempt'] = attempt
+    case['seed']['engineering_assignment'] = assignment
+    case['seed']['accepted_engineering']['approval'] = approval_binding
+    write(case['definition_path'], case['definition'])
+    write(case['seed_path'], case['seed'])
+
+
+def _output_value_step(step_id, output_path, expected):
+    code = (
+        'from pathlib import Path; p=Path(' + repr(str(output_path)) + '); '
+        'p.parent.mkdir(parents=True, exist_ok=True); p.write_text(' + repr(expected) + '); '
+        'assert p.read_text() == ' + repr(expected)
+    )
+    return {'id': step_id, 'argv': [sys.executable, '-c', code], 'cwd': '.', 'env': {},
+            'designation': 'mandatory', 'prerequisites': []}
+
+
+def _interaction_assertion_step(output_a, output_b):
+    code = (
+        'from pathlib import Path; a=Path(' + repr(str(output_a)) + '); '
+        'b=Path(' + repr(str(output_b)) + '); '
+        'value_a=a.read_text() if a.is_file() else None; '
+        'value_b=b.read_text() if b.is_file() else None; '
+        'assert value_a == "portion-a" and value_b == "portion-b", '
+        'f"interaction outputs were overwritten: first={value_a!r}, second={value_b!r}"'
+    )
+    return {'id': 'case_interaction', 'argv': [sys.executable, '-c', code], 'cwd': '.', 'env': {},
+            'designation': 'mandatory', 'prerequisites': []}
+
+
+def _configure_generated_interaction_fixture(case, *, attempt, output_a, output_b):
+    entries = ['R1', 'S1', 'P1', 'P1b']
+    steps = [
+        _output_value_step('case_a', output_a, 'portion-a'),
+        _output_value_step('case_b', output_b, 'portion-b'),
+    ]
+    interaction_proof = dict(next(entry for entry in case['definition']['engineering']['entries']
+                                  if entry['id'] == 'P1'))
+    interaction_proof.update(id='P1c', native_id='case_interaction')
+    case['definition']['engineering']['entries'].append(interaction_proof)
+    entries.append('P1c')
+    steps.append(_interaction_assertion_step(output_a, output_b))
+    entries.append('R4')
+    _configure_generated_output_fixture(case, steps=steps, entry_ids=entries, attempt=attempt)
+
+
+def _configure_generated_output_portion_fixture(case, *, attempt, case_id, output_path):
+    proof_id = 'P1' if case_id == 'case_a' else 'P1b'
+    _configure_generated_output_fixture(
+        case, steps=[_output_value_step(case_id, output_path,
+                                       'portion-a' if case_id == 'case_a' else 'portion-b')],
+        entry_ids=['R1', 'S1', proof_id, 'R4'], attempt=attempt)
+
+
 def _copy_generated_evidence(case, name):
     destination = case['root'] / name
     shutil.copytree(case['evidence'], destination)
@@ -860,6 +932,18 @@ def _publish_fault_copy(result_path, terminal_path, result, terminal):
     terminal['runner_result'] = {'path': str(result_path), 'sha256': sha(result_path)}
     terminal['references'] = result['references']
     write(terminal_path, terminal)
+
+
+def _rebase_copied_native_record_artifacts(result, terminal, source_attempt, copied_attempt):
+    """Rebind copied command artifacts and their exact native-record hashes."""
+    commands = copied_attempt / 'native/runs' / copied_attempt.name / 'commands'
+    for record_path in sorted(commands.glob('*/result.json')):
+        record = json.loads(record_path.read_text())
+        _rebase_attempt_paths(record, source_attempt, copied_attempt)
+        write(record_path, record)
+        binding = {'path': str(record_path), 'sha256': sha(record_path)}
+        _rewrite_reference(result, str(record_path), binding)
+        _rewrite_reference(terminal, str(record_path), binding)
 
 
 def _recompute_fault_conformance(case, attempt, result, terminal):
@@ -983,7 +1067,25 @@ def test_public_generated_intake_refuses_semantic_faults_in_isolated_evidence_co
     terminal = json.loads(copied_terminal_path.read_text())
     _rebase_attempt_paths(result, attempt, copied_attempt)
     _rebase_attempt_paths(terminal, attempt, copied_attempt)
+    _rebase_copied_native_record_artifacts(result, terminal, attempt, copied_attempt)
+    _recompute_fault_conformance(case, copied_attempt, result, terminal)
+    _publish_fault_copy(copied_result_path, copied_terminal_path, result, terminal)
 
+    copied_result_valid = copied_result_path.read_bytes()
+    copied_terminal_valid = copied_terminal_path.read_bytes()
+    case['active_evidence'] = fault_evidence
+    valid_before = _generated_public(case, 'intake')
+    assert valid_before.returncode == 0, fault + ': ' + valid_before.stdout + valid_before.stderr
+    valid_before_value = json.loads(valid_before.stdout)
+    assert valid_before_value['review_ready'] is True
+    assert valid_before_value['candidate'] == result_value['candidate']
+    assert copied_result_path.read_bytes() == copied_result_valid
+    assert copied_terminal_path.read_bytes() == copied_terminal_valid
+
+    result = json.loads(copied_result_valid)
+    terminal = json.loads(copied_terminal_valid)
+    changed_record_path = None
+    changed_record_before = None
     if fault == 'proof_omitted':
         result['facts']['outcomes'] = [row for row in result['facts']['outcomes'] if row['id'] != 'P1b']
     elif fault == 'proof_duplicated':
@@ -1016,9 +1118,13 @@ def test_public_generated_intake_refuses_semantic_faults_in_isolated_evidence_co
         record_path = copied_attempt / 'native/runs/GH-422-accepted-flow/commands' / case_id / 'result.json'
         old_binding = {'path': str(record_path), 'sha256': sha(record_path)}
         if fault == 'native_case_omitted':
+            changed_record_path = record_path
+            changed_record_before = record_path.read_bytes()
             record_path.unlink()
             result['references'] = [item for item in result['references'] if item['path'] != str(record_path)]
         else:
+            changed_record_path = record_path
+            changed_record_before = record_path.read_bytes()
             record = json.loads(record_path.read_text())
             native_case = record['native_case']
             if fault == 'native_case_duplicated':
@@ -1042,13 +1148,14 @@ def test_public_generated_intake_refuses_semantic_faults_in_isolated_evidence_co
             else:
                 native_case['measurements']['duration_seconds'] = float('nan')
             write(record_path, record)
-            _rewrite_reference(result, old_binding['path'],
-                               {'path': old_binding['path'], 'sha256': sha(record_path)})
+            changed_binding = {'path': old_binding['path'], 'sha256': sha(record_path)}
+            _rewrite_reference(result, old_binding['path'], changed_binding)
+            _rewrite_reference(terminal, old_binding['path'], changed_binding)
 
     _recompute_fault_conformance(case, copied_attempt, result, terminal)
     _publish_fault_copy(copied_result_path, copied_terminal_path, result, terminal)
     fault_terminal_before = copied_terminal_path.read_bytes()
-    case['active_evidence'] = fault_evidence
+    fault_result_before = copied_result_path.read_bytes()
     refused = _generated_public(case, 'intake')
     error = _generated_error(refused)
     if fault.startswith('proof_'):
@@ -1059,7 +1166,22 @@ def test_public_generated_intake_refuses_semantic_faults_in_isolated_evidence_co
         assert error == 'Intake accepted inventory changed'
     else:
         assert error == 'Intake completeness is stale or no longer supported'
+    assert copied_result_path.read_bytes() == fault_result_before
     assert copied_terminal_path.read_bytes() == fault_terminal_before
+    if changed_record_path is not None:
+        assert (changed_record_path.exists() is (fault != 'native_case_omitted'))
+        if fault != 'native_case_omitted':
+            assert changed_record_path.read_bytes() != changed_record_before
+        changed_record_path.write_bytes(changed_record_before)
+    copied_result_path.write_bytes(copied_result_valid)
+    copied_terminal_path.write_bytes(copied_terminal_valid)
+    assert copied_result_path.read_bytes() == copied_result_valid
+    assert copied_terminal_path.read_bytes() == copied_terminal_valid
+    restored = _generated_public(case, 'intake')
+    assert restored.returncode == 0, fault + ': restored copy: ' + restored.stdout + restored.stderr
+    assert json.loads(restored.stdout)['review_ready'] is True
+    assert copied_result_path.read_bytes() == copied_result_valid
+    assert copied_terminal_path.read_bytes() == copied_terminal_valid
     assert result_path.read_bytes() == original_result
     assert terminal_path.read_bytes() == original_terminal
 
