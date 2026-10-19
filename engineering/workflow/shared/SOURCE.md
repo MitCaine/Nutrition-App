@@ -639,3 +639,16 @@ Declared relocations:
 - `engineering/workflow/shared/skill-templates/README.md`: `capsule-queue/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-queue/SKILL.md`.
 - `engineering/workflow/shared/skill-templates/README.md`: `capsule-preflight/references/evidence-contract.md` → `https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/references/evidence-contract.md`.
 - `engineering/workflow/shared/skill-templates/README.md`: `capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes` → `https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes`.
+
+
+### Current optional queue resource identities
+
+These exact RI8db resources remain pinned upstream, not installed executables. Historical RI685 identities above remain unchanged and do not authenticate this selection.
+
+| Selected source | Git blob | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| <code>docs/skill-templates/capsule-queue/SKILL.md</code> | `2e01cf01bb0830e5addc4d46c1257f737793e695` | 8811 | `ed9e3a3ebfe7c4639f58b6e2595a782ca577d0ba07a1175b6dbabc29c61d3f39` |
+| <code>docs/skill-templates/capsule-queue/references/project-procedure.md</code> | `47c37667eff63c02ac0b842ce60f3c6c8de8b5c2` | 1850 | `c443911ce761d3d40694a1d16cd7043517e1892946a7eb65b164b6662f6a4280` |
+| <code>docs/skill-templates/capsule-queue/scripts&#47;run_and_queue.py</code> | `cf5655ad3f5a66fa46831a06701aba295819bbaf` | 13857 | `9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191` |
+
+The consumer redirect `engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md` is 2029 bytes, SHA-256 `03fccf417b93855dcd3e795cbe046c6bcf403c85407bf497df1cf99c88d544f3`; only pinned resource URLs change from its preserved historical form. No queue helper is installed or invoked by this adoption.

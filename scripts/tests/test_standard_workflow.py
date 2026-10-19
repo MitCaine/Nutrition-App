@@ -1348,6 +1348,20 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
     assert "scripts/run%5Fand%5Fqueue.py" in text
+    import hashlib
+    lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
+    current = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text().split(
+        "## Current selection: 8db4d56323db31f27af151c542967b4ef13a79af", 1)[1]
+    expected = {"docs/skill-templates/capsule-queue/" + leaf
+                for leaf in ("SKILL.md", "references/project-procedure.md", "scripts/run_and_queue.py")}
+    assert {row["source"] for row in lock["optional_queue_resources"]} == expected
+    for row in lock["optional_queue_resources"]:
+        assert row["blob"] in current and row["sha256"] in current
+    redirect = lock["queue_redirect"]
+    actual = (ROOT / redirect["path"]).read_bytes()
+    assert len(actual) == redirect["bytes"] and hashlib.sha256(actual).hexdigest() == redirect["sha256"]
+    assert redirect["sha256"] in current
+
     assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in text
     assert "not an installed executable skill" in text
     assert "CLI acceptance" in text and "idle wake-up" in text

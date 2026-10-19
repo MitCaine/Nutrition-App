@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -55,28 +56,61 @@ def map_selection() -> dict:
     selected = re.search(r"Optional helper source revision: `([0-9a-f]{40})`", text)
     location = re.search(r"authenticated RI checkout `([^`]+)`", text)
     require(selected is not None and location is not None, "Selected helper binding is absent")
-    return {"repository": location.group(1), "revision": selected.group(1)}
+    result = {"repository": location.group(1), "revision": selected.group(1)}
+    environment = re.search(r"helper environment is `([^`]+)`", text)
+    if environment is not None:
+        result["environment"] = environment.group(1)
+    return result
+
+
+def helper_runtime(selection):
+    """Authenticate the request-selected runtime before a helper can be imported."""
+    environment = Path(selection["environment"])
+    native._no_symlink_components(environment)
+    require(environment.is_absolute() and environment.is_dir()
+            and environment.resolve(strict=True) == environment, "Helper environment must be canonical")
+    spec = importlib.util.spec_from_file_location("nutrition_selected_helper_setup", ROOT / "scripts/setup-ri-helpers.py")
+    setup = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(setup)
+    lock_path = ROOT / "engineering/tooling/ri-helper-lock.json"
+    lock = read(lock_path)
+    require(selection["revision"] == lock["revision"], "Helper runtime revision differs from selected lock")
+    source = native._canonical_root(selection["repository"])
+    setup.verify(source, environment, lock)
+    return environment, lock, [ROOT / "scripts/setup-ri-helpers.py", lock_path,
+                               environment / "nutrition-helper-runtime.json", environment / "pyvenv.cfg"]
 
 
 def selected_ri(selection=None):
-    """Authenticate explicitly selected helper source; no installation occurs."""
+    """Authenticate selected full helper closure and runtime; legacy selections stay explicit."""
     selection = map_selection() if selection is None else selection
-    require(isinstance(selection, dict) and set(selection) == {"repository", "revision"}
+    require(isinstance(selection, dict) and set(selection) in
+            ({"repository", "revision"}, {"repository", "revision", "environment"})
             and isinstance(selection["revision"], str)
             and re.fullmatch("[0-9a-f]{40}", selection["revision"]) is not None, "Invalid selected RI source")
+    lock_path = ROOT / "engineering/tooling/ri-helper-lock.json"
+    if lock_path.is_file() and selection["revision"] == read(lock_path)["revision"]:
+        require("environment" in selection, "Selected helper runtime binding is required")
     source = native._canonical_root(selection["repository"])
     require(git(source, "rev-parse", "HEAD") == selection["revision"], "RI source HEAD differs from selection")
     require(not git(source, "status", "--porcelain"), "RI source is dirty")
+    paths = []
+    if "environment" in selection:
+        environment, lock, runtime_paths = helper_runtime(selection)
+        require(Path(sys.prefix).resolve() == environment, "Selected helper interpreter was not activated")
+        paths.extend(runtime_paths)
+        paths.extend(source / name for name in lock["source_files"])
+        paths.append(source / "pyproject.toml")
     sys.path.insert(0, str(source / "src"))
     module = importlib.import_module("repository_intelligence.worker_execution")
-    paths = []
     for name in ("adoption", "worker_execution", "adapter_conformance"):
         item = importlib.import_module("repository_intelligence." + name)
         path = Path(item.__file__).resolve()
         require(path == source / "src/repository_intelligence" / (name + ".py"), "Substituted helper import")
         expected = native._git(source, "show", selection["revision"] + ":" + str(path.relative_to(source)))
         require(path.read_bytes() == expected, "Helper bytes differ from selected source")
-        paths.append(path)
+        if path not in paths:
+            paths.append(path)
     return module, paths
 
 
@@ -489,6 +523,15 @@ def main(argv=None) -> int:
         if args.evidence is not None:
             args.evidence = args.evidence.absolute()
         native._no_symlink_components(args.request)
+        selected = read(args.request).get("ri_source", {})
+        if args.mode in ("prepare", "run") and isinstance(selected, dict) and "environment" in selected:
+            environment, _, _ = helper_runtime(selected)
+            if Path(sys.prefix).resolve() != environment:
+                child_env = {key: value for key, value in os.environ.items()
+                             if key not in ("PYTHONPATH", "PYTHONHOME")}
+                child_env["PYTHONDONTWRITEBYTECODE"] = "1"
+                return subprocess.call([str(environment / "bin/python"), str(SCRIPT),
+                                        *(sys.argv[1:] if argv is None else argv)], env=child_env)
         if args.mode == "create-workspace":
             require(args.evidence is not None, "Evidence directory required")
             result = create_workspace(args.request, args.evidence)

@@ -316,5 +316,30 @@
       "destination_sha256": "30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700",
       "relocations": []
     }
-  ]
+  ],
+  "optional_queue_resources": [
+    {
+      "source": "docs/skill-templates/capsule-queue/SKILL.md",
+      "blob": "2e01cf01bb0830e5addc4d46c1257f737793e695",
+      "bytes": 8811,
+      "sha256": "ed9e3a3ebfe7c4639f58b6e2595a782ca577d0ba07a1175b6dbabc29c61d3f39"
+    },
+    {
+      "source": "docs/skill-templates/capsule-queue/references/project-procedure.md",
+      "blob": "47c37667eff63c02ac0b842ce60f3c6c8de8b5c2",
+      "bytes": 1850,
+      "sha256": "c443911ce761d3d40694a1d16cd7043517e1892946a7eb65b164b6662f6a4280"
+    },
+    {
+      "source": "docs/skill-templates/capsule-queue/scripts/run_and_queue.py",
+      "blob": "cf5655ad3f5a66fa46831a06701aba295819bbaf",
+      "bytes": 13857,
+      "sha256": "9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191"
+    }
+  ],
+  "queue_redirect": {
+    "path": "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md",
+    "bytes": 2029,
+    "sha256": "03fccf417b93855dcd3e795cbe046c6bcf403c85407bf497df1cf99c88d544f3"
+  }
 }

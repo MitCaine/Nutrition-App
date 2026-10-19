@@ -48,3 +48,30 @@ def test_engineering_duplicate_heading_refuses(tmp_path):
     path.write_text(record() + '\n## Engineering decisions\nContradictory second decision.\n')
     with pytest.raises(task.TaskControllerError, match='TASK_RECORD_INVALID'):
         task.command_validate_record(argparse.Namespace(task_record=path, route='engineering', repo_root=ROOT))
+
+
+def test_engineering_prepare_persists_record_identity_and_preserves_existing_checkpoint(tmp_path, monkeypatch):
+    import hashlib
+    import json
+    specification = tmp_path / 'plan.md'
+    specification.write_text(record())
+    args = task.build_parser().parse_args(['--repo-root', str(ROOT), '--state-dir', str(tmp_path / 'state'),
+        'prepare', '422', '--task-id', 'GH-422', '--repository', 'MitCaine/Nutrition-App',
+        '--route', 'engineering', '--task-record', str(specification), '--base-sha', 'a' * 40,
+        '--allowed-path', 'scripts/worker_execution.py', '--profile', 'repository'])
+    # Fixture transport supplies the authenticated main; the real preparation,
+    # payload, lock, transaction and durable checkpoint code are exercised.
+    monkeypatch.setattr(task, 'git', lambda *a, **kw: 'a' * 40)
+    monkeypatch.setattr(task, 'require_trusted_main_controller', lambda *a, **kw: None)
+    assert task.command_prepare(args) == 0
+    checkpoint = tmp_path / 'state/issue-422.json'
+    before = checkpoint.read_bytes()
+    state = json.loads(before)
+    assert state['phase'] == 'PREPARED' and state['authorization']['base_sha'] == 'a' * 40
+    assert state['execution']['preparation_record'] == {
+        'route': 'engineering', 'path': str(specification),
+        'sha256': hashlib.sha256(specification.read_bytes()).hexdigest(),
+    }
+    with pytest.raises(task.TaskControllerError, match='TASK_STATE_EXISTS_PRESERVE_HISTORY'):
+        task.command_prepare(args)
+    assert checkpoint.read_bytes() == before

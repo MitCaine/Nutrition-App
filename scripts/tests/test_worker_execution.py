@@ -70,6 +70,9 @@ def case(tmp_path):
     selected_map = (ROOT / "docs/local_project_map.md").read_text()
     source = dict(repository=re.search(r"authenticated RI checkout `([^`]+)`", selected_map).group(1),
                   revision=re.search(r"Optional helper source revision: `([0-9a-f]{40})`", selected_map).group(1))
+    runtime = re.search(r"helper environment is `([^`]+)`", selected_map)
+    if runtime is not None:
+        source["environment"] = runtime.group(1)
     request = dict(assignment="fixture", attempt="fixture", workspace=str(workspace), ri_source=source,
                    protected_repository=str(protected), base=git(workspace, "rev-parse", "HEAD"),
                    inputs=[dict(path=str(handoff), sha256=sha(handoff))], allowed_changes=["tracked.txt"],
@@ -279,7 +282,11 @@ def test_summary_pass_text_does_not_override_actual_required_failure(case, adapt
 def shared(adapter):
     if not Path(adapter.map_selection()["repository"]).is_dir():
         pytest.skip("Selected private RI source is not provisioned on this host")
-    adapter.selected_ri()  # A present but wrong/dirty/substituted source must fail.
+    selected = adapter.map_selection()
+    if "environment" in selected:
+        adapter.helper_runtime(selected)  # A present but substituted runtime must fail.
+    else:
+        adapter.selected_ri()
 
 
 def test_public_prepare_capture_native_runner_generated_return_and_retry(case, shared):
@@ -472,8 +479,86 @@ def test_real_map_helper_and_guard_are_jointly_loadable(adapter):
         pytest.skip("Private helper/guard sources are not provisioned on this host")
     assert Path(helper["repository"]) != Path(location)
     heads = [git(Path(p), "rev-parse", "HEAD") for p in (helper["repository"], location)]
-    module, paths = adapter.selected_ri()
+    if "environment" in helper:
+        environment, _, _ = adapter.helper_runtime(helper)
+        code = "import sys; sys.path.insert(0, sys.argv[1]); import worker_execution as w; m, p = w.selected_ri(); assert str(m.__file__) in map(str, p); print(m.__file__)"
+        observed = subprocess.check_output([str(environment / "bin/python"), "-c", code, str(ROOT / "scripts")], text=True)
+        assert observed.strip() == str(Path(helper["repository"]) / "src/repository_intelligence/worker_execution.py")
+    else:
+        module, paths = adapter.selected_ri()
+        assert str(module.__file__) == str(paths[1])
     selected = guard.selected_guard()
-    assert str(module.__file__) == str(paths[1])
     assert Path(selected.__file__).is_relative_to(location)
     assert heads == [git(Path(p), "rev-parse", "HEAD") for p in (helper["repository"], location)]
+
+
+def test_public_binding_records_selected_helper_executable_and_receipt(case, shared):
+    selected = case['request']['ri_source']
+    if 'environment' not in selected:
+        pytest.skip('Historical selection has no isolated-runtime binding')
+    result = public(case, 'prepare')
+    assert result.returncode == 0, result.stdout + result.stderr
+    prepared = json.loads((case['evidence'] / 'fixture/PREPARED.json').read_text())
+    environment = Path(selected['environment'])
+    assert not (environment / 'bin/python').is_symlink()
+    assert {row['path'] for row in prepared['operations']} == {str(environment / 'bin/python')}
+    assert str(environment / 'nutrition-helper-runtime.json') in {row['path'] for row in prepared['selected_inputs']}
+
+
+def _runtime_fixture(case):
+    """Disposable exact consumer copy and runtime clone; never mutate shared inputs."""
+    selected = case['request']['ri_source']
+    if 'environment' not in selected or not Path(selected['environment']).is_dir():
+        pytest.skip('Selected private helper runtime is not provisioned on this host')
+    original = Path(selected['environment'])
+    environment = case['root'] / 'private-helper'
+    shutil.copytree(original, environment)
+    receipt_path = environment / 'nutrition-helper-runtime.json'
+    receipt = json.loads(receipt_path.read_text())
+    def relocate(value):
+        if isinstance(value, str):
+            return value.replace(str(original), str(environment))
+        if isinstance(value, dict):
+            return {relocate(key): relocate(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [relocate(item) for item in value]
+        return value
+    write(receipt_path, relocate(receipt))
+    controller = case['root'] / 'controller'
+    for name in ('scripts/worker_execution.py', 'scripts/setup-ri-helpers.py', 'scripts/lib/review_commands.py',
+                 'scripts/lib/task_output_cleanup.py', 'engineering/tooling/ri-helper-lock.json',
+                 'docs/local_project_map.md', *('scripts/' + name for name in ('run-review.sh', 'lib/common.sh'))):
+        target = controller / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, target)
+    local_map = controller / 'docs/local_project_map.md'
+    local_map.write_text(local_map.read_text().replace(str(original), str(environment)))
+    case['request']['ri_source']['environment'] = str(environment)
+    write(case['path'], case['request'])
+    def call(mode):
+        return subprocess.run([sys.executable, str(controller / 'scripts/worker_execution.py'), mode,
+                               '--request', str(case['path']), '--evidence', str(case['evidence'])],
+                              cwd=controller, env=case['environment'], capture_output=True, text=True, timeout=30)
+    return environment, call
+
+
+@pytest.mark.parametrize('fault', ['interpreter', 'dependency', 'installed-helper'])
+def test_public_runtime_drift_refuses_before_capture(case, fault):
+    environment, call = _runtime_fixture(case)
+    prepared = call('prepare')
+    assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+    receipt = json.loads((environment / 'nutrition-helper-runtime.json').read_text())
+    if fault == 'interpreter':
+        target = environment / 'bin/python'
+    elif fault == 'dependency':
+        target = Path(next(name for name in receipt['observation']['files'] if name.endswith('.so')))
+    else:
+        target = Path(receipt['observation']['module'])
+    with target.open('ab') as stream:
+        stream.write(b'\n# drift\n')
+    (case['workspace'] / 'tracked.txt').write_text('after\n')
+    failed = call('run')
+    assert failed.returncode != 0
+    assert ('changed' in failed.stdout or 'returned non-zero' in failed.stdout), failed.stdout + failed.stderr
+    assert git(case['workspace'], 'rev-parse', 'HEAD') == case['request']['base']
+    assert not (case['evidence'] / 'fixture/LAUNCHED').exists()
