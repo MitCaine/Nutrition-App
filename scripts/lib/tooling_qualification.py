@@ -14,6 +14,7 @@ EXACT = (".python-version", ".github/workflows/trusted-qualification.yml", ".git
 TEST_FILES = tuple("scripts/tests/" + name + ".py" for name in (
     "test_task_authorization", "test_path_scope", "test_task_launcher",
     "test_standard_workflow", "test_engineering_workflow", "test_ri_helper_setup",
+    "test_worker_execution", "test_review_commands",
     "test_output_lifecycle",
     "test_task_closeout", "test_ri_consumer", "test_native_process_lifecycle",
     "test_update_ri_lock", "test_ios_native_qualification", "test_tooling_qualification", "test_backend_qualification",

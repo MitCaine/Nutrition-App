@@ -2039,6 +2039,245 @@ def resolve_current_authorization(
     return resolved
 
 
+def _engineering_reference(value: Any, label: str) -> dict[str, str]:
+    if not isinstance(value, dict) or set(value) != {"path", "sha256"}:
+        raise TaskControllerError(f"ENGINEERING_{label.upper()}_REFERENCE_INVALID")
+    path_value = value.get("path")
+    digest = value.get("sha256")
+    if (not isinstance(path_value, str) or not Path(path_value).is_absolute()
+            or not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None):
+        raise TaskControllerError(f"ENGINEERING_{label.upper()}_REFERENCE_INVALID")
+    path = Path(path_value)
+    if path.is_symlink() or not path.is_file() or path.resolve(strict=True) != path:
+        raise TaskControllerError(f"ENGINEERING_{label.upper()}_REFERENCE_UNAVAILABLE")
+    try:
+        observed = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as error:
+        raise TaskControllerError(f"ENGINEERING_{label.upper()}_REFERENCE_UNAVAILABLE") from error
+    if observed != digest:
+        raise TaskControllerError(f"ENGINEERING_{label.upper()}_REFERENCE_CHANGED")
+    return {"path": str(path), "sha256": observed}
+
+
+def _engineering_git(repo: Path, *args: str) -> str:
+    completed = run(["git", "--no-replace-objects", "-C", str(repo), *args], cwd=repo)
+    if completed.returncode:
+        raise TaskControllerError("ENGINEERING_SOURCE_IDENTITY_INVALID")
+    return completed.stdout.strip()
+
+
+def inspect_engineering_assignment(
+    state: dict[str, Any],
+    request: dict[str, Any],
+    *,
+    repo_root: Path | None = None,
+    authorization_transport: QualificationTransport | None = None,
+) -> dict[str, Any]:
+    """Read-only mechanical check of one controller-selected engineering assignment."""
+    if not isinstance(state, dict) or not isinstance(request, dict):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_INPUT_INVALID")
+    if state.get("phase") != "AUTHORIZED":
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_REQUIRES_AUTHORIZED_STATE")
+    if workflow_mode_for_state(state) != "standard":
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_REQUIRES_STANDARD_WORKFLOW")
+
+    issue_number = state.get("issue_number")
+    task_id = state.get("task_id")
+    authorization_state = state.get("authorization")
+    if (type(issue_number) is not int or not isinstance(task_id, str) or not task_id.strip()
+            or not isinstance(authorization_state, dict)):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_OWNER_IDENTITY_INVALID")
+    if (request.get("issue_number") != issue_number or request.get("task_id") != task_id
+            or request.get("authorization_identity_sha256") != authorization_state.get("identity_sha256")):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_OWNER_IDENTITY_MISMATCH")
+
+    transport = authorization_transport or GhQualificationTransport()
+    authorization = resolve_current_authorization(state, transport)
+    if (authorization.identity_sha256 != authorization_state.get("identity_sha256")
+            or request.get("authorization_identity_sha256") != authorization.identity_sha256):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_OWNER_AUTHORIZATION_CHANGED")
+
+    execution = state.get("execution")
+    assignment = execution.get("engineering_assignment") if isinstance(execution, dict) else None
+    expected_fields = {"assignment", "attempt", "base", "integration_base", "allowed_changes",
+                       "profiles", "specification", "selection_sha256", "planning_review", "predecessor"}
+    if not isinstance(assignment, dict) or set(assignment) != expected_fields:
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_PLAN_INCOMPLETE")
+    if request.get("engineering_assignment") != assignment:
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_PLAN_CHANGED")
+    for key in ("assignment", "attempt", "base", "integration_base", "allowed_changes", "profiles"):
+        if request.get(key) != assignment.get(key):
+            raise TaskControllerError("ENGINEERING_ASSIGNMENT_REQUEST_MISMATCH: " + key)
+
+    selected_profiles = assignment.get("profiles")
+    allowed_changes = assignment.get("allowed_changes")
+    if (not isinstance(selected_profiles, list) or not selected_profiles
+            or not all(isinstance(item, str) and item for item in selected_profiles)
+            or not isinstance(allowed_changes, list) or not allowed_changes
+            or not all(isinstance(item, str) and item for item in allowed_changes)):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_SCOPE_INVALID")
+    if (len(selected_profiles) != len(set(selected_profiles))
+            or len(allowed_changes) != len(set(allowed_changes))):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_SCOPE_INVALID")
+    if request.get("profiles") != selected_profiles:
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_PROFILE_SELECTION_MISMATCH")
+    try:
+        for path in allowed_changes:
+            path_scope.validate_path(path, authorization.schema_version)
+            if not path_scope.permitted(path, authorization.allowed_paths,
+                                        authorization.forbidden_paths, authorization.schema_version):
+                raise TaskControllerError("ENGINEERING_ASSIGNMENT_PATH_OUTSIDE_OWNER_SCOPE: " + path)
+        required_profiles = required_profiles_for_paths(allowed_changes)
+    except (path_scope.PathPatternError, TypeError, ValueError) as error:
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_SCOPE_INVALID") from error
+    if (not required_profiles.issubset(set(selected_profiles))
+            or not set(selected_profiles).issubset(set(authorization.profiles))):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_PROFILE_FLOOR_REDUCED")
+
+    assignment_id = assignment.get("assignment")
+    attempt_id = assignment.get("attempt")
+    base = assignment.get("base")
+    integration_base = assignment.get("integration_base")
+    commit_pattern = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+    if (not isinstance(assignment_id, str) or not assignment_id.strip()
+            or not isinstance(attempt_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", attempt_id)
+            or not isinstance(base, str) or not commit_pattern.fullmatch(base)
+            or not isinstance(integration_base, str) or not commit_pattern.fullmatch(integration_base)
+            or integration_base != authorization.base_sha):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_SOURCE_BINDING_INVALID")
+
+    specification = _engineering_reference(assignment.get("specification"), "specification")
+    plan = assignment.get("planning_review")
+    plan_fields = {"decision", "reviewer", "report", "approval", "specification", "selection_sha256"}
+    if not isinstance(plan, dict) or set(plan) != plan_fields or plan.get("decision") != "approved":
+        raise TaskControllerError("ENGINEERING_PLANNING_REVIEW_NOT_APPROVED")
+    if (not isinstance(plan.get("reviewer"), str) or not plan["reviewer"].strip()
+            or plan.get("specification") != assignment["specification"]
+            or not isinstance(assignment.get("selection_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", assignment["selection_sha256"]) is None
+            or plan.get("selection_sha256") != assignment["selection_sha256"]):
+        raise TaskControllerError("ENGINEERING_PLANNING_REVIEW_BINDING_MISMATCH")
+    planning_report = _engineering_reference(plan.get("report"), "planning_report")
+    approval_reference = _engineering_reference(plan.get("approval"), "planning_approval")
+    if _engineering_reference(plan.get("specification"), "planning_specification") != specification:
+        raise TaskControllerError("ENGINEERING_PLANNING_SPECIFICATION_MISMATCH")
+    try:
+        approval = json.loads(Path(approval_reference["path"]).read_text(encoding="utf-8"),
+                             object_pairs_hook=_reject_duplicate_json_keys)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+        raise TaskControllerError("ENGINEERING_PLANNING_APPROVAL_INVALID") from error
+    if (not isinstance(approval, dict)
+            or set(approval) != {"decision", "specification", "selection_sha256", "reviewer", "reviewer_report"}
+            or approval.get("decision") != "approved"
+            or approval.get("specification") != specification
+            or approval.get("selection_sha256") != assignment["selection_sha256"]
+            or approval.get("reviewer") != plan["reviewer"]
+            or _engineering_reference(approval.get("reviewer_report"), "planning_reviewer_report") != planning_report):
+        raise TaskControllerError("ENGINEERING_PLANNING_APPROVAL_BINDING_MISMATCH")
+
+    accepted = request.get("accepted_engineering")
+    if (not isinstance(accepted, dict)
+            or set(accepted) != {"path", "sha256", "phase", "route", "selection", "approval"}
+            or accepted.get("path") != specification["path"]
+            or accepted.get("sha256") != specification["sha256"]
+            or accepted.get("phase") != "implementation"
+            or accepted.get("route") != "engineering"
+            or accepted.get("selection") != ["engineering"]
+            or accepted.get("approval") != approval_reference):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_ACCEPTED_BINDING_MISMATCH")
+
+    predecessor = assignment.get("predecessor")
+    if not isinstance(predecessor, dict) or set(predecessor) != {"candidate", "decision", "review", "due_evidence"}:
+        raise TaskControllerError("ENGINEERING_PREDECESSOR_INCOMPLETE")
+    predecessor_candidate = predecessor.get("candidate")
+    review = predecessor.get("review")
+    if (not isinstance(predecessor_candidate, str) or not commit_pattern.fullmatch(predecessor_candidate)
+            or predecessor.get("decision") != "accepted"
+            or not isinstance(review, dict) or set(review) != {"decision", "reviewed_candidate", "report"}
+            or review.get("decision") != "approved"
+            or review.get("reviewed_candidate") != predecessor_candidate):
+        raise TaskControllerError("ENGINEERING_PREDECESSOR_NOT_ACCEPTED")
+    predecessor_report = _engineering_reference(review.get("report"), "predecessor_review")
+    due_evidence = predecessor.get("due_evidence")
+    if (not isinstance(due_evidence, list) or not due_evidence or len(due_evidence) > 128):
+        raise TaskControllerError("ENGINEERING_PREDECESSOR_DUE_EVIDENCE_MISSING")
+    due_refs = []
+    for item in due_evidence:
+        due_refs.append(_engineering_reference(item, "predecessor_due_evidence"))
+    if len({item["path"] for item in due_refs}) != len(due_refs):
+        raise TaskControllerError("ENGINEERING_PREDECESSOR_DUE_EVIDENCE_DUPLICATED")
+
+    repo = resolve_repo_root(repo_root)
+    selected_workspace = request.get("workspace")
+    if (not isinstance(selected_workspace, str) or not Path(selected_workspace).is_absolute()
+            or Path(selected_workspace).resolve(strict=True) != Path(selected_workspace)
+            or Path(selected_workspace) != repo):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_WORKSPACE_MISMATCH")
+    if _engineering_git(repo, "rev-parse", "HEAD") != base:
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_BASE_MOVED")
+    if _engineering_git(repo, "status", "--porcelain=v1", "--untracked-files=all"):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_WORKSPACE_DIRTY")
+    flags = _engineering_git(repo, "ls-files", "-v", "-z").split("\x00")
+    if any(item and (item[:1].islower() or item[:1] == "S") for item in flags):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_HIDDEN_INDEX_FLAGS")
+    if _engineering_git(repo, "rev-parse", "--verify", base + "^{commit}") != base:
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_BASE_INVALID")
+    if _engineering_git(repo, "rev-parse", "--verify", predecessor_candidate + "^{commit}") != predecessor_candidate:
+        raise TaskControllerError("ENGINEERING_PREDECESSOR_CANDIDATE_INVALID")
+    specification_path = Path(specification["path"])
+    try:
+        specification_relative = specification_path.relative_to(repo)
+    except ValueError:
+        parts = specification_path.parts
+        if len(parts) < 3 or parts[-3:-1] != ("engineering", "tasks"):
+            raise TaskControllerError("ENGINEERING_PLANNING_SPECIFICATION_PATH_INVALID")
+        specification_relative = Path(*parts[-3:])
+    repository_specification = repo / specification_relative
+    if (repository_specification.is_symlink() or not repository_specification.is_file()
+            or hashlib.sha256(repository_specification.read_bytes()).hexdigest() != specification["sha256"]):
+        raise TaskControllerError("ENGINEERING_PLANNING_SPECIFICATION_SOURCE_MISMATCH")
+    for commit in (integration_base, predecessor_candidate, base):
+        result = run(["git", "--no-replace-objects", "-C", str(repo), "merge-base", "--is-ancestor",
+                      integration_base, commit], cwd=repo)
+        if result.returncode:
+            raise TaskControllerError("ENGINEERING_ASSIGNMENT_BASELINE_LINEAGE_INVALID")
+    ancestor = run(["git", "--no-replace-objects", "-C", str(repo), "merge-base", "--is-ancestor",
+                    predecessor_candidate, base], cwd=repo)
+    if ancestor.returncode:
+        raise TaskControllerError("ENGINEERING_PREDECESSOR_MOVED")
+    if predecessor_candidate != base:
+        commits = _engineering_git(repo, "rev-list", "--reverse", predecessor_candidate + ".." + base).splitlines()
+        previous = predecessor_candidate
+        for commit in commits:
+            parents = _engineering_git(repo, "rev-list", "--parents", "-n", "1", commit).split()
+            if len(parents) != 2 or parents[1] != previous:
+                raise TaskControllerError("ENGINEERING_ASSIGNMENT_HISTORY_NOT_LINEAR")
+            changed = _engineering_git(repo, "diff-tree", "--no-commit-id", "--name-status", "-r",
+                                       "--find-renames", parents[1], commit).splitlines()
+            if not changed or any(row.split("\t") != ["M", specification_relative.as_posix()]
+                                  for row in changed):
+                raise TaskControllerError("ENGINEERING_ASSIGNMENT_HISTORY_OUT_OF_SCOPE")
+            previous = commit
+        if previous != base:
+            raise TaskControllerError("ENGINEERING_ASSIGNMENT_HISTORY_INCOMPLETE")
+
+    refs = [specification, planning_report, approval_reference, predecessor_report, *due_refs]
+    unique_refs = {item["path"]: item for item in refs}
+    return {
+        "result": "PASS",
+        "issue_number": issue_number,
+        "task_id": task_id,
+        "assignment": assignment_id,
+        "attempt": attempt_id,
+        "base": base,
+        "integration_base": integration_base,
+        "authorization_identity_sha256": authorization.identity_sha256,
+        "selection_sha256": assignment["selection_sha256"],
+        "references": [unique_refs[name] for name in sorted(unique_refs)],
+        "limits": "Mechanical read-only identity, scope and sequence checks only; approval authority and semantic review remain controller-authenticated.",
+    }
+
+
 def _workflow_title(
     state: dict[str, Any],
     dispatch_nonce: str,
@@ -6186,6 +6425,37 @@ def command_validate_record(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_inspect_engineering_assignment(args: argparse.Namespace) -> int:
+    if type(args.issue_number) is not int or args.issue_number < 1:
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_ISSUE_INVALID")
+    path = state_path(args.state_dir, args.issue_number)
+    if path.is_symlink() or not path.is_file():
+        raise TaskControllerError("TASK_STATE_MISSING_OR_INVALID")
+    request_path = Path(args.request).expanduser()
+    if (request_path.is_symlink() or not request_path.is_file()
+            or request_path.resolve(strict=True) != request_path):
+        raise TaskControllerError("ENGINEERING_ASSIGNMENT_REQUEST_INVALID")
+    with checkpoint_lock(args.state_dir, args.issue_number):
+        try:
+            raw = path.read_bytes()
+            state = json.loads(raw.decode("utf-8"), object_pairs_hook=_reject_duplicate_json_keys)
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+            raise TaskControllerError("TASK_STATE_INVALID") from error
+        if not isinstance(state, dict):
+            raise TaskControllerError("TASK_STATE_INVALID")
+        result = inspect_engineering_assignment(
+            state,
+            json.loads(request_path.read_text(encoding="utf-8"),
+                       object_pairs_hook=_reject_duplicate_json_keys),
+            repo_root=args.repo_root,
+            authorization_transport=getattr(args, "authorization_transport", None),
+        )
+        if path.read_bytes() != raw:
+            raise TaskControllerError("ENGINEERING_INSPECTOR_CHANGED_CHECKPOINT")
+    emit(result)
+    return 0
+
+
 def _output_helper_selection(repo: Path) -> tuple[Path, str]:
     mapping = (repo / "docs/local_project_map.md").read_text(encoding="utf-8")
     match = re.search(r"(?ms)^### Optional task-output cleanup helper\s*\n(?P<body>.*?)(?=^### |^## |\Z)", mapping)
@@ -8152,6 +8422,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Selected route (default: normal); maintenance must be explicit.",
     )
     validate_record.set_defaults(handler=command_validate_record)
+
+    inspect_assignment = subparsers.add_parser(
+        "inspect-engineering-assignment",
+        help="Read-only inspection of a selected engineering assignment before generation or dispatch.",
+    )
+    inspect_assignment.add_argument("issue_number", type=int)
+    inspect_assignment.add_argument("--request", type=Path, required=True,
+                                    help="Controller-selected implementation seed request.")
+    inspect_assignment.set_defaults(handler=command_inspect_engineering_assignment)
 
     prepare = subparsers.add_parser(
         "prepare"

@@ -8,6 +8,7 @@ import csv
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -105,6 +106,41 @@ def _expect_keys(value: Any, expected: set[str], label: str) -> dict[str, Any]:
             details.append("unsupported " + ", ".join(unknown))
         raise RequestError(f"{label} has " + "; ".join(details))
     return value
+
+
+def _validate_bounded_metadata(value: Any, label: str, *, depth: int = 0,
+                               budget: list[int] | None = None) -> None:
+    """Accept bounded JSON facts without interpreting them as executable input."""
+    if budget is None:
+        budget = [0]
+    budget[0] += 1
+    if budget[0] > 8192 or depth > 24:
+        raise RequestError(f"{label} exceeds its structural limit")
+    if value is None or type(value) in (bool, int):
+        return
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise RequestError(f"{label} contains a non-finite number")
+        return
+    if isinstance(value, str):
+        if len(value.encode("utf-8")) > MAX_FIELD_BYTES or "\0" in value:
+            raise RequestError(f"{label} contains an oversized string")
+        return
+    if isinstance(value, list):
+        if len(value) > 128:
+            raise RequestError(f"{label} contains too many array entries")
+        for item in value:
+            _validate_bounded_metadata(item, label, depth=depth + 1, budget=budget)
+        return
+    if isinstance(value, dict):
+        if len(value) > 128:
+            raise RequestError(f"{label} contains too many object fields")
+        for key, item in value.items():
+            if not isinstance(key, str) or not key or len(key.encode("utf-8")) > MAX_FIELD_BYTES or "\0" in key:
+                raise RequestError(f"{label} contains an invalid object key")
+            _validate_bounded_metadata(item, label, depth=depth + 1, budget=budget)
+        return
+    raise RequestError(f"{label} must contain JSON values only")
 
 
 def _safe_value(value: Any, label: str, *, allow_empty: bool, limit: int = MAX_FIELD_BYTES) -> str:
@@ -226,11 +262,29 @@ def _validate_env(value: Any, label: str) -> dict[str, str]:
 
 
 def _validate_request(request: Any, root: Path, expected_head: str, attempt: str) -> dict[str, Any]:
-    value = _expect_keys(
-        request,
-        {"schema_version", "repository", "expected_head", "attempt", "steps"},
-        "request",
-    )
+    if not isinstance(request, dict):
+        raise RequestError("request must be an object")
+    expected_keys = {"schema_version", "repository", "expected_head", "attempt", "steps"}
+    actual_keys = set(request)
+    missing = sorted(expected_keys - actual_keys)
+    unknown = sorted(actual_keys - expected_keys - {"accepted_obligations"})
+    if missing or unknown:
+        details = []
+        if missing:
+            details.append("missing " + ", ".join(missing))
+        if unknown:
+            details.append("unsupported " + ", ".join(unknown))
+        raise RequestError("request has " + "; ".join(details))
+    value = request
+    if "accepted_obligations" in value:
+        if not isinstance(value["accepted_obligations"], dict):
+            raise RequestError("accepted_obligations must be an object")
+        _validate_bounded_metadata(value["accepted_obligations"], "accepted_obligations")
+        try:
+            if len(_json_bytes(value["accepted_obligations"])) > MAX_REQUEST_BYTES:
+                raise RequestError("accepted_obligations exceeds its byte limit")
+        except (TypeError, ValueError, RecursionError) as error:
+            raise RequestError("accepted_obligations must be bounded JSON data") from error
     if type(value["schema_version"]) is not int or value["schema_version"] != SCHEMA_VERSION:
         raise RequestError(f"schema_version must be {SCHEMA_VERSION}")
     if value["repository"] != str(root):
@@ -316,13 +370,18 @@ def _validate_request(request: Any, root: Path, expected_head: str, attempt: str
         raise RequestError("request argv data exceeds its total byte limit")
     if total_env_bytes > MAX_TOTAL_ENV_BYTES:
         raise RequestError("request environment data exceeds its total byte limit")
-    return {
+    normalized = {
         "schema_version": SCHEMA_VERSION,
         "repository": str(root),
         "expected_head": expected_head,
         "attempt": attempt,
         "steps": steps,
     }
+    if "accepted_obligations" in value:
+        # Preserve the exact owning facts in the normalized request while the
+        # separately retained raw request identity continues to bind its bytes.
+        normalized["accepted_obligations"] = value["accepted_obligations"]
+    return normalized
 
 
 def export_execution_definition(definition: dict[str, Any], root: Path, expected_head: str,

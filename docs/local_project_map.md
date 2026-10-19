@@ -66,6 +66,19 @@ Selected helper subprocesses authenticate exact source closure, interpreter and 
 
 Use the selected `section_reader`, `adoption`, `worker_execution` and `obligation_reconciliation` interfaces only through their authenticated source/environment bindings and the [workflow-tools contract](../engineering/workflow/shared/workflow-tools.md). New accepted capsule/engineering derivation requires the declared Markdown parser stack. No manual dependency inventory, substituted parser, current-development environment or silent operation fallback is selected.
 
+The additive accepted owning-definition path uses the same Nutrition wrapper: create the detached
+workspace from the controller seed, then run `generate --request SEED --definition DEFINITION
+--output GENERATED --evidence EVIDENCE`, followed by one `prepare`, the authorized `run`, and
+read-only `intake` over the same generated request and `RETURN.json`. The definition owns the exact
+native check request, original input identities and capsule/engineering selection; its exclusive
+projection derives case selectors from those actual command IDs. Generation and every later public
+operation authenticate the selected RI source and installed runtime before using the helper. The
+controller's `task inspect-engineering-assignment ISSUE --request SEED` is a read-only checkpoint,
+scope, profile and predecessor-sequence check before dispatch; it does not create authority or
+replace substantive controller review. Until the controller completes the selected public pilot and
+installed verification, bootstrap assignments continue through their separately authenticated
+existing route, including this implementation assignment's frozen standalone runner.
+
 ### Optional task-output cleanup helper
 
 Optional task-output cleanup helper revision: `949b838809bcddb01e2cbe161faed6f6f1f705fe`

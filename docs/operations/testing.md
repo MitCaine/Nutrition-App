@@ -213,7 +213,7 @@ selects controller-provisioned revision-specific source checkouts; loaders still
 
 ### Prepared worker execution binding
 
-For an assignment explicitly selecting the map's optional Nutrition binding, the controller supplies
+For an existing explicit request selecting the map's optional Nutrition binding, the controller supplies
 an exact request and a frozen location of `scripts/worker-execution` outside the worker's edit scope.
 It runs `./scripts/worker-execution prepare --request /absolute/execution.json --evidence
 /absolute/private/evidence`; the assigned worker makes only its authorized edits, then uses the same
@@ -282,6 +282,49 @@ incomplete or stale required evidence cannot become review-ready. `NUTRITION_RES
 shared `RETURN.json` are generated from actual operations; workers relay those authoritative paths
 without rebuilding facts from plain logs. Native exclusive per-gate outputs and bundles remain the
 logger. Interrupted/failed launch markers and prior attempts are retained, with no blind retry.
+
+### Accepted owning-definition execution
+
+The additive accepted-task route uses the same `scripts/worker-execution` entrypoint. The controller
+creates the detached workspace from the seed, then selects one external owning definition containing
+exactly `check_request`, `inputs`, and `engineering`:
+
+```bash
+./scripts/worker-execution create-workspace --request /absolute/SEED.json --evidence /absolute/EVIDENCE
+./scripts/worker-execution generate --request /absolute/SEED.json --definition /absolute/DEFINITION.json \
+  --output /absolute/EVIDENCE/GENERATED.json --evidence /absolute/EVIDENCE
+./scripts/worker-execution prepare --request /absolute/EVIDENCE/GENERATED.json --evidence /absolute/EVIDENCE
+# After the one authorized implementation edit:
+./scripts/worker-execution run --request /absolute/EVIDENCE/GENERATED.json --evidence /absolute/EVIDENCE
+./scripts/worker-execution intake --request /absolute/EVIDENCE/GENERATED.json --evidence /absolute/EVIDENCE
+```
+
+The seed selects exactly one accepted capsule or engineering task, phase and route, source,
+workspace, allowed paths, environment and capture authority. It omits the generated input list,
+check request, native selector and required-outcome fields. `generate` authenticates the raw
+definition and its input hashes, derives native selectors from the exact validated command IDs,
+and exclusively writes both the frozen generated request and its owning projection in the existing
+evidence directory. The generated request binds the original definition, accepted source, planning
+approval and report, current wrapper/tools, selected RI source closure and installed runtime.
+Generation does not create a PREPARED attempt. Preparation creates that record once; repeat
+preparation or execution refuses over retained evidence.
+
+The authored native request may contain a bounded JSON `accepted_obligations` projection. Validation
+keeps legacy five-field requests valid, rejects other unknown fields and preserves the raw request
+hash. `NUTRITION_RESULT.json` maps each original outcome, step and proof identity to actual retained
+native case records, logs and finite measurements. Missing or failed due proof blocks readiness;
+later obligations remain pending with their accepted owner. Public `intake` reauthenticates the
+same source, inventory, native request and original `RETURN.json` through the selected helper's
+read-only SAME interface. It returns the terminal identity and completeness without replacing
+`RETURN.json`.
+
+Before generating or dispatching a recorded engineering assignment, the controller can run
+`./scripts/task --repo-root /absolute/STARTING-CHECKOUT --state-dir /absolute/STATE-DIR inspect-engineering-assignment ISSUE --request /absolute/SEED.json`.
+The command reads the existing issue checkpoint under its lock and verifies the current owner
+authorization, plan and predecessor references, exact scope/profile floors, and starting Git source.
+It never changes the checkpoint or creates an attempt. Its PASS is a mechanical identity and
+sequence result; controller authority and substantive review remain separate. Existing requests
+continue through their original prepared route and bindings.
 
 These facts are mechanical evidence, not semantic acceptance, independent review, delivery consumption,
 integration or issue completion. The controller consumes the actual returned source/results, obtains

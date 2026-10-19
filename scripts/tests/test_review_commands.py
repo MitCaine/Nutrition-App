@@ -735,3 +735,38 @@ def test_native_case_export_uses_real_runner_source_and_logs(authored_repo, tmp_
     request.write_text(request.read_text() + ' ')
     with pytest.raises(owner.RequestError, match='Definition input changed'):
         owner.export_execution_definition(definition, authored_repo, proof['candidate'], attempt)
+
+
+def test_bounded_accepted_obligations_preserve_raw_request_identity(authored_repo, tmp_path):
+    attempt = 'accepted-obligations-owner'
+    request = _write_request(authored_repo, tmp_path / 'request.json', attempt, [
+        _step('actual-case', [sys.executable, '-c', "print('accepted metadata remains inert')"]),
+    ])
+    value = json.loads(request.read_text())
+    metadata = {'inventory_sha256': 'a' * 64, 'entries': [{'id': 'R1', 'due': True,
+                'basis': 'Controller-authored selected evidence', 'future': None}]}
+    value['accepted_obligations'] = metadata
+    request.write_text(json.dumps(value, ensure_ascii=True, indent=2) + '\n')
+    raw_sha = _sha256(request)
+
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    from lib import review_commands as owner
+    normalized = owner._validate_request(
+        value, authored_repo, _git(authored_repo, 'rev-parse', 'HEAD'), attempt)
+    assert normalized['accepted_obligations'] == metadata
+
+    output = tmp_path / 'output'
+    completed = _run(authored_repo, request, attempt, output)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    directory = _attempt_dir(output, attempt)
+    observed = json.loads((directory / 'commands/actual-case/result.json').read_text())
+    assert observed['native_case']['request_sha256'] == raw_sha
+    assert json.loads((directory / 'complete.json').read_text())['request_sha256'] == raw_sha
+
+    value['unknown'] = 'still rejected'
+    with pytest.raises(owner.RequestError, match='unsupported unknown'):
+        owner._validate_request(value, authored_repo, _git(authored_repo, 'rev-parse', 'HEAD'), attempt)
+    value.pop('unknown')
+    value['accepted_obligations'] = {'bad': float('nan')}
+    with pytest.raises(owner.RequestError, match='non-finite'):
+        owner._validate_request(value, authored_repo, _git(authored_repo, 'rev-parse', 'HEAD'), attempt)

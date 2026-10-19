@@ -6,9 +6,11 @@ explicitly prepared disposable, detached workspaces can be captured locally.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -100,6 +102,7 @@ def selected_ri(selection=None):
         require(Path(sys.prefix).resolve() == environment, "Selected helper interpreter was not activated")
         paths.extend(runtime_paths)
         paths.extend(source / name for name in lock["source_files"])
+        paths.extend(source / name for name in lock.get("resource_files", []))
         paths.append(source / "pyproject.toml")
     sys.path.insert(0, str(source / "src"))
     module = importlib.import_module("repository_intelligence.worker_execution")
@@ -168,6 +171,312 @@ def binding(path: Path, *, preparing: bool = False, evidence: Path | None = None
     return value, module
 
 
+def _file_input(path: Path) -> dict:
+    native._no_symlink_components(path)
+    require(path.is_absolute() and path.is_file(), 'Selected input must be an absolute regular file')
+    require(path.resolve(strict=True) == path, 'Selected input path must be canonical')
+    return identity(path)
+
+
+def _merge_input(rows: dict[str, dict], record: dict, label: str) -> None:
+    path = record['path']
+    prior = rows.get(path)
+    require(prior is None or prior == record, 'Conflicting selected input identity: ' + label)
+    rows[path] = record
+
+
+def _validated_binding(value, label: str) -> dict:
+    require(isinstance(value, dict) and set(value) == {'path', 'sha256'},
+            label + ' needs path and sha256')
+    path = Path(value['path'])
+    actual = _file_input(path)
+    require(actual == value, label + ' identity changed')
+    return actual
+
+
+def _profile_and_selection(seed: dict) -> None:
+    """Keep controller-only assignment metadata out of the shared helper request."""
+    has_engineering = 'accepted_engineering' in seed
+    require(has_engineering != ('accepted_capsule' in seed),
+            'Select exactly one accepted capsule or accepted engineering task')
+    profiles = seed.get('profiles')
+    if has_engineering:
+        assignment = seed.get('engineering_assignment')
+        require(isinstance(profiles, list) and profiles and
+                all(isinstance(item, str) and item for item in profiles) and
+                len(profiles) == len(set(profiles)),
+                'Engineering generation requires the selected profile list')
+        require(isinstance(assignment, dict) and isinstance(assignment.get('profiles'), list)
+                and profiles == assignment['profiles'],
+                'Generation profiles differ from the controller assignment selection')
+        require(isinstance(seed.get('task_id'), str) and seed['task_id'].strip()
+                and type(seed.get('issue_number')) is int and seed['issue_number'] > 0
+                and isinstance(seed.get('authorization_identity_sha256'), str)
+                and re.fullmatch(r'[0-9a-f]{64}', seed['authorization_identity_sha256']) is not None,
+                'Generation needs a bound controller task, issue and authorization identity')
+        for key in ('assignment', 'attempt', 'base', 'integration_base', 'allowed_changes'):
+            require(seed.get(key) == assignment.get(key),
+                    'Generation ' + key + ' differs from controller assignment selection')
+        selected = seed['accepted_engineering']
+        require(isinstance(selected, dict), 'Accepted engineering binding must be an object')
+        review = assignment.get('planning_review')
+        specification = assignment.get('specification')
+        require(isinstance(review, dict) and isinstance(specification, dict),
+                'Controller assignment planning references are incomplete')
+        require(selected.get('path') == specification.get('path')
+                and selected.get('sha256') == specification.get('sha256')
+                and selected.get('approval') == review.get('approval')
+                and selected.get('phase') == 'implementation'
+                and selected.get('route') == 'engineering',
+                'Accepted engineering selection differs from the controller plan')
+        if 'selection' in selected:
+            require(selected['selection'] == ['engineering'],
+                    'Accepted engineering selection must point to the owning projection')
+    elif profiles is not None:
+        require(isinstance(profiles, list) and len(profiles) == len(set(profiles))
+                and all(isinstance(item, str) and item for item in profiles),
+                'Selected profiles must be a unique string list')
+    if 'route' in seed:
+        require(seed['route'] == 'interactive', 'Generation selects the interactive worker route')
+
+
+def _check_generation_seed(seed: dict) -> None:
+    allowed = {
+        'assignment', 'attempt', 'workspace', 'protected_repository', 'base', 'integration_base',
+        'allowed_changes', 'capture_authority', 'environment', 'require_new_candidate',
+        'ri_source', 'profiles', 'task_id', 'issue_number', 'authorization_identity_sha256',
+        'engineering_assignment', 'accepted_capsule', 'accepted_engineering', 'timeout_seconds', 'route',
+    }
+    forbidden = {
+        'inputs', 'check_request', 'input_inventory', 'proof_mapping', 'native_proof',
+        'required_outcomes', 'capture', 'runner', 'edit', 'runner_result', 'result_bindings',
+        'conformance', 'accepted_obligations',
+    }
+    require(not forbidden.intersection(seed),
+            'Generation seed contains competing generated fields: ' + ', '.join(sorted(forbidden.intersection(seed))))
+    require(not set(seed) - allowed,
+            'Generation seed contains unsupported fields: ' + ', '.join(sorted(set(seed) - allowed)))
+    required = {
+        'assignment', 'attempt', 'workspace', 'protected_repository', 'base', 'integration_base',
+        'allowed_changes', 'capture_authority', 'environment', 'ri_source',
+    }
+    require(required <= set(seed),
+            'Generation seed is missing required fields: ' + ', '.join(sorted(required - set(seed))))
+    _profile_and_selection(seed)
+
+
+def _projection_inputs(seed_path: Path, definition_path: Path, seed: dict,
+                       exported: dict, helper_paths: list[Path]) -> list[dict]:
+    rows: dict[str, dict] = {}
+    for item in exported['inputs']:
+        _merge_input(rows, _validated_binding(item, 'Definition input'), 'definition')
+    _merge_input(rows, _file_input(seed_path), 'seed request')
+    _merge_input(rows, _file_input(definition_path), 'raw execution definition')
+
+    accepted = seed.get('accepted_engineering', seed.get('accepted_capsule'))
+    require(isinstance(accepted, dict), 'Accepted task source binding is required')
+    _merge_input(rows, _validated_binding(
+        {'path': accepted.get('path'), 'sha256': accepted.get('sha256')}, 'Accepted task source'),
+        'accepted task source')
+
+    if 'accepted_engineering' in seed:
+        assignment = seed['engineering_assignment']
+        review = assignment['planning_review']
+        references = [assignment['specification'], review['report'], review['approval'],
+                      assignment['predecessor']['review']['report'],
+                      *assignment['predecessor']['due_evidence']]
+        for reference in references:
+            _merge_input(rows, _validated_binding(reference, 'Controller assignment reference'),
+                         'controller assignment')
+        approval = _validated_binding(seed['accepted_engineering']['approval'], 'Planning approval')
+        approval_value = read(Path(approval['path']))
+        reporter = approval_value.get('reviewer_report')
+        _merge_input(rows, _validated_binding(reporter, 'Planning reviewer report'), 'planning reviewer report')
+
+    for path in (ROOT / 'AGENTS.md', ROOT / 'docs/local_project_map.md',
+                 ROOT / 'docs/operations/session-contract.md',
+                 ROOT / 'engineering/tooling/ri-helper-lock.json',
+                 ROOT / 'engineering/workflow/shared/SOURCE.md',
+                 ROOT / 'engineering/workflow/shared/worker-instructions.md',
+                 ROOT / 'engineering/workflow/shared/workflow-tools.md',
+                 ROOT / '.agents/skills/ri-implementor/SKILL.md',
+                 ROOT / '.agents/skills/ri-implementor/references/project-procedure.md',
+                 ROOT / 'scripts/setup-ri-helpers.py', ROOT / 'scripts/worker-execution', SCRIPT,
+                 ROOT / 'scripts/run-review.sh', ROOT / 'scripts/lib/common.sh',
+                 ROOT / 'scripts/lib/review_commands.py', ROOT / 'scripts/lib/task_output_cleanup.py',
+                 Path(sys.executable).resolve(), *helper_paths):
+        _merge_input(rows, _file_input(path), 'selected execution tool')
+    require(len(rows) <= 127, 'Owning input projection exceeds the selected helper limit')
+    return [rows[path] for path in sorted(rows)]
+
+
+def generate_request(request_path: Path, definition_path: Path, output_path: Path,
+                     evidence: Path, module, helper_paths: list[Path]) -> dict:
+    """Generate one complete request from the accepted definition and seed."""
+    request_path = request_path.absolute()
+    definition_path = definition_path.absolute()
+    output_path = output_path.absolute()
+    evidence = evidence.absolute()
+    native._no_symlink_components(request_path)
+    native._no_symlink_components(definition_path)
+    native._no_symlink_components(output_path)
+    native._no_symlink_components(evidence)
+    require(request_path.is_file() and definition_path.is_file(),
+            'Generation request and definition must be regular files')
+    require(evidence.is_dir() and evidence.resolve(strict=True) == evidence,
+            'Evidence parent must already be a canonical directory')
+    require(output_path.parent.resolve(strict=True) == evidence and output_path.parent == evidence,
+            'Generated request must be written directly inside the existing evidence directory')
+    require(not output_path.exists() and not output_path.is_symlink(),
+            'Generated request already exists; evidence is immutable')
+    projection_path = evidence / (output_path.name + '.inventory.json')
+    require(not projection_path.exists() and not projection_path.is_symlink(),
+            'Owning input projection already exists; evidence is immutable')
+
+    seed = read(request_path)
+    _check_generation_seed(seed)
+    selected = seed.get('ri_source')
+    require(selected == map_selection(), 'Generation must use the current map-selected helper binding')
+    root = native._canonical_root(seed['workspace'])
+    require(root == Path(seed['workspace']), 'Workspace must be canonical')
+    require(not request_path.is_relative_to(root) and not definition_path.is_relative_to(root),
+            'Generation inputs must remain outside the disposable workspace')
+    native._external_output_path(root, evidence)
+    require(not native._paths_overlap(root, output_path)
+            and not native._paths_overlap(root, definition_path),
+            'Generation output and definition must remain outside the disposable workspace')
+
+    raw_definition = definition_path.read_bytes()
+    definition = native._parse_json(raw_definition)
+    native._expect_keys(definition, {'check_request', 'inputs', 'engineering'}, 'execution definition')
+    template = definition['check_request']
+    require(isinstance(template, dict)
+            and template.get('repository') == '{workspace}'
+            and template.get('expected_head') == '{candidate}'
+            and template.get('attempt') == '{attempt}',
+            'Definition check template must use the selected workspace/candidate/attempt bindings')
+    checked_definition = dict(definition)
+    checked_template = dict(template)
+    checked_template.update(repository=str(root), expected_head=seed['base'], attempt=seed['attempt'])
+    checked_definition['check_request'] = checked_template
+    exported = native.export_execution_definition(checked_definition, root, seed['base'], seed['attempt'])
+
+    input_rows = _projection_inputs(request_path, definition_path, seed, exported, helper_paths)
+    projection = {
+        'definition': identity(definition_path),
+        'inputs': input_rows,
+        'native_proof': exported['native_proof'],
+        'engineering': exported['engineering'],
+    }
+    projection_raw = native._json_bytes(projection)
+    require(len(projection_raw) <= module.MAX_BYTES, 'Owning input projection exceeds the helper byte limit')
+    native._write_exclusive(projection_path, projection_raw)
+
+    helper_request = dict(seed)
+    selected_binding = helper_request.pop('ri_source')
+    for key in ('profiles', 'task_id', 'issue_number', 'authorization_identity_sha256',
+                'engineering_assignment'):
+        helper_request.pop(key, None)
+    helper_request.pop('route', None)
+    helper_request['route'] = 'interactive'
+    helper_request['input_inventory'] = {
+        'path': str(projection_path), 'sha256': hashlib.sha256(projection_raw).hexdigest(), 'keys': ['inputs']}
+    helper_request['proof_mapping'] = ['native_proof']
+    if 'accepted_engineering' in helper_request:
+        selection = helper_request['accepted_engineering'].get('selection')
+        require(selection in (None, ['engineering']),
+                'Accepted engineering selection conflicts with the generated owning projection')
+        helper_request['accepted_engineering'] = dict(helper_request['accepted_engineering'],
+                                                      selection=['engineering'])
+    helper_request['check_request'] = template
+    command = [str(Path(sys.executable).resolve()), str(SCRIPT)]
+    helper_request['capture'] = {'argv': command + ['capture', '--request', str(output_path),
+                                                    '--evidence', str(evidence)]}
+    helper_request['runner'] = {'argv': command + ['runner', '--request', str(output_path),
+                                                   '--check-request', '{check_request}',
+                                                   '--attempt-dir', '{attempt}', '--candidate', '{candidate}',
+                                                   '--evidence', str(evidence)]}
+    helper_request['require_new_candidate'] = seed.get('require_new_candidate', True)
+    helper_request['runner_result'] = 'NUTRITION_RESULT.json'
+    helper_request['result_bindings'] = {key: [key] for key in
+                                         ('candidate', 'workspace', 'attempt', 'request_sha256',
+                                          'ready', 'references')}
+    helper_request['conformance'] = ['facts']
+
+    generated = module.generate(helper_request, evidence)
+    generated['ri_source'] = selected_binding
+    generated['workspace_request'] = identity(request_path)
+    native._write_exclusive(output_path, native._json_bytes(generated))
+    return {'schema_version': 1, 'status': 'generated', 'request': identity(output_path),
+            'input_inventory': identity(projection_path), 'source': str(root),
+            'attempt': seed['attempt'], 'assignment': seed['assignment']}
+
+
+def generated_binding(request_path: Path, evidence: Path, *, preparing: bool = False) -> tuple:
+    """Reconstruct the helper request while authenticating the saved source selection."""
+    value = read(request_path)
+    selection = value.pop('ri_source', None)
+    require(isinstance(selection, dict), 'Generated request must retain its helper source selection')
+    owner_request = value.pop('workspace_request', None)
+    if owner_request is not None:
+        owner_request = _validated_binding(owner_request, 'Workspace creation request')
+    if preparing:
+        require(selection == map_selection(), 'Preparation must select the current project helper binding')
+    module, helper_paths = selected_ri(selection)
+    require('environment' in selection and Path(sys.prefix).resolve() == Path(selection['environment']).resolve(),
+            'Selected helper interpreter was not activated')
+    root = native._canonical_root(value.get('workspace'))
+    require(request_path.is_absolute() and not request_path.is_relative_to(root),
+            'Generated request must be outside the disposable workspace')
+    native._external_output_path(root, evidence)
+    require(value.get('route') == 'interactive', 'Generated request must preserve the selected interactive route')
+    required = {'input_inventory', 'proof_mapping', 'check_request', 'capture', 'runner', 'runner_result',
+                'result_bindings', 'conformance', 'required_outcomes'}
+    require(required <= set(value), 'Generated request is missing owning public bindings')
+    input_inventory = value.get('input_inventory')
+    require(isinstance(input_inventory, dict) and set(input_inventory) == {'path', 'sha256', 'keys'}
+            and input_inventory.get('keys') == ['inputs'],
+            'Generated request differs from the owning projection interface')
+    input_rows = value.get('inputs')
+    require(isinstance(input_rows, list), 'Generated request input bindings must be an array')
+    require(value['runner_result'] == 'NUTRITION_RESULT.json'
+            and value['result_bindings'] == {key: [key] for key in
+                                              ('candidate', 'workspace', 'attempt', 'request_sha256',
+                                               'ready', 'references')}
+            and value['conformance'] == ['facts'],
+            'Generated request changed Nutrition-owned result mappings')
+    require(value['proof_mapping'] == ['native_proof'],
+            'Generated request differs from the owning projection interface')
+    expected_rows = {(row.get('path'), row.get('sha256')) for row in input_rows
+                     if isinstance(row, dict)}
+    require(owner_request is not None
+            and (owner_request['path'], owner_request['sha256']) in expected_rows,
+            'Generated request does not bind its workspace creation seed')
+    template = dict(value['check_request'])
+    template.update(repository=str(root), expected_head=value['base'], attempt=value['attempt'])
+    plan = native._validate_request(template, root, value['base'], value['attempt'])
+    require(value['check_request'].get('repository') == '{workspace}'
+            and value['check_request'].get('expected_head') == '{candidate}'
+            and value['check_request'].get('attempt') == '{attempt}',
+            'Generated check request template changed its source placeholders')
+    inventory = module.accepted_inventory(value)
+    require(inventory is not None and value['required_outcomes'] == inventory['required_outcomes'],
+            'Generated request obligation set differs from its owning definition')
+    _owning_projection(value)
+    helper_identities = [identity(path) for path in helper_paths]
+    require(all((item['path'], item['sha256']) in expected_rows for item in helper_identities),
+            'Generated request does not bind its selected helper source/runtime closure')
+    script_id = identity(SCRIPT)
+    wrapper_id = identity(ROOT / 'scripts/worker-execution')
+    require((script_id['path'], script_id['sha256']) in expected_rows
+            and (wrapper_id['path'], wrapper_id['sha256']) in expected_rows,
+            'Generated request does not bind its public wrapper')
+    require(value.get('accepted_engineering', {}).get('selection') in (None, ['engineering'])
+            if 'accepted_engineering' in value else True,
+            'Generated engineering selection differs from its owning projection')
+    return value, module, plan, owner_request
+
+
 def capture(request: dict) -> str:
     root = native._canonical_root(request["workspace"])
     protected = native._canonical_root(request["protected_repository"])
@@ -204,11 +513,14 @@ def capture(request: dict) -> str:
     return candidate
 
 
-def record_capture(request_path: Path, evidence: Path, request: dict, candidate: str) -> dict:
+def record_capture(request_path: Path, evidence: Path, request: dict, candidate: str,
+                   owner_request: dict | None = None) -> dict:
     """Bind the actual captured candidate without changing the creation receipt."""
     owner_path = evidence / "workspace-owner.json"
     owner = output_owner._json(owner_path)
     request_binding = identity(request_path)
+    owner_binding = request_binding if owner_request is None else _validated_binding(
+        owner_request, 'Workspace creation request')
     attempt = request.get("attempt")
     assignment = request.get("assignment", attempt)
     base = request.get("base")
@@ -220,8 +532,8 @@ def record_capture(request_path: Path, evidence: Path, request: dict, candidate:
                 if isinstance(item, dict) and item.get("path") == str(root)]
     require(len(receipts) == 1 and receipts[0].get("git_worktree", {}).get("head") == base,
             "Capture creation provenance is missing or changed")
-    require(receipts[0].get("definition") == {"path": request_binding["path"],
-                                                "sha256": request_binding["sha256"]},
+    require(receipts[0].get("definition") == {"path": owner_binding["path"],
+                                                "sha256": owner_binding["sha256"]},
             "Capture request differs from immutable creation request")
     head = git(root, "rev-parse", "HEAD")
     require(candidate == head and native.COMMIT_RE.fullmatch(candidate) is not None,
@@ -262,7 +574,132 @@ def record_capture(request_path: Path, evidence: Path, request: dict, candidate:
     return identity(path)
 
 
-def project(request_path: Path, directory: Path, candidate: str) -> dict:
+def _accepted_check_inventory(consumer_request: dict, check_path: Path,
+                              directory: Path, candidate: str, module) -> dict | None:
+    inventory = module.accepted_inventory(consumer_request)
+    if inventory is None:
+        return None
+    root = native._canonical_root(consumer_request['workspace'])
+    raw = check_path.read_bytes()
+    checked = native._parse_json(raw)
+    normalized = native._validate_request(checked, root, candidate, consumer_request['attempt'])
+    require(normalized.get('accepted_obligations') == inventory,
+            'Native request accepted_obligations differs from the selected owning inventory')
+    return inventory
+
+
+def _owning_projection(request: dict) -> tuple[dict, dict]:
+    binding = request.get('input_inventory')
+    require(isinstance(binding, dict) and set(binding) == {'path', 'sha256', 'keys'}
+            and binding.get('keys') == ['inputs'],
+            'Generated request needs the selected owning inventory projection')
+    path = Path(binding['path'])
+    raw = path.read_bytes()
+    require(hashlib.sha256(raw).hexdigest() == binding['sha256'],
+            'Owning projection identity changed')
+    projection = native._parse_json(raw)
+    native._expect_keys(projection, {'definition', 'inputs', 'native_proof', 'engineering'},
+                        'owning projection')
+    definition = _validated_binding(projection['definition'], 'Owning definition')
+    require(definition in request['inputs'], 'Generated request does not bind the raw owning definition')
+    definition_value = read(Path(definition['path']))
+    native._expect_keys(definition_value, {'check_request', 'inputs', 'engineering'},
+                        'execution definition')
+    require(definition_value['check_request'] == request.get('check_request'),
+            'Generated check request differs from its owning definition')
+    root = native._canonical_root(request['workspace'])
+    checked = dict(definition_value)
+    template = dict(definition_value['check_request'])
+    template.update(repository=str(root), expected_head=request['base'], attempt=request['attempt'])
+    checked['check_request'] = template
+    exported = native.export_execution_definition(checked, root, request['base'], request['attempt'])
+    require(projection['native_proof'] == exported['native_proof']
+            and projection['engineering'] == exported['engineering']
+            and all(item in projection['inputs'] for item in exported['inputs']),
+            'Owning projection differs from the raw execution definition')
+    return projection, definition
+
+
+def _native_case_passes(entry: dict, observed: dict,
+                        candidate: str, attempt: str, request_sha256: str) -> bool:
+    case = observed.get('native_case')
+    if not isinstance(case, dict):
+        return False
+    expected = {'case': entry['native_id'], 'candidate': candidate,
+                'attempt': attempt, 'request_sha256': request_sha256,
+                'status': entry['success']}
+    if any(case.get(key) != value for key, value in expected.items()):
+        return False
+    if not isinstance(case.get('artifacts'), dict) or not isinstance(case.get('measurements'), dict):
+        return False
+    if not set(entry['artifacts']) <= set(case['artifacts']) or not set(entry['measurements']) <= set(case['measurements']):
+        return False
+    try:
+        for name in entry['artifacts']:
+            binding = case['artifacts'][name]
+            if _validated_binding(binding, 'Native ' + name + ' artifact') != binding:
+                return False
+        for name in entry['measurements']:
+            value = case['measurements'][name]
+            if (type(value) not in (int, float) or not math.isfinite(value)
+                    or (name == 'duration_seconds' and value < 0)):
+                return False
+    except (native.RequestError, OSError, TypeError, ValueError, KeyError):
+        return False
+    return True
+
+
+def _accepted_facts(inventory: dict, observed_by_id: dict[str, dict],
+                    result_files: dict[str, dict], candidate: str,
+                    attempt: str, request_sha256: str, definition: dict) -> list[dict]:
+    proofs_by_outcome: dict[str, list[dict]] = {}
+    for entry in inventory['entries']:
+        if entry['kind'] == 'proof':
+            proofs_by_outcome.setdefault(entry['outcome'], []).append(entry)
+    rows = []
+    for entry in inventory['entries']:
+        row = {'id': entry['id'], 'mandatory': entry['due_now'],
+               'definition_sha256': entry['definition_sha256'],
+               'definition': definition}
+        if not entry['due_now']:
+            row.update(status='pending', next_owner=entry['owner'])
+            rows.append(row)
+            continue
+        if entry['kind'] == 'proof':
+            observed = observed_by_id.get(entry['native_id'])
+            result_file = result_files.get(entry['native_id'])
+            if observed is not None and result_file is not None:
+                row['native'] = {'record': result_file}
+                row['evidence'] = [result_file]
+            row['status'] = ('passed' if observed is not None and result_file is not None
+            and _native_case_passes(entry, observed, candidate, attempt, request_sha256)
+                             else 'failed')
+            rows.append(row)
+            continue
+        outcome_id = entry['id'] if entry['kind'] == 'outcome' else entry['outcome']
+        supporting = proofs_by_outcome.get(outcome_id, [])
+        due = [proof for proof in supporting if proof['due_now']]
+        evidence = [result_files[proof['native_id']] for proof in due
+                    if proof['native_id'] in result_files]
+        passed = bool(due) and len(evidence) == len(due) and all(
+            proof['native_id'] in observed_by_id
+            and _native_case_passes(proof, observed_by_id[proof['native_id']],
+                                    candidate, attempt, request_sha256)
+            for proof in due)
+        row['status'] = 'passed' if passed else ('failed' if evidence else 'blocked')
+        if evidence:
+            row['evidence'] = evidence
+            case_ids = [proof['native_id'] for proof in due]
+            row['basis'] = (('All' if passed else 'Not all') +
+                            ' selected prescribed native cases passed: ' + ', '.join(case_ids) + '.')
+        else:
+            row['basis'] = 'No due prescribed native case produced retained evidence.'
+        rows.append(row)
+    return rows
+
+
+def project(request_path: Path, directory: Path, candidate: str,
+            consumer_request: dict | None = None, module=None) -> dict:
     """Validate native completion and all accepted gates, never merely eligible."""
     accepted = read(request_path)
     root = native._canonical_root(accepted["repository"])
@@ -318,8 +755,13 @@ def project(request_path: Path, directory: Path, candidate: str) -> dict:
     rows = authored["steps"]
     require([row["id"] for row in rows] == [step["id"] for step in request["steps"]], "Incomplete accepted gate coverage")
     outcomes = []
+    observed_by_id: dict[str, dict] = {}
+    result_files: dict[str, dict] = {}
     for step, row in zip(request["steps"], rows, strict=True):
-        observed = read(directory / "commands" / step["id"] / "result.json")
+        relative_result = "commands/" + step["id"] + "/result.json"
+        observed = native._parse_json(retain(relative_result))
+        observed_by_id[step["id"]] = observed
+        result_files[step["id"]] = identity(native._attempt_file(directory, relative_result))
         for key, expected in (("designation", step["designation"]), ("argv", step["argv"]),
                               ("cwd", step["cwd"]), ("prerequisites", step["prerequisites"]),
                               ("selected_environment_overrides", step["env"])):
@@ -344,16 +786,35 @@ def project(request_path: Path, directory: Path, candidate: str) -> dict:
             and state["expected_head"] == candidate
             and state["request_sha256"] == complete["request_sha256"], "Native attempt is not consistently terminal")
     ready = all(not row["mandatory"] or row["status"] == "passed" for row in outcomes)
-    return {"candidate": candidate, "workspace": str(root), "attempt": accepted["attempt"],
+    facts = {"source_stable": True, "terminal_complete": True, "outcomes": outcomes,
+             "request_digests": {"raw_file_sha256": native._sha256(request_path.read_bytes())}}
+    accepted_inventory = None
+    if consumer_request is not None:
+        require(module is not None, 'Selected helper is required for accepted reconciliation')
+        accepted_inventory = _accepted_check_inventory(consumer_request, request_path, directory, candidate, module)
+        if accepted_inventory is not None:
+            projection, definition_identity = _owning_projection(consumer_request)
+            facts['inventory_sha256'] = accepted_inventory['inventory_sha256']
+            facts['outcomes'] = _accepted_facts(accepted_inventory, observed_by_id, result_files,
+                                                candidate, accepted['attempt'], request_id['sha256'],
+                                                definition_identity)
+            ready = all(not row['mandatory'] or row['status'] == 'passed' for row in facts['outcomes'])
+    result = {"candidate": candidate, "workspace": str(root), "attempt": accepted["attempt"],
             "request_sha256": native._sha256(request_path.read_bytes()), "ready": ready, "references": refs,
             "native_status": native_status,
-            "facts": {"source_stable": True, "terminal_complete": True, "outcomes": outcomes,
-                      "request_digests": {"raw_file_sha256": native._sha256(request_path.read_bytes())}}}
+            "facts": facts}
+    if accepted_inventory is not None:
+        result['accepted_inventory_sha256'] = accepted_inventory['inventory_sha256']
+        result['owning_projection'] = identity(Path(consumer_request['input_inventory']['path']))
+        result['owning_definition'] = definition_identity
+    return result
 
 
-def _run_bound_runner(args) -> int:
-    spec = read(args.request)
+def _run_bound_runner(args, spec: dict, module=None) -> int:
     root = native._canonical_root(spec["workspace"])
+    if module is not None:
+        _accepted_check_inventory(spec, args.check_request, args.attempt_dir / 'native/runs' / spec['attempt'],
+                                  args.candidate, module)
     environment = dict(spec["environment"], NUTRITION_REVIEW_OUTPUT_DIR=str(args.attempt_dir / "native"))
     result_path = args.attempt_dir / "NUTRITION_RESULT.json"
     require(not result_path.exists(), "Consumer return already exists")
@@ -361,7 +822,8 @@ def _run_bound_runner(args) -> int:
                                 "--attempt", spec["attempt"]], cwd=root, env=environment, check=False)
     directory = args.attempt_dir / "native/runs" / spec["attempt"]
     try:
-        result = project(args.check_request, directory, args.candidate)
+        result = project(args.check_request, directory, args.candidate,
+                         spec if module is not None else None, module)
         require(completed.returncode == (0 if result["native_status"] == "passed" else 1),
                 "Native runner exit contradicts completed evidence")
         if args.evidence is not None:
@@ -384,17 +846,24 @@ def _run_bound_runner(args) -> int:
 
 
 def runner(args) -> int:
-    spec = read(args.request)
+    raw = read(args.request)
     if args.evidence is None:
         raise native.RequestError("Evidence directory required for the worker runner")
-    verify_workspace_owner(args.request, args.evidence, spec, expected_head=args.candidate)
+    module = None
+    owner_request = None
+    if 'input_inventory' in raw and 'ri_source' in raw:
+        spec, module, _, owner_request = generated_binding(args.request, args.evidence, preparing=False)
+    else:
+        spec = raw
+    verify_workspace_owner(args.request, args.evidence, spec, expected_head=args.candidate,
+                           owner_request=owner_request)
     owner_record = args.evidence / "workspace-owner.json"
     if owner_record.is_file():
         with output_owner.owner_lock(owner_record):
-            return _run_bound_runner(args)
+            return _run_bound_runner(args, spec, module)
     # Existing workspaces are compatible, but absence of a creation receipt
     # means this runner call cannot establish ownership for cleanup.
-    return _run_bound_runner(args)
+    return _run_bound_runner(args, spec, module)
 
 
 def create_workspace(request_path: Path, evidence: Path) -> dict:
@@ -465,6 +934,7 @@ def verify_workspace_owner(
     spec: dict,
     *,
     expected_head: str | None = None,
+    owner_request: dict | None = None,
 ) -> dict | None:
     """Authenticate a creation receipt when present; leave legacy workspaces unknown."""
     owner_record = evidence / "workspace-owner.json"
@@ -476,6 +946,9 @@ def verify_workspace_owner(
     assignment = spec.get("assignment", attempt)
     task = output_owner.task_identifier(assignment) if isinstance(assignment, str) else None
     request_identity = {"path": str(request_path.resolve()), "sha256": native._sha256(raw), "bytes": len(raw)}
+    owner_binding = ({"path": request_identity["path"], "sha256": request_identity["sha256"]}
+                     if owner_request is None else _validated_binding(
+                         owner_request, 'Workspace creation request'))
     require(record.get("task") == task and record.get("attempt") == attempt,
             "Workspace owner record does not match this task and attempt")
     receipts = record.get("owned_outputs", [])
@@ -485,8 +958,7 @@ def verify_workspace_owner(
     workspace_receipts = [item for item in receipts if isinstance(item, dict) and item.get("path") == str(workspace)]
     require(len(container_receipts) == len(workspace_receipts) == 1,
             "Workspace owner receipts are missing or ambiguous")
-    require(container_receipts[0].get("definition") == {"path": request_identity["path"],
-                                                          "sha256": request_identity["sha256"]},
+    require(container_receipts[0].get("definition") == owner_binding,
             "Workspace receipt request identity changed")
     output_owner.verify_receipt(container_receipts[0])
     output_owner.verify_receipt(workspace_receipts[0])
@@ -511,9 +983,11 @@ def verify_workspace_owner(
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("create-workspace", "prepare", "run", "capture", "runner", "project"))
+    parser.add_argument("mode", choices=("create-workspace", "generate", "prepare", "run", "intake", "capture", "runner", "project"))
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--definition", type=Path)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--check-request", type=Path)
     parser.add_argument("--attempt-dir", type=Path)
     parser.add_argument("--candidate")
@@ -524,7 +998,7 @@ def main(argv=None) -> int:
             args.evidence = args.evidence.absolute()
         native._no_symlink_components(args.request)
         selected = read(args.request).get("ri_source", {})
-        if args.mode in ("prepare", "run") and isinstance(selected, dict) and "environment" in selected:
+        if args.mode in ("generate", "prepare", "run", "intake", "runner") and isinstance(selected, dict) and "environment" in selected:
             environment, _, _ = helper_runtime(selected)
             if Path(sys.prefix).resolve() != environment:
                 child_env = {key: value for key, value in os.environ.items()
@@ -537,10 +1011,26 @@ def main(argv=None) -> int:
             result = create_workspace(args.request, args.evidence)
             print(json.dumps(result, sort_keys=True))
             return 0
+        if args.mode == "generate":
+            require(args.evidence is not None and args.definition is not None and args.output is not None,
+                    "Generation requires request, definition, output and evidence paths")
+            selection = read(args.request).get('ri_source')
+            require(selection == map_selection(), 'Generation must use the current map-selected helper binding')
+            module, helper_paths = selected_ri(selection)
+            result = generate_request(args.request, args.definition, args.output,
+                                      args.evidence, module, helper_paths)
+            print(json.dumps(result, sort_keys=True))
+            return 0
         if args.mode in ("prepare", "run"):
             require(args.evidence is not None, "Evidence directory required")
-            verify_workspace_owner(args.request, args.evidence, read(args.request))
-            request, module = binding(args.request, preparing=args.mode == "prepare", evidence=args.evidence)
+            raw = read(args.request)
+            owner_request = None
+            if 'input_inventory' in raw and 'ri_source' in raw:
+                request, module, _, owner_request = generated_binding(args.request, args.evidence,
+                                                                     preparing=args.mode == "prepare")
+            else:
+                request, module = binding(args.request, preparing=args.mode == "prepare", evidence=args.evidence)
+            verify_workspace_owner(args.request, args.evidence, request, owner_request=owner_request)
             native._external_output_path(Path(request["workspace"]), args.evidence)
             owner_record = args.evidence / "workspace-owner.json"
             if owner_record.is_file():
@@ -566,6 +1056,25 @@ def main(argv=None) -> int:
                 result = module.execute(request, args.evidence, args.mode)
             print(json.dumps(result, sort_keys=True))
             return 0 if args.mode == "prepare" or result["review_ready"] else 1
+        if args.mode == "intake":
+            require(args.evidence is not None, "Evidence directory required")
+            request, module, _, owner_request = generated_binding(args.request, args.evidence)
+            attempt = args.evidence / request['attempt']
+            terminal = attempt / 'RETURN.json'
+            before = terminal.read_bytes()
+            terminal_identity = identity(terminal)
+            report = read(terminal)
+            verify_workspace_owner(args.request, args.evidence, request,
+                                   expected_head=report.get('candidate'), owner_request=owner_request)
+            _accepted_check_inventory(request, attempt / 'CHECK_REQUEST.json',
+                                      attempt / 'native/runs' / request['attempt'],
+                                      report.get('candidate'), module)
+            result = module.intake(request, args.evidence)
+            require(terminal.read_bytes() == before and identity(terminal) == terminal_identity,
+                    'Read-only intake changed the original RETURN')
+            result['request'] = identity(args.request)
+            print(json.dumps(result, sort_keys=True))
+            return 0 if result.get('review_ready') is True else 1
         if args.mode == "capture":
             candidate_binding = None
             request = read(args.request)
@@ -575,12 +1084,15 @@ def main(argv=None) -> int:
                 # cannot assert that Nutrition owns the output.
                 candidate = capture(request)
             else:
-                verify_workspace_owner(args.request, args.evidence, request)
+                owner_request = request.get('workspace_request')
+                verify_workspace_owner(args.request, args.evidence, request,
+                                       owner_request=owner_request)
                 owner_record = args.evidence / "workspace-owner.json"
                 if owner_record.is_file():
                     with output_owner.owner_lock(owner_record):
                         candidate = capture(request)
-                        candidate_binding = record_capture(args.request, args.evidence, request, candidate)
+                        candidate_binding = record_capture(args.request, args.evidence, request, candidate,
+                                                           owner_request=owner_request)
                 else:
                     candidate = capture(request)
                     candidate_binding = None

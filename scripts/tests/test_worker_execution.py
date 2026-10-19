@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -562,3 +563,355 @@ def test_public_runtime_drift_refuses_before_capture(case, fault):
     assert ('changed' in failed.stdout or 'returned non-zero' in failed.stdout), failed.stdout + failed.stderr
     assert git(case['workspace'], 'rev-parse', 'HEAD') == case['request']['base']
     assert not (case['evidence'] / 'fixture/LAUNCHED').exists()
+
+
+def _write_generated_fixture(adapter, tmp_path, *, capsule=False, missing_command=False):
+    selected = adapter.map_selection()
+    if 'environment' not in selected:
+        pytest.skip('Selected private helper runtime is not configured on this host')
+    runtime = Path(selected['environment'])
+    source = Path(selected['repository'])
+    if not runtime.is_dir() or not source.is_dir():
+        pytest.skip('Selected private helper source/runtime is not provisioned on this host')
+    adapter.helper_runtime(selected)
+
+    protected = tmp_path / 'protected'
+    subprocess.run(['git', 'clone', '--quiet', '--shared', str(ROOT), str(protected)], check=True,
+                   capture_output=True, text=True)
+    base = git(protected, 'rev-parse', 'HEAD')
+    workspace = tmp_path / 'owned-container/workspace'
+    evidence = tmp_path / 'evidence'
+    evidence.mkdir()
+    original = tmp_path / 'original-requirements.md'
+    original.write_text('# Original\n\n## R1\n\nThe assigned route must reconcile exact native cases.\n\n'
+                        '## R4\n\nController closes the later lifecycle outcome.\n')
+    specification = tmp_path / 'accepted-specification.md'
+    specification.write_text('# Accepted specification\n\n## R1\n\nOwn the public result path.\n\n'
+                             '## R4\n\nKeep controller closeout pending.\n')
+    report = tmp_path / 'planning-review.md'
+    report.write_text('Independent planning review fixture.\n')
+    predecessor_report = tmp_path / 'predecessor-review.md'
+    predecessor_report.write_text('Accepted predecessor review fixture.\n')
+    due_evidence = tmp_path / 'predecessor-native-checks.log'
+    due_evidence.write_text('Original retained predecessor evidence.\n')
+    def binding(path):
+        return {'path': str(path.resolve()), 'sha256': sha(path)}
+
+    specification_binding = binding(specification)
+    report_binding = binding(report)
+    approval_value = {
+        'decision': 'approved', 'specification': specification_binding,
+        'selection_sha256': 'replace', 'reviewer': 'Independent planning reviewer',
+        'reviewer_report': report_binding,
+    }
+    selection = {
+        'phases': ['implementation', 'controller-closeout'], 'routes': ['engineering'],
+        'entries': [
+            {'id': 'R1', 'kind': 'outcome', 'outcome': 'R1', 'due': 'implementation',
+             'owner': 'Codex implementor', 'routes': ['engineering']},
+            {'id': 'S1', 'kind': 'step', 'outcome': 'R1', 'due': 'implementation',
+             'owner': 'Codex implementor', 'routes': ['engineering']},
+            {'id': 'P1', 'kind': 'proof', 'outcome': 'R1', 'due': 'implementation',
+             'owner': 'Codex implementor', 'routes': ['engineering'], 'native_id': 'case_a',
+             'success': 'passed', 'artifacts': ['stdout', 'stderr'],
+             'measurements': ['duration_seconds']},
+            {'id': 'P1b', 'kind': 'proof', 'outcome': 'R1', 'due': 'implementation',
+             'owner': 'Codex implementor', 'routes': ['engineering'], 'native_id': 'case_b',
+             'success': 'passed', 'artifacts': ['stdout', 'stderr'],
+             'measurements': ['duration_seconds']},
+            {'id': 'R4', 'kind': 'outcome', 'outcome': 'R4', 'due': 'controller-closeout',
+             'owner': 'Nutrition Controller', 'routes': ['engineering']},
+        ],
+        'anchors': {
+            'R1': {'section': 'R1', 'original': {
+                'path': str(original.resolve()), 'sha256': sha(original), 'section': 'R1'}},
+            'R4': {'section': 'R4', 'original': {
+                'path': str(original.resolve()), 'sha256': sha(original), 'section': 'R4'}},
+        },
+    }
+    selection_sha256 = hashlib.sha256(json.dumps(selection, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    approval_value['selection_sha256'] = selection_sha256
+    approval_path = tmp_path / 'planning-approval.json'
+    write(approval_path, approval_value)
+    approval_binding = binding(approval_path)
+    predecessor = git(protected, 'rev-parse', 'HEAD')
+    assignment = {
+        'assignment': 'GH-422/fixture-public-route', 'attempt': 'GH-422-accepted-flow', 'base': base,
+        'integration_base': base, 'allowed_changes': ['scripts/worker_execution.py',
+                                                       'scripts/lib/review_commands.py'],
+        'profiles': ['repository'], 'specification': specification_binding,
+        'selection_sha256': selection_sha256,
+        'planning_review': {
+            'decision': 'approved', 'reviewer': 'Independent planning reviewer',
+            'report': report_binding, 'approval': approval_binding,
+            'specification': specification_binding, 'selection_sha256': selection_sha256,
+        },
+        'predecessor': {
+            'candidate': predecessor, 'decision': 'accepted',
+            'review': {'decision': 'approved', 'reviewed_candidate': predecessor,
+                       'report': binding(predecessor_report)},
+            'due_evidence': [binding(due_evidence)],
+        },
+    }
+    interpreter = str(runtime / 'bin/python')
+    environment = {
+        'PATH': str(runtime / 'bin') + os.pathsep + str(Path(sys.executable).parent)
+                + os.pathsep + os.environ.get('PATH', '/usr/bin:/bin'),
+        'HOME': str(tmp_path), 'TMPDIR': '/private/tmp', 'PYTHONDONTWRITEBYTECODE': '1',
+        'NUTRITION_CONTROLLER_PYTHON': interpreter,
+    }
+    steps = [
+        {'id': 'case_a', 'argv': [sys.executable, '-c', "print('first actual native proof')"],
+         'cwd': '.', 'env': {}, 'designation': 'mandatory', 'prerequisites': []},
+        {'id': 'case_b', 'argv': [sys.executable, '-c', "print('second actual native proof')"],
+         'cwd': '.', 'env': {}, 'designation': 'mandatory', 'prerequisites': []},
+    ]
+    if missing_command:
+        steps[0]['argv'] = [str(tmp_path / 'missing-native-command')]
+        steps[1]['prerequisites'] = ['case_a']
+    definition = {
+        'check_request': {'schema_version': 1, 'repository': '{workspace}',
+                          'expected_head': '{candidate}', 'attempt': '{attempt}', 'steps': steps},
+        'inputs': [binding(original), specification_binding], 'engineering': selection,
+    }
+    definition_path = tmp_path / 'definition.json'
+    write(definition_path, definition)
+    seed = {
+        'assignment': assignment['assignment'], 'attempt': assignment['attempt'],
+        'workspace': str(workspace), 'protected_repository': str(protected),
+        'base': base, 'integration_base': base, 'allowed_changes': assignment['allowed_changes'],
+        'capture_authority': 'Fixture-controlled owner grant for a disposable detached workspace.',
+        'environment': environment, 'require_new_candidate': True, 'ri_source': selected,
+        'task_id': 'GH-422', 'issue_number': 422, 'authorization_identity_sha256': 'f' * 64,
+        'profiles': assignment['profiles'], 'engineering_assignment': assignment,
+        'accepted_engineering': {
+            'path': specification_binding['path'], 'sha256': specification_binding['sha256'],
+            'phase': 'implementation', 'route': 'engineering', 'selection': ['engineering'],
+            'approval': approval_binding,
+        },
+    }
+    if capsule:
+        capsule_entries = {
+            'phases': ['implementation'], 'routes': ['standard'],
+            'entries': [
+                {'id': 'C1', 'kind': 'outcome', 'outcome': 'C1', 'due': 'implementation',
+                 'owner': 'Codex implementor', 'routes': ['standard']},
+                {'id': 'C1-proof', 'kind': 'proof', 'outcome': 'C1', 'due': 'implementation',
+                 'owner': 'Codex implementor', 'routes': ['standard'], 'native_id': 'case_a',
+                 'success': 'passed', 'artifacts': ['stdout', 'stderr'],
+                 'measurements': ['duration_seconds']},
+            ],
+        }
+        capsule_path = tmp_path / 'accepted-capsule.md'
+        capsule_path.write_text('# Accepted capsule\n\n## Checks\n\n```ri-obligations\n'
+                                + json.dumps(capsule_entries, indent=2, sort_keys=True)
+                                + '\n```\n')
+        definition['inputs'] = [binding(capsule_path)]
+        definition['engineering'] = None
+        write(definition_path, definition)
+        for key in ('task_id', 'issue_number', 'authorization_identity_sha256', 'profiles',
+                    'engineering_assignment', 'accepted_engineering'):
+            seed.pop(key)
+        seed['accepted_capsule'] = {
+            'path': str(capsule_path.resolve()), 'sha256': sha(capsule_path),
+            'phase': 'implementation', 'route': 'standard',
+        }
+    seed_path = tmp_path / 'seed.json'
+    write(seed_path, seed)
+    generated_path = evidence / 'generated.json'
+    return {
+        'root': tmp_path, 'protected': protected, 'workspace': workspace, 'evidence': evidence,
+        'seed': seed, 'seed_path': seed_path, 'definition': definition,
+        'definition_path': definition_path, 'generated': generated_path,
+        'environment': environment, 'interpreter': interpreter,
+    }
+
+
+def _generated_public(case, mode, *extra):
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), mode, '--request', str(case['generated']),
+         '--evidence', str(case['evidence']), *extra], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=90,
+    )
+
+
+def test_public_engineering_generate_prepare_run_and_same_read_only_intake(adapter, tmp_path):
+    case = _write_generated_fixture(adapter, tmp_path)
+    before_protected = git(case['protected'], 'rev-parse', 'HEAD')
+    created = subprocess.run(
+        [sys.executable, str(SCRIPT), 'create-workspace', '--request', str(case['seed_path']),
+         '--evidence', str(case['evidence'])], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert created.returncode == 0, created.stdout + created.stderr
+    generated = subprocess.run(
+        [sys.executable, str(SCRIPT), 'generate', '--request', str(case['seed_path']),
+         '--definition', str(case['definition_path']), '--output', str(case['generated']),
+         '--evidence', str(case['evidence'])], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=90,
+    )
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    generated_before = case['generated'].read_bytes()
+    assert not (case['evidence'] / case['seed']['attempt']).exists()
+    repeated_generation = subprocess.run(
+        [sys.executable, str(SCRIPT), 'generate', '--request', str(case['seed_path']),
+         '--definition', str(case['definition_path']), '--output', str(case['generated']),
+         '--evidence', str(case['evidence'])], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=90,
+    )
+    assert repeated_generation.returncode == 1
+    assert case['generated'].read_bytes() == generated_before
+    prepared = _generated_public(case, 'prepare')
+    assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+    prepared_path = case['evidence'] / case['seed']['attempt'] / 'PREPARED.json'
+    prepared_before = prepared_path.read_bytes()
+    assert _generated_public(case, 'prepare').returncode == 1
+    assert prepared_path.read_bytes() == prepared_before
+
+    # Apply the bounded intended source edit only after the single PREPARED record exists.
+    for relative in ('scripts/worker_execution.py', 'scripts/lib/review_commands.py'):
+        target = case['workspace'] / relative
+        shutil.copy2(ROOT / relative, target)
+    executed = _generated_public(case, 'run')
+    assert executed.returncode == 0, executed.stdout + executed.stderr
+
+    attempt = case['evidence'] / case['seed']['attempt']
+    result_path = attempt / 'NUTRITION_RESULT.json'
+    terminal_path = attempt / 'RETURN.json'
+    terminal_before = terminal_path.read_bytes()
+    result = json.loads(result_path.read_text())
+    terminal = json.loads(terminal_before)
+    assert result['ready'] and terminal['review_ready']
+    assert result['owning_definition'] == {'path': str(case['definition_path']),
+                                          'sha256': sha(case['definition_path'])}
+    assert result['owning_projection']['sha256'] == terminal['accepted_inventory']['mapping_source']['sha256']
+    assert result['accepted_inventory_sha256'] == terminal['completeness']['inventory_sha256']
+    accepted_binding = case['seed']['accepted_engineering']
+    assert terminal['accepted_inventory']['source'] == {
+        key: accepted_binding[key] for key in ('path', 'sha256')
+    }
+    assert terminal['accepted_inventory']['phase'] == accepted_binding['phase']
+    assert terminal['accepted_inventory']['route'] == accepted_binding['route']
+
+    facts = {row['id']: row for row in result['facts']['outcomes']}
+    assert facts['R1']['status'] == facts['S1']['status'] == 'passed'
+    assert facts['R4']['status'] == 'pending' and facts['R4']['next_owner'] == 'Nutrition Controller'
+    assert facts['R1']['definition'] == result['owning_definition']
+    for outcome in ('P1', 'P1b'):
+        proof = facts[outcome]
+        assert proof['status'] == 'passed' and proof['native']['record']['path'].endswith(
+            '/commands/' + ('case_a' if outcome == 'P1' else 'case_b') + '/result.json')
+    for native_id in ('case_a', 'case_b'):
+        record_path = attempt / 'native/runs/GH-422-accepted-flow/commands' / native_id / 'result.json'
+        native_record = json.loads(record_path.read_text())
+        proof = native_record['native_case']
+        assert proof['candidate'] == result['candidate']
+        assert proof['attempt'] == 'GH-422-accepted-flow'
+        assert proof['request_sha256'] == result['request_sha256']
+        assert math.isfinite(proof['measurements']['duration_seconds'])
+        assert proof['measurements']['duration_seconds'] >= 0
+        for name in ('stdout', 'stderr'):
+            artifact = proof['artifacts'][name]
+            assert sha(Path(artifact['path'])) == artifact['sha256']
+    intake = _generated_public(case, 'intake')
+    assert intake.returncode == 0, intake.stdout + intake.stderr
+    assert terminal_path.read_bytes() == terminal_before
+    assert git(case['protected'], 'rev-parse', 'HEAD') == before_protected
+
+
+def test_public_generator_derives_original_capsule_checks_block(adapter, tmp_path):
+    case = _write_generated_fixture(adapter, tmp_path, capsule=True)
+    created = subprocess.run(
+        [sys.executable, str(SCRIPT), 'create-workspace', '--request', str(case['seed_path']),
+         '--evidence', str(case['evidence'])], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert created.returncode == 0, created.stdout + created.stderr
+    generated = subprocess.run(
+        [sys.executable, str(SCRIPT), 'generate', '--request', str(case['seed_path']),
+         '--definition', str(case['definition_path']), '--output', str(case['generated']),
+         '--evidence', str(case['evidence'])], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=90,
+    )
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    prepared = _generated_public(case, 'prepare')
+    assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+    request = json.loads(case['generated'].read_text())
+    prepared_record = json.loads((case['evidence'] / 'GH-422-accepted-flow/PREPARED.json').read_text())
+    assert request['required_outcomes'] == {'C1': True, 'C1-proof': True}
+    assert prepared_record['accepted_inventory']['source']['path'] == case['seed']['accepted_capsule']['path']
+    assert {row['id'] for row in prepared_record['accepted_inventory']['entries']} == {'C1', 'C1-proof'}
+
+
+def test_public_accepted_missing_command_keeps_null_exit_failure_and_blocked_dependency(adapter, tmp_path):
+    case = _write_generated_fixture(adapter, tmp_path, missing_command=True)
+    created = subprocess.run(
+        [sys.executable, str(SCRIPT), 'create-workspace', '--request', str(case['seed_path']),
+         '--evidence', str(case['evidence'])], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert created.returncode == 0, created.stdout + created.stderr
+    generated = subprocess.run(
+        [sys.executable, str(SCRIPT), 'generate', '--request', str(case['seed_path']),
+         '--definition', str(case['definition_path']), '--output', str(case['generated']),
+         '--evidence', str(case['evidence'])], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=90,
+    )
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    prepared = _generated_public(case, 'prepare')
+    assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+    for relative in ('scripts/worker_execution.py', 'scripts/lib/review_commands.py'):
+        shutil.copy2(ROOT / relative, case['workspace'] / relative)
+    executed = _generated_public(case, 'run')
+    assert executed.returncode == 1
+
+    attempt = case['evidence'] / 'GH-422-accepted-flow'
+    native = attempt / 'native/runs/GH-422-accepted-flow'
+    missing = json.loads((native / 'commands/case_a/result.json').read_text())
+    dependent = json.loads((native / 'commands/case_b/result.json').read_text())
+    assert missing['exit_code'] is None and missing['child_return_code'] is None
+    assert dependent['status'] == 'blocked'
+    assert list((native / 'failures').iterdir())
+    result = json.loads((attempt / 'NUTRITION_RESULT.json').read_text())
+    terminal = json.loads((attempt / 'RETURN.json').read_text())
+    assert result['ready'] is False and terminal['status'] == 'blocked'
+    assert terminal['review_ready'] is False
+    assert {row['id']: row['status'] for row in result['facts']['outcomes']}['R1'] != 'passed'
+
+
+@pytest.mark.parametrize('mutation', ['definition', 'native_inventory'])
+def test_public_intake_refuses_changed_definition_or_check_inventory_without_rewriting_return(
+        adapter, tmp_path, mutation):
+    case = _write_generated_fixture(adapter, tmp_path)
+    created = subprocess.run(
+        [sys.executable, str(SCRIPT), 'create-workspace', '--request', str(case['seed_path']),
+         '--evidence', str(case['evidence'])], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert created.returncode == 0, created.stdout + created.stderr
+    generated = subprocess.run(
+        [sys.executable, str(SCRIPT), 'generate', '--request', str(case['seed_path']),
+         '--definition', str(case['definition_path']), '--output', str(case['generated']),
+         '--evidence', str(case['evidence'])], cwd=ROOT, env=case['environment'],
+        capture_output=True, text=True, timeout=90,
+    )
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    prepared = _generated_public(case, 'prepare')
+    assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+    for relative in ('scripts/worker_execution.py', 'scripts/lib/review_commands.py'):
+        shutil.copy2(ROOT / relative, case['workspace'] / relative)
+    executed = _generated_public(case, 'run')
+    assert executed.returncode == 0, executed.stdout + executed.stderr
+    terminal_path = case['evidence'] / 'GH-422-accepted-flow/RETURN.json'
+    terminal_before = terminal_path.read_bytes()
+
+    if mutation == 'definition':
+        case['definition_path'].write_text(case['definition_path'].read_text() + '\n')
+    else:
+        native_request = case['evidence'] / 'GH-422-accepted-flow/CHECK_REQUEST.json'
+        value = json.loads(native_request.read_text())
+        value['accepted_obligations'] = {'inventory_sha256': '0' * 64}
+        write(native_request, value)
+    intake = _generated_public(case, 'intake')
+    assert intake.returncode == 1
+    assert terminal_path.read_bytes() == terminal_before
