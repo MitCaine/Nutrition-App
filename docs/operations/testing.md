@@ -389,7 +389,8 @@ prerequisites. For example:
       "cwd": ".",
       "env": {},
       "prerequisites": [],
-      "designation": "mandatory"
+      "designation": "mandatory",
+      "runtime_budget_seconds": 30
     }
   ]
 }
@@ -407,6 +408,37 @@ If a command cannot launch (for example, it is missing or not executable), its c
 exit codes remain null because no process ran. The executor returns a nonzero status to the shell
 runner, which records a failed check and retains a failure-log copy with the launch diagnostic.
 Dependent steps stay blocked; a later independent success cannot clear a mandatory launch failure.
+
+`runtime_budget_seconds` is optional and accepts a finite positive number, excluding Booleans.
+Select investigation budgets in the accepted task's existing check definition, informed by retained
+individual command measurements. Generation and execution use the same validator and field; there
+is no separate budget inventory. The example's 30 seconds is illustrative, not a repository default.
+Select affected implementation checks, failed plus affected correction reruns, and broader acceptance
+checks by risk and required profile floors before execution. A full suite needs a concrete reason;
+the controller owns changes to that selection.
+
+Each budgeted command records `runtime_investigation` separately from its exit/status: measured duration,
+selected budget, exceedance and `within-budget`, `investigate`, `unknown` or `not-selected` disposition.
+Reconciliation emits an exceeded-budget notice before the runner advances to later commands, and
+the terminal `runtime_investigations` list retains exceedances. Investigate that signal before
+selecting further expensive work; it neither cancels already required checks nor waives a gate.
+A legitimately completed pass over budget stays a pass with a separate investigation signal.
+This duration measures the direct command invocation, including launch/wait overhead, not each
+nested test or gate. It is independent of a job deadline or process timeout. Blocked/unlaunched,
+failed, interrupted, omitted and incomplete results retain their actual status; missing timing is
+unknown and never establishes successful completion or evidence equivalence.
+
+The existing per-command input record binds the raw request, source observation, effective child
+configuration, observed executable/runner bytes and prerequisite result hashes. These observations
+do not enumerate every dependency of an arbitrary child. Unknown bindings cannot support reuse.
+For generated requests, the same owning definition also binds selected original configuration,
+prerequisite inputs, tools and runtime. Read-only SAME intake revalidates those inputs and the budget
+facts against retained native evidence, preserving the original RETURN. An unchanged-input result is
+reuse-eligible only after controller verification of all relevant transitive inputs/environment;
+changed relevant configuration or prerequisite inputs refuse intake. Successful intake authenticates
+the selected bindings, not an exhaustive dependency claim. No automatic cache or skipped execution
+is introduced. Preserve old source/command/environment identities when reusing eligible evidence,
+and rerun affected checks when coverage or timing is unknown.
 
 Before and after observations bind HEAD, branch, index tree and entries, assume-unchanged and
 skip-worktree flags, tracked and nonignored untracked file bytes/modes/symlinks, repository and

@@ -766,6 +766,23 @@ def project(request_path: Path, directory: Path, candidate: str,
                               ("cwd", step["cwd"]), ("prerequisites", step["prerequisites"]),
                               ("selected_environment_overrides", step["env"])):
             require(row.get(key) == observed.get(key) == expected, "Gate request mapping differs: " + step["id"])
+        if "runtime_budget_seconds" in step:
+            native.validate_runtime_investigation(step, observed)
+            require(row.get("runtime_investigation") == observed.get("runtime_investigation"),
+                    "Runtime investigation differs from retained result: " + step["id"])
+            require(isinstance(observed.get("input_identity"), dict)
+                    and observed["input_identity"].get("request_sha256") == request_id["sha256"],
+                    "Runtime investigation input identity mismatch: " + step["id"])
+            inputs = observed["input_identity"]
+            require(inputs.get("source_fingerprint") == snapshots[0]
+                    and inputs.get("effective_child_inputs_sha256")
+                    == native._hash_file(native._attempt_file(directory,
+                        "commands/" + step["id"] + "/effective-child-inputs.json"))
+                    and inputs.get("prerequisites") == [
+                        {"id": name, "result_sha256": native._hash_file(native._attempt_file(
+                            directory, "commands/" + name + "/result.json"))}
+                        for name in step["prerequisites"]],
+                    "Runtime investigation input bindings changed: " + step["id"])
         for key in ("status", "exit_code", "runner_status", "runner_exit_code", "stdout_sha256", "stderr_sha256", "runner_log_sha256"):
             require(row.get(key) == observed.get(key), "Gate evidence differs: " + step["id"])
         require(row["status"] in ("passed", "failed", "blocked"), "Unknown gate outcome")
@@ -788,6 +805,10 @@ def project(request_path: Path, directory: Path, candidate: str,
     ready = all(not row["mandatory"] or row["status"] == "passed" for row in outcomes)
     facts = {"source_stable": True, "terminal_complete": True, "outcomes": outcomes,
              "request_digests": {"raw_file_sha256": native._sha256(request_path.read_bytes())}}
+    facts["runtime_investigations"] = [
+        {"id": step["id"], **observed_by_id[step["id"]]["runtime_investigation"],
+         "input_identity": observed_by_id[step["id"]]["input_identity"]}
+        for step in request["steps"] if "runtime_budget_seconds" in step]
     accepted_inventory = None
     if consumer_request is not None:
         require(module is not None, 'Selected helper is required for accepted reconciliation')
@@ -1059,7 +1080,7 @@ def main(argv=None) -> int:
             return 0 if args.mode == "prepare" or result["review_ready"] else 1
         if args.mode == "intake":
             require(args.evidence is not None, "Evidence directory required")
-            request, module, _, owner_request = generated_binding(args.request, args.evidence)
+            request, module, plan, owner_request = generated_binding(args.request, args.evidence)
             attempt = args.evidence / request['attempt']
             terminal = attempt / 'RETURN.json'
             before = terminal.read_bytes()
@@ -1071,6 +1092,19 @@ def main(argv=None) -> int:
                                       attempt / 'native/runs' / request['attempt'],
                                       report.get('candidate'), module)
             result = module.intake(request, args.evidence)
+            if any("runtime_budget_seconds" in step for step in plan["steps"]):
+                projected = project(attempt / 'CHECK_REQUEST.json',
+                                    attempt / 'native/runs' / request['attempt'],
+                                    report.get('candidate'), request, module)
+                retained = read(attempt / 'NUTRITION_RESULT.json')
+                require(retained.get('facts', {}).get('runtime_investigations')
+                        == projected['facts']['runtime_investigations'],
+                        'Runtime investigation facts differ from retained native evidence')
+                require(all(item['input_identity'].get('coverage') == 'observed-only'
+                            and item['input_identity'].get('executable') is not None
+                            for item in projected['facts']['runtime_investigations']
+                            if item['duration_seconds'] is not None),
+                        'Unknown runtime investigation inputs cannot support reuse')
             require(terminal.read_bytes() == before and identity(terminal) == terminal_identity,
                     'Read-only intake changed the original RETURN')
             result['request'] = identity(args.request)

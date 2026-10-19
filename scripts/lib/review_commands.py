@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -314,7 +315,9 @@ def _validate_request(request: Any, root: Path, expected_head: str, attempt: str
     for index, raw_step in enumerate(raw_steps):
         step = _expect_keys(
             raw_step,
-            {"id", "argv", "cwd", "env", "prerequisites", "designation"},
+            {"id", "argv", "cwd", "env", "prerequisites", "designation"}
+            | ({"runtime_budget_seconds"} if isinstance(raw_step, dict)
+               and "runtime_budget_seconds" in raw_step else set()),
             f"steps[{index}]",
         )
         step_id = step["id"]
@@ -369,6 +372,15 @@ def _validate_request(request: Any, root: Path, expected_head: str, attempt: str
                 "index": index,
             }
         )
+        if "runtime_budget_seconds" in step:
+            budget = step["runtime_budget_seconds"]
+            try:
+                valid_budget = type(budget) in (int, float) and math.isfinite(budget) and budget > 0
+            except OverflowError:
+                valid_budget = False
+            if not valid_budget:
+                raise RequestError(f"step {step_id} runtime_budget_seconds must be finite and positive")
+            steps[-1]["runtime_budget_seconds"] = budget
 
     if total_arg_bytes > MAX_TOTAL_ARG_BYTES:
         raise RequestError("request argv data exceeds its total byte limit")
@@ -765,6 +777,60 @@ def _write_step_result(step_dir: Path, record: dict[str, Any]) -> None:
     _atomic_write(step_dir / "result.json", _json_bytes(record))
 
 
+def runtime_investigation(step: dict, duration: Any) -> dict:
+    """An investigation signal, never a replacement for command acceptance."""
+    budget = step.get("runtime_budget_seconds")
+    try:
+        measured = type(duration) in (int, float) and math.isfinite(duration) and duration >= 0
+    except OverflowError:
+        measured = False
+    exceeded = duration > budget if measured and budget is not None else None
+    return {"budget_seconds": budget, "duration_seconds": duration if measured else None,
+            "exceeded": exceeded,
+            "disposition": ("not-selected" if budget is None else "unknown" if not measured
+                            else "investigate" if exceeded else "within-budget")}
+
+
+def validate_runtime_investigation(step: dict, record: dict) -> None:
+    if "runtime_budget_seconds" not in step:
+        return
+    expected = runtime_investigation(step, record.get("duration_seconds"))
+    if record.get("status") != "blocked" and expected["duration_seconds"] is None:
+        raise RequestError("Runtime investigation timing missing or invalid: " + step["id"])
+    if record.get("runtime_investigation") != expected:
+        raise RequestError("Runtime investigation differs from owning definition: " + step["id"])
+
+
+def _command_input_identity(attempt_dir: Path, step: dict, effective_inputs: dict,
+                            request_identity: dict) -> dict:
+    """Retain observed inputs; arbitrary child dependency coverage is not inferred."""
+    command = step["argv"][0]
+    executable = None
+    try:
+        selected = (str(Path(step["resolved_cwd"]) / command) if "/" in command
+                    else shutil.which(command, path=effective_inputs["environment"].get("PATH", os.defpath)))
+        if selected is not None:
+            path = Path(selected).resolve(strict=True)
+            if path.is_file():
+                executable = {"path": str(path), "sha256": _hash_file(path)}
+    except OSError:
+        # Failure to observe a tool does not grant equivalence or alter launch semantics.
+        executable = None
+    prerequisites = []
+    for name in step["prerequisites"]:
+        path = attempt_dir / "commands" / name / "result.json"
+        prerequisites.append({"id": name, "result_sha256": _hash_file(path) if path.is_file() else None})
+    source = _parse_json((attempt_dir / "source-before.json").read_bytes())
+    return {"request_sha256": request_identity["sha256"],
+            "source_fingerprint": _source_fingerprint(source),
+            "effective_child_inputs_sha256": _sha256(_json_bytes(effective_inputs)),
+            "executable": executable,
+            "runner": {"path": str(Path(__file__).resolve()), "sha256": _hash_file(Path(__file__))},
+            "prerequisites": prerequisites,
+            "coverage": "observed-only" if executable is not None else "unknown",
+            "transitive_input_equivalence": "controller verification required; not established by this record"}
+
+
 def _step_result(attempt_dir: Path, step_id: str) -> dict[str, Any] | None:
     path = attempt_dir / "commands" / step_id / "result.json"
     if not path.is_file():
@@ -826,6 +892,12 @@ def _record_runner_result(args: argparse.Namespace) -> int:
         "measurements": {"duration_seconds": result.get("duration_seconds")},
     }
     _write_step_result(attempt_dir / "commands" / step["id"], result)
+    investigation = result.get("runtime_investigation")
+    if investigation and investigation["exceeded"]:
+        print(f"Runtime investigation budget exceeded: {step['id']}; "
+              f"{investigation['duration_seconds']}s > {investigation['budget_seconds']}s. "
+              f"Command status remains {result['status']}; investigate before further expensive work.",
+              file=sys.stderr, flush=True)
     print(json.dumps({"step": step["id"], "runner_status": row["status"], "runner_exit_code": row["exit_code"], "runner_log_sha256": result["runner_log_sha256"]}))
     return 0
 
@@ -858,6 +930,9 @@ def _execute(args: argparse.Namespace) -> int:
         "stdin": "devnull",
     }
     _write_exclusive(step_dir / "effective-child-inputs.json", _json_bytes(effective_inputs))
+    _, request_identity, _ = _load_attempt(attempt_dir)
+    input_identity = (_command_input_identity(attempt_dir, step, effective_inputs, request_identity)
+                      if "runtime_budget_seconds" in step else None)
 
     failed_prerequisites = []
     for prerequisite in step["prerequisites"]:
@@ -889,6 +964,9 @@ def _execute(args: argparse.Namespace) -> int:
             "stderr_sha256": _sha256(message),
             "finished_at": _utc_now(),
         }
+        if input_identity is not None:
+            record["input_identity"] = input_identity
+            record["runtime_investigation"] = runtime_investigation(step, None)
         _write_step_result(step_dir, record)
         sys.stderr.buffer.write(message)
         return BLOCKED_EXIT
@@ -945,6 +1023,9 @@ def _execute(args: argparse.Namespace) -> int:
         "stderr_sha256": stderr_hash,
         "finished_at": _utc_now(),
     }
+    if input_identity is not None:
+        record["input_identity"] = input_identity
+        record["runtime_investigation"] = runtime_investigation(step, record["duration_seconds"])
     _write_step_result(step_dir, record)
     _fsync_directory(step_dir)
 
@@ -1071,6 +1152,7 @@ def _finalize(args: argparse.Namespace) -> int:
             continue
         if recorded.get("designation") != step["designation"] or recorded.get("argv") != step["argv"]:
             raise RequestError(f"step result does not match the retained request: {step['id']}")
+        validate_runtime_investigation(step, recorded)
         step_dir = attempt_dir / "commands" / step["id"]
         stdout_path = step_dir / "stdout.log"
         stderr_path = step_dir / "stderr.log"
@@ -1187,6 +1269,9 @@ def _finalize(args: argparse.Namespace) -> int:
         "opt_in_qualification_status": "unspecified",
         "eligible": source_stable,
         "completion_marker_required": True,
+        "runtime_investigations": [dict(id=step["id"], **step["runtime_investigation"])
+                                   for step in step_results
+                                   if step.get("runtime_investigation", {}).get("exceeded") is True],
         "authored_commands": {
             "schema_version": SCHEMA_VERSION,
             "attempt": request["attempt"],

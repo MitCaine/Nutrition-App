@@ -820,6 +820,67 @@ def _run_generated_fixture_to_terminal(case, *, second_case_failure=None, expect
     return attempt, result_path, terminal_path, result, terminal
 
 
+@pytest.mark.parametrize('budget', [10, 0.001])
+def test_public_generated_budget_and_bound_input_reuse(adapter, tmp_path, budget):
+    case = _write_generated_fixture(adapter, tmp_path)
+    configuration = tmp_path / 'configuration.json'
+    prerequisite_input = tmp_path / 'prerequisite-input.txt'
+    configuration.write_text('{"mode":"fixture"}\n')
+    prerequisite_input.write_text('known fixture prerequisite\n')
+    for path in (configuration, prerequisite_input):
+        case['definition']['inputs'].append({'path': str(path), 'sha256': sha(path)})
+    steps = case['definition']['check_request']['steps']
+    steps[0]['runtime_budget_seconds'] = budget
+    steps[0]['argv'] = [sys.executable, '-c',
+                        'import pathlib,sys,time; '
+                        'assert all(pathlib.Path(p).read_text() for p in sys.argv[1:]); time.sleep(0.03)',
+                        str(configuration), str(prerequisite_input)]
+    steps[1]['runtime_budget_seconds'] = 10
+    steps[1]['prerequisites'] = ['case_a']
+    write(case['definition_path'], case['definition'])
+    attempt, result_path, terminal_path, result, terminal = _run_generated_fixture_to_terminal(case)
+    assert result['ready'] and terminal['review_ready']
+    original_result, original_terminal = result_path.read_bytes(), terminal_path.read_bytes()
+    generated = json.loads(case['generated'].read_text())
+    assert generated['check_request']['steps'][0]['runtime_budget_seconds'] == budget
+    native_request = json.loads((attempt / 'CHECK_REQUEST.json').read_text())
+    assert native_request['steps'][0]['runtime_budget_seconds'] == budget
+    first, second = result['facts']['runtime_investigations']
+    assert first['id'] == 'case_a' and first['budget_seconds'] == budget
+    assert first['exceeded'] == (budget < 1)
+    assert second['input_identity']['prerequisites'][0]['id'] == 'case_a'
+    native_result = attempt / 'native/runs' / case['seed']['attempt'] / 'commands/case_a/result.json'
+    assert second['input_identity']['prerequisites'][0]['result_sha256'] == sha(native_result)
+    # Reuse eligibility here concerns these known fixture inputs only. This does
+    # not skip commands or assert complete dependency coverage for arbitrary tools.
+    for _ in range(2):
+        unchanged = _generated_public(case, 'intake')
+        assert unchanged.returncode == 0, unchanged.stdout + unchanged.stderr
+        assert result_path.read_bytes() == original_result and terminal_path.read_bytes() == original_terminal
+    parked = tmp_path / 'retained-omitted-result.json'
+    native_result.rename(parked)
+    try:
+        omitted = _generated_public(case, 'intake')
+        assert omitted.returncode != 0
+        assert result_path.read_bytes() == original_result and terminal_path.read_bytes() == original_terminal
+    finally:
+        parked.rename(native_result)
+    restored = _generated_public(case, 'intake')
+    assert restored.returncode == 0, restored.stdout + restored.stderr
+    for path in (configuration, prerequisite_input):
+        before = path.read_bytes()
+        try:
+            path.write_bytes(before + b'changed relevant input\n')
+            refused = _generated_public(case, 'intake')
+            assert _generated_error(refused) == 'Selected input mismatch: ' + str(path)
+            assert result_path.read_bytes() == original_result and terminal_path.read_bytes() == original_terminal
+        finally:
+            path.write_bytes(before)
+        restored = _generated_public(case, 'intake')
+        assert restored.returncode == 0, restored.stdout + restored.stderr
+        assert result_path.read_bytes() == original_result and terminal_path.read_bytes() == original_terminal
+
+
 def _configure_generated_output_fixture(case, *, steps, entry_ids, attempt):
     """Bind one output fixture's authored steps and exact selected proof inventory."""
     assignment = case['seed']['engineering_assignment']

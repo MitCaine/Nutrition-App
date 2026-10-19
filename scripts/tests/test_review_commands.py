@@ -703,8 +703,9 @@ def test_runner_clears_ambient_git_redirection_for_authored_observation(
     assert source["repository"] == str(authored_repo.resolve())
 
 
+@pytest.mark.parametrize("runtime_budget", [None, 0.001])
 def test_term_leaves_durable_incomplete_attempt_without_terminal_pass(
-    authored_repo: Path, tmp_path: Path
+    authored_repo: Path, tmp_path: Path, runtime_budget
 ):
     output_root = tmp_path / "evidence"
     marker = tmp_path / "child-started"
@@ -715,6 +716,10 @@ def test_term_leaves_durable_incomplete_attempt_without_terminal_pass(
         "term-interrupt",
         [_step("long", [sys.executable, "-c", script, str(marker)])],
     )
+    if runtime_budget is not None:
+        request = json.loads(request_path.read_text())
+        request["steps"][0]["runtime_budget_seconds"] = runtime_budget
+        request_path.write_text(json.dumps(request))
     environment = os.environ.copy()
     for name in tuple(environment):
         if name.startswith("GIT_"):
@@ -746,6 +751,80 @@ def test_term_leaves_durable_incomplete_attempt_without_terminal_pass(
     assert not (attempt_dir / "complete.json").exists()
     if (attempt_dir / "results.json").exists():
         assert json.loads((attempt_dir / "results.json").read_text())["eligible"] is False
+
+
+@pytest.mark.parametrize("scenario,budget", [("within", 10), ("over", 0.001),
+                                            ("failure", 0.001), ("launch", 0.001)])
+def test_public_cli_runtime_budget_signals_preserve_status(authored_repo, tmp_path, scenario, budget):
+    argv = [sys.executable, "-c", "import time; time.sleep(0.03)"]
+    if scenario == "failure":
+        argv[-1] += "; raise SystemExit(17)"
+    elif scenario == "launch":
+        argv = [str(tmp_path / "missing-command")]
+    first = dict(_step("observe", argv), runtime_budget_seconds=budget)
+    dependent = dict(_step("dependent", [sys.executable, "-c", "pass"],
+                           prerequisites=["observe"]), runtime_budget_seconds=10)
+    request = _write_request(authored_repo, tmp_path / "request.json", "budget", [first, dependent])
+    result = _run(authored_repo, request, "budget", tmp_path / "evidence")
+    expected_pass = scenario in {"within", "over"}
+    assert result.returncode == (0 if expected_pass else 1), result.stdout + result.stderr
+    attempt = _attempt_dir(tmp_path / "evidence", "budget")
+    native = json.loads((attempt / "results.json").read_text())
+    observed, later = native["authored_commands"]["steps"]
+    investigation = observed["runtime_investigation"]
+    assert investigation["budget_seconds"] == budget
+    assert investigation["duration_seconds"] == observed["duration_seconds"]
+    assert investigation["exceeded"] == (observed["duration_seconds"] > budget)
+    assert observed["status"] == ("passed" if expected_pass else "failed")
+    assert native["summary"]["mandatory_gate"] == ("passed" if expected_pass else "failed")
+    bindings = observed["input_identity"]
+    assert bindings["request_sha256"] == _sha256(request)
+    assert bindings["effective_child_inputs_sha256"] == _sha256(
+        attempt / "commands/observe/effective-child-inputs.json")
+    assert bindings["source_fingerprint"] == native["authored_commands"]["source_observation"]["before_fingerprint"]
+    if scenario == "over":
+        assert investigation["disposition"] == "investigate"
+        assert "Runtime investigation budget exceeded: observe" in result.stderr
+        assert native["runtime_investigations"][0]["id"] == "observe"
+    if expected_pass:
+        assert later["input_identity"]["prerequisites"] == [{
+            "id": "observe", "result_sha256": _sha256(attempt / "commands/observe/result.json")}]
+    else:
+        assert later["status"] == "blocked"
+        assert later["runtime_investigation"]["duration_seconds"] is None
+        assert later["runtime_investigation"]["exceeded"] is None
+    if scenario == "launch":
+        assert observed["child_return_code"] is None
+        assert bindings["executable"] is None
+        assert bindings["coverage"] == "unknown"
+
+
+@pytest.mark.parametrize("budget", [True, False, 0, -1, "5", None, [], 10**400])
+def test_public_cli_invalid_runtime_budget_refuses_before_execution(authored_repo, tmp_path, budget):
+    marker = tmp_path / "should-not-run"
+    step = dict(_step("invalid", [sys.executable, "-c", "from pathlib import Path; "
+                     f"Path({str(marker)!r}).touch()"]), runtime_budget_seconds=budget)
+    request = _write_request(authored_repo, tmp_path / "request.json", "invalid-budget", [step])
+    result = _run(authored_repo, request, "invalid-budget", tmp_path / "evidence")
+    assert result.returncode != 0
+    assert "runtime_budget_seconds" in result.stderr
+    assert not marker.exists()
+
+
+def test_public_cli_budget_missing_timing_cannot_be_finalized_as_pass(authored_repo, tmp_path):
+    output = tmp_path / 'evidence'
+    record = output / 'runs/budget-omission/commands/first/result.json'
+    tamper = ('import json,pathlib; p=pathlib.Path(' + repr(str(record)) + '); '
+              'v=json.loads(p.read_text()); v.pop("duration_seconds"); p.write_text(json.dumps(v))')
+    first = dict(_step('first', [sys.executable, '-c', 'pass']), runtime_budget_seconds=10)
+    request = _write_request(authored_repo, tmp_path / 'request.json', 'budget-omission',
+                             [first, _step('omit', [sys.executable, '-c', tamper])])
+    result = _run(authored_repo, request, 'budget-omission', output)
+    assert result.returncode != 0
+    assert 'Runtime investigation timing missing or invalid' in result.stderr
+    attempt = _attempt_dir(output, 'budget-omission')
+    assert not (attempt / 'complete.json').exists()
+    assert json.loads((attempt / 'attempt-state.json').read_text())['status'] == 'incomplete'
 
 
 def test_native_case_export_uses_real_runner_source_and_logs(authored_repo, tmp_path):
