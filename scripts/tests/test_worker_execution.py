@@ -264,10 +264,20 @@ def test_capture_detects_committed_outside_change_masked_by_worktree(case, adapt
     assert git(case["workspace"], "rev-parse", "HEAD") == head
 
 
-def test_nonexecutable_native_runner_refused_before_preparation(case):
+def test_nonexecutable_native_runner_refused_before_preparation(case, adapter, monkeypatch):
     (case["workspace"] / "scripts/run-review.sh").chmod(0o644)
-    result = public(case, "prepare")
-    assert result.returncode == 1 and "not executable" in result.stdout
+
+    def unexpected_helper(_selection):
+        raise RuntimeError("helper loading reached")
+
+    # Exercise the owning preflight without requiring a host-private helper runtime.
+    # The public CLI authenticates that runtime before entering this preflight.
+    monkeypatch.setattr(adapter, "selected_ri", unexpected_helper)
+    with pytest.raises(adapter.native.RequestError, match="not executable"):
+        adapter.binding(case["path"], preparing=True, evidence=case["evidence"])
+    (case["workspace"] / "scripts/run-review.sh").chmod(0o755)
+    with pytest.raises(RuntimeError, match="helper loading reached"):
+        adapter.binding(case["path"], preparing=True, evidence=case["evidence"])
     assert not (case["evidence"] / "fixture").exists()
 
 
