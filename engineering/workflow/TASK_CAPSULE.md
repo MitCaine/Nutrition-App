@@ -4,7 +4,7 @@ For current work use the bounded [Markdown template](../tasks/TEMPLATE.md), stor
 `engineering/tasks/`, with objective/issue, exact base/branch, owner authority, allowed and
 forbidden scope, checkable criteria, actual commands, results and gaps. Deliver it with
 [local project map](../../docs/local_project_map.md), the controller's complete shared procedure,
-and each worker's complete Shared worker rules plus assigned unique level-two section from the
+and each worker's complete Shared worker rules plus selected role skill/locator from the
 pinned [`worker-instructions.md`](shared/worker-instructions.md#role-index), with applicable AGENTS
 inputs. Initial builders receive original objective/base/requirements without a future capsule.
 Normal-route implementors and reviewers receive the accepted capsule; implementors and reviewers on

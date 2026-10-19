@@ -130,9 +130,10 @@ or rewrite failed history to force a gate. [STATES](STATES.md) describes retaine
 ## Host and transport
 
 [local project map](../../docs/local_project_map.md) is the local route. The controller receives the complete
-pinned daily procedure; each serial worker receives Shared worker rules and its assigned unique
-level-two section of the pinned [worker instructions](shared/worker-instructions.md#role-index),
-through the next level-two heading or end of file, with the task and standards. Ordinary read-only
+pinned daily procedure; each serial worker receives Shared worker rules and its complete selected role skill/locator from the pinned
+[worker index](shared/worker-instructions.md#role-index), with the task and standards. Ordinary read-only
 independent source/diff review is sufficient for RI.
 Actual host permissions, confidentiality, secret scanning and protected Git/issue authority
 remain enforced. No private source or diagnostic export is implied.
+
+Engineering task records use the explicitly selected `task validate-record --route engineering` and optional `task prepare --route engineering --task-record PATH` binding. Mechanical section checks do not establish plan adequacy, independent approval or scope authority. The issue-scoped authorization/qualification/integration state machine remains unchanged; interim decisions remain in existing external execution state.

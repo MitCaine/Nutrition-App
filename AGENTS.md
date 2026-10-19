@@ -164,7 +164,7 @@ For dependency-only pull requests:
 Controllers start at [the local execution map](docs/local_project_map.md) and read its complete
 byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md).
 Workers use the selected [worker Role index](engineering/workflow/shared/worker-instructions.md#role-index)
-and only their assigned map sections, task/source and applicable local standards.
+and their selected complete role skill/locator, assigned map sections, task/source and applicable local standards.
 The shared [ownership and handoff contract](engineering/workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs)
 owns generic role inputs, including initial builders without a future capsule;
 its linked Shared worker rules own receiver comprehension and correction/replacement duties.

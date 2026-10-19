@@ -12,7 +12,7 @@ reference does not supply confirmation.
 Establish the repository and designated or pending Work-controller route under
 the [selected kickoff resources](references/project-procedure.md). Resolve only
 the selected RI identity/locations from the authenticated handoff or map selection
-information. Read Shared worker rules and Codex dispatcher in full at that revision;
+information. Read Shared worker rules and the authoritative ri-dispatcher skill in full at that revision;
 do not perform controller intake or retrieve original issues/decision history.
 
 Apply the selected setup's [source orientation and authority rules](references/project-procedure.md);

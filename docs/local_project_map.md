@@ -3,12 +3,12 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `685a2584a38cbc23286eda9c11a0404835059773`: controllers use the complete
+future task intake is pinned at `8db4d56323db31f27af151c542967b4ef13a79af`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
 section. The [Shared worker rules](../engineering/workflow/shared/worker-instructions.md#shared-worker-rules)
-and role sections govern worker inputs, scope and return duties. Preserve each active attempt's
+and complete selected role skills/locators govern worker inputs, scope and return duties. Preserve each active attempt's
 selected instruction inputs through acceptance. A future-intake pin does not repin an active or
 historical attempt.
 
@@ -58,59 +58,13 @@ direct inspection supplements required operation evidence. Documentation-only ma
 
 ### Optional source tools
 
-Optional helper source revision: `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`
+Optional helper source revision: `8db4d56323db31f27af151c542967b4ef13a79af`
 
-Optional section-reader and adoption helpers are separate from producer/runtime `20a5039` and are
-selected from the authenticated RI checkout `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/e0b82f52cdd728b4ef80986a3541fc8f1d07486a` at
-revision `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`. Before use, confirm that exact HEAD and a clean
-worktree, then authenticate imports with the existing
-`/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python` (Python 3.14.8), `PYTHONPATH=src`,
-and module source paths. The compatible installed helper dependencies are tree-sitter 0.25.1 and
-tree-sitter-markdown 0.5.1. Do not install, upgrade, substitute the producer environment, or infer
-host skill discovery/import registration from local module invocation.
+The authenticated RI checkout `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/8db4d56323db31f27af151c542967b4ef13a79af` remains at that exact clean revision. The separately provisioned helper environment is `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-helper-environments/8db4d56323db31f27af151c542967b4ef13a79af-nutrition`; use its `bin/python`, never RI's development venv. The reproducible setup/verification command is `python3 scripts/setup-ri-helpers.py --source SOURCE --environment ENVIRONMENT --mode provision|verify` from the Nutrition root. The tracked `engineering/tooling/ri-helper-lock.json` binds exact source and resource identities; upstream `pyproject.toml` owns dependency definitions. Provisioning is explicit controller work, never an automatic wrapper fallback or runtime upgrade. Keep historical e0/949 source bindings and old requests untouched.
 
-From that exact RI root, use `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
-"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m
-repository_intelligence.section_reader --help` or
-`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
-"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m repository_intelligence.adoption --help`; request execution is
-`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
-"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m repository_intelligence.section_reader --request
-/absolute/path/selection.json` and
-`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
-"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m repository_intelligence.adoption --request
-/absolute/path/inventory.json --mode preview|verify|apply`. Supply authenticated exact-source requests
-and retain results in the existing task evidence location. Apply only under existing task authority,
-after complete inventory validation and preview inspection. Incomplete reads, preview differences,
-unavailable filesystem capabilities and refusals remain explicit; they do not authorize substitution
-or dependency installation.
+Selected helper subprocesses authenticate exact source closure, interpreter and installed dependency identities before use. Public generation/preparation/execution/intake is supported only when its actual installed binding and acceptance proof are recorded, not by copying instructions. Until the consolidated pilot is verified, bootstrap assignments use the reviewed existing ordinary-owner route; retain that explicit distinction in handoffs. The navigation producer/runtime and native guard below keep their independent selections.
 
-These revision-specific standalone checkouts are retained exact source bindings: never switch
-or repoint them; provision a new revision directory under explicit task authority when needed.
-Their tracked bytes are authenticated at use, not protected by filesystem immutability. The shared
-RI development checkout may advance without changing either source. Controller provisioning is
-separate from wrapper execution; no loader installs or updates sources. Existing helper requests
-keep their original bound source; only new preparation selects the current map.
-
-Nutrition has not selected automatic runner-owned inventory export, generation wiring or
-automatic helper/runtime provisioning.
-The existing authored-input/TOOLS inventory remains explicit; shared source adoption and
-fixtures do not prove normal-route consumer integration. Helper source selection remains
-separate from future instruction intake; preparation reads its explicit pin above.
-
-Optional worker-execution linkage is discoverable from that same selected source with
-`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src
-"/Users/mipoo/Projects/Repository Intelligence/.venv/bin/python" -m repository_intelligence.worker_execution --help`.
-Its [binding contract](../engineering/workflow/shared/workflow-tools.md#prepared-worker-execution-linkage)
-is the authority for required consumer inputs. Nutrition's optional
-[`scripts/worker-execution`](../scripts/worker-execution) binding is selected only when named in an
-authorized handoff; its [consumer contract](operations/testing.md#prepared-worker-execution-binding)
-defines disposable detached capture, the existing authored runner and terminal evidence mapping.
-The handoff supplies the frozen tool location, exact request, allowed inputs/edits, capture grant,
-evidence location and return destination. Workers use the assigned wrapper's `run` command after
-controller preparation. Ordinary supported routes remain available for unselected assignments.
-Resource copies, generated readiness and helper availability grant no authority. The controller
-retains publication, qualification, independent review, approval, integration and installed closeout.
+Use the selected `section_reader`, `adoption`, `worker_execution` and `obligation_reconciliation` interfaces only through their authenticated source/environment bindings and the [workflow-tools contract](../engineering/workflow/shared/workflow-tools.md). New accepted capsule/engineering derivation requires the declared Markdown parser stack. No manual dependency inventory, substituted parser, current-development environment or silent operation fallback is selected.
 
 ### Optional task-output cleanup helper
 
@@ -220,8 +174,7 @@ The selected [serial assignments](../engineering/workflow/shared/start-an-issue.
 [waiting/recovery](../engineering/workflow/shared/start-an-issue.md#wait-recover-and-resume) and
 [evidence rules](../engineering/workflow/shared/start-an-issue.md#evidence-eligibility-and-corrections)
 own shared execution. The [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index),
-including the [assigned dispatcher](../engineering/workflow/shared/worker-instructions.md#codex-dispatcher),
-owns role duties. Nutrition keeps owner authority, actor/model requests, permissions, profile
+and its selected [dispatcher skill](../.agents/skills/ri-dispatcher/SKILL.md) own role duties. Nutrition keeps owner authority, actor/model requests, permissions, profile
 floors, secret controls and protected approval/integration boundaries here and at local owners.
 
 ### Role-specific local inputs
@@ -380,3 +333,11 @@ compare-and-swap route remains mandatory. Apply the selected
 [phase/installed closeout rule](../engineering/workflow/shared/start-an-issue.md#complete-the-phases)
 and local [session-end contract](operations/session-contract.md#session-end) before closure/owned cleanup.
 Record partial closeout when an obligation remains unresolved; never rewrite preserved attempts.
+
+## Consolidated engineering selection
+
+The experimental engineering route is owner-selected for GH-422 only after its maintenance bootstrap is independently reviewed. Other normal capsule and maintenance routes remain supported. The selected authoritative worker folders are `.agents/skills/ri-capsule-creator/`, `ri-implementor/`, `ri-independent-reviewer/` and `ri-dispatcher/`; read the complete assigned skill and locator plus Shared worker rules. Exact document delivery is supported; installed files do not assert host discovery.
+
+Independent planning and final implementation reviews use distinct fresh nonauthor Work `gpt-6.1-sol` / `low` instances, preserving requested versus host/effective telemetry. Sol light means the selected Sol identifier at low effort; Luna is the implementor selection, not a reviewer fallback. Existing attempts retain their original selection and completed reviews are not restarted. Actual launch rejection returns to the controller under the existing policy.
+
+Use the selected [experimental rule](../engineering/workflow/shared/start-an-issue.md#experimental-engineering-route), project record validation/preparation and actual SAME execution/intake binding. Planning approval cannot grant scope, Git authority or waive profiles. Do not expand the issue-scoped controller into concurrent candidate orchestration. Final combined review and protected qualification remain against the original integration baseline; installed verification precedes closure.

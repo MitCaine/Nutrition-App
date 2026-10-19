@@ -1,7 +1,7 @@
 # Set up RI in a project
 
 Use the [controller workflow](capsule-controller-workflow.md) for RI-assisted
-capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/685a2584a38cbc23286eda9c11a0404835059773/docs/consumer-guide.md) for ordinary navigation.
+capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md) for ordinary navigation.
 RI does not require an execution framework or every optional skill to be installed.
 
 ## Minimal setup
@@ -13,10 +13,11 @@ RI does not require an execution framework or every optional skill to be install
    the project README/AGENTS entrypoint. Record shared instruction
    commit/byte identity, runtime/source and contract, role permissions, standards,
    required tests, permitted Git/issue actions and completion route.
-3. Supply each worker its [selected worker instructions](worker-instructions.md#role-index), complete task
+3. Supply each worker its [selected role skill and common contract](worker-instructions.md#role-index), complete task
    inputs and applicable project requirements under the [role-specific reading boundaries](worker-instructions.md#shared-worker-rules)
    through the supported local handoff.
-   Bind role-resource locations/identities to the selected RI revision; workers
+   Bind the complete skill folder and shared-contract locations/identities to the
+   selected RI revision and verify access in the actual worker environment; workers
    do not repeat controller orientation.
    Install only useful [skills](skill-templates/README.md), comparing complete folders
    and preserving intentional adaptations. Instruction copies are not Work registration.
@@ -41,7 +42,8 @@ and `docs/local_project_map.md`. Do not repeat adoption or installation for each
 
 ## Instruction ownership and handoffs
 
-RI owns the shared controller/worker duties, six-heading capsule, source discovery,
+RI owns shared controller/worker duties, the normal six-heading capsule and
+[opt-in experimental engineering route](start-an-issue.md#experimental-engineering-route), source discovery,
 correction, evidence and independent-review rules. A consumer map binds the selected
 revisions and usable runtime/tools, settings, permissions, storage and applicable
 local requirements. Keep genuine domain contracts and project qualification local;
@@ -58,27 +60,25 @@ to load every linked document. This setup reference is not additional worker int
 | Actor | Required inputs at its selected revision | Conditional local detail |
 | --- | --- | --- |
 | Controller | Project map, complete controller procedure, live issue and required decisions/instructions | Domain, command and recovery sections needed for the selected task/route |
-| Capsule builder | Shared worker rules, builder section, [capsule format](start-an-issue.md#capsule-format), original requirements/decisions and supplied source | Applicable domain contracts, callers/tests and proof prerequisites |
-| Implementor | Shared worker rules, implementor section, complete accepted capsule or maintenance handoff, supplied source pointers/standards | Relevant source/callers/tests/contracts and affected recovery sections; not issue-history reconstruction |
-| Independent reviewer | Shared worker rules, reviewer section, original requirements, exact task/candidate/full diff and real evidence | Applicable domain standards, due-stage obligations and affected callers |
-| Dispatcher | Its kickoff locator when used, shared worker rules, dispatcher section and complete authorized handoff | Map selection and setup fields needed to authenticate its own source, route and authority; not controller intake |
+| Capsule builder | Selected ri-capsule-creator skill/locator and Shared worker rules, original requirements/decisions and supplied source | Applicable domain contracts, callers/tests and proof prerequisites |
+| Implementor | Selected ri-implementor skill/locator and Shared worker rules, complete accepted capsule/maintenance handoff or engineering specification with selected assignment, supplied source pointers/standards | Relevant source/callers/tests/contracts and affected recovery sections; not issue-history reconstruction |
+| Independent reviewer | Selected ri-independent-reviewer skill/locator and Shared worker rules, original requirements and proposed plan/source/tests for planning review, or accepted task/candidate/full diff and real evidence for implementation review | Applicable domain standards, due-stage obligations and affected callers |
+| Dispatcher | Its kickoff locator when used, selected ri-dispatcher skill/locator and Shared worker rules and complete authorized handoff | Map selection and setup fields needed to authenticate its own source, route and authority; not controller intake |
 
 The controller's handoff identifies the role/assignment, selected instructions and
 applicable local sections, accepted route and consequential settled decisions.
-Reference authoritative selected tool outputs for mechanically known inputs,
-source identities and evidence locations rather than manually retelling inventories.
-Authenticate those results against the selected source/route; tools cannot decide
-product intent, applicability or acceptance. If the selected tool cannot supply a
-required fact, expose that gap through existing scope/readiness rules rather than
-invent a value or imply an unselected integration works. No new packet is required.
+Apply the [shared tool-ownership rule](worker-instructions.md#shared-worker-rules)
+to mechanically known inputs and bound results. Configure the actual commands
+and consumer wiring that supply them; a link to an unintegrated helper is not
+automation. Product intent, applicability and acceptance remain agent judgments.
 Receiver duties live in [Shared worker rules](worker-instructions.md#shared-worker-rules):
-identity alone is not comprehension. Use existing assignment notes, sketch or terminal
+identity alone is not comprehension. Use existing assignment notes, working reference or terminal
 handoff, not an extra acknowledgment/approval round.
 
 Examples using the same existing records and authenticated references:
 
-- **Normal:** “Implementor; read selected Shared worker rules and Implementor,
-  accepted TASK and linked local standards. Use its bound source-query output and
+- **Normal:** “Implementor; read selected ri-implementor skill/locator and Shared worker rules,
+  complete accepted TASK and linked local standards. Use its bound source-query output and
   authoritative runner request. Retain the settled compatibility choice and
   original outcome IDs; report missing decisions before dependent edits.”
 - **Correction:** “Same implementation actor and selected instructions; address
@@ -105,8 +105,9 @@ an inclusive numerical range. Optional fields are **Capsule builder**,
 (owner-confirmed existing selection), **Codex dispatcher**, task-specific
 **Authority** (owner-supplied grant or selection of an applicable recorded grant),
 **Constraints**, **Stopping conditions** and **Requested route**
-(normal or maintenance), plus **Implementation execution** (`direct Work controller`
-when permitted by the map). A maintenance request follows the controller
+(normal, maintenance, or explicitly adopted experimental engineering), plus **Implementation execution** (`direct Work controller`
+when permitted by the map). Experimental selection follows the [engineering-route prerequisites](start-an-issue.md#experimental-engineering-route);
+it cannot bypass a capsule-only validator or required project controls. A maintenance request follows the controller
 [eligibility decision](start-an-issue.md#optional-maintenance-route), not an automatic
 waiver of project controls. Dependency/runtime or instruction changes alone do
 not require a capsule; use the linked eligibility rule. Resolve concrete chat IDs

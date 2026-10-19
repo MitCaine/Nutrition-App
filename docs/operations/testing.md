@@ -1245,3 +1245,11 @@ platform-specific evidence remain external; no private databases are imported.
 Installed documentation-check reuse remains conditional on complete relevant-input
 and environment equivalence under the selected evidence rules. Tracked-source
 equality alone does not suffice; rerun affected checks when equivalence is unknown.
+
+## Consolidated helper and engineering bootstrap
+
+Explicit helper setup and verification use `scripts/setup-ri-helpers.py` with the exact source/environment selected by the local map. Source closure and upstream pyproject definitions are pinned in `engineering/tooling/ri-helper-lock.json`; new environments use copied executables so strict non-symlink subprocess validation preserves the venv. Existing environments are verified rather than overwritten. Do not use RI's development environment or silently provision from a worker.
+
+`task validate-record --route engineering --task-record PATH` checks the mechanical engineering sections without replacing independent planning review. `task prepare --route engineering --task-record PATH` runs that validation before preparation and retains the source binding. The same normal and maintenance routes remain available. Accepted plan/selection/review and predecessor proof remain controller responsibilities under the selected experimental rule.
+
+The authoritative authored runner exports required inputs and native proof selectors from the same execution definition used for its check plan. Each actual command result carries source/attempt/request identity, retained stdout/stderr bindings and measured duration. This bootstrap alone does not demonstrate selected generation, RETURN or SAME intake; those public-route obligations remain due for the consolidated pilot and final review.

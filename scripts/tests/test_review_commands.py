@@ -704,3 +704,34 @@ def test_term_leaves_durable_incomplete_attempt_without_terminal_pass(
     assert not (attempt_dir / "complete.json").exists()
     if (attempt_dir / "results.json").exists():
         assert json.loads((attempt_dir / "results.json").read_text())["eligible"] is False
+
+
+def test_native_case_export_uses_real_runner_source_and_logs(authored_repo, tmp_path):
+    """Proof selectors cannot replace a failed launch with an unrelated zero."""
+    attempt = 'native-proof-owner'
+    request = _write_request(authored_repo, tmp_path / 'request.json', attempt, [
+        _step('actual-case', [sys.executable, '-c', "print('retained native proof')"]),
+    ])
+    output = tmp_path / 'output'
+    completed = _run(authored_repo, request, attempt, output)
+    assert completed.returncode == 0, completed.stderr
+    directory = _attempt_dir(output, attempt)
+    observed = json.loads((directory / 'commands/actual-case/result.json').read_text())
+    proof = observed['native_case']
+    assert proof['case'] == 'actual-case' and proof['status'] == 'passed'
+    assert proof['candidate'] == _git(authored_repo, 'rev-parse', 'HEAD')
+    assert proof['attempt'] == attempt and proof['request_sha256'] == _sha256(request)
+    assert proof['measurements']['duration_seconds'] == observed['duration_seconds']
+    for name, binding in proof['artifacts'].items():
+        assert Path(binding['path']) == directory / 'commands/actual-case' / (name + '.log')
+        assert _sha256(Path(binding['path'])) == binding['sha256']
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    from lib import review_commands as owner
+    definition = {'check_request': json.loads(request.read_text()),
+                  'inputs': [{'path': str(request), 'sha256': _sha256(request)}], 'engineering': None}
+    exported = owner.export_execution_definition(definition, authored_repo, proof['candidate'], attempt)
+    assert set(exported['native_proof']) == {'actual-case'}
+    assert exported['native_proof']['actual-case']['fields']['status'] == ['native_case', 'status']
+    request.write_text(request.read_text() + ' ')
+    with pytest.raises(owner.RequestError, match='Definition input changed'):
+        owner.export_execution_definition(definition, authored_repo, proof['candidate'], attempt)

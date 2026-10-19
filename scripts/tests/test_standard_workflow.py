@@ -149,94 +149,33 @@ def test_retired_model_evidence_cli_cannot_dispatch():
 
 def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
-
-    shared = ROOT / "engineering/workflow/shared"
-    provenance = (shared / "SOURCE.md").read_text()
+    lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
+    revision = "8db4d56323db31f27af151c542967b4ef13a79af"
+    assert lock["revision"] == revision
+    from urllib.parse import unquote
+    source = unquote((ROOT / "engineering/workflow/shared/SOURCE.md").read_text())
+    assert f"## Current selection: {revision}" in source
+    assert "## Previous selection: 685a2584a38cbc23286eda9c11a0404835059773" in source
     local_map = (ROOT / "docs/local_project_map.md").read_text()
-    normalized_map = " ".join(local_map.replace(chr(96), "").split())
-    normalized_provenance = " ".join(provenance.split())
-    current_revision = "685a2584a38cbc23286eda9c11a0404835059773"
-
-    assert f"future task intake is pinned at {current_revision}" in normalized_map
-    assert "Preserve each active attempt's selected instruction inputs through acceptance. A future-intake pin does not repin an active or historical attempt." in normalized_map
-    assert "current-selection section below" in normalized_provenance
-    assert f"## Current selection: {current_revision}" in provenance
-    assert "## Previous selected revision: 1d5eba9a9d46d0e4a6afc02c875390a3b137ec41" in provenance
-    assert "all four installed files match the selected revision 1d5eba9 resources byte-for-byte" in normalized_provenance.lower()
-    assert "686c2b1bf30a0acaeb7835c0e79ae41367ef1e6f" in provenance
-    assert "GH-307 and GH-309" in provenance
-    assert "5ff7f306df6080648e2cc5fbbfc119e55a293754" in provenance
-    assert "GH-311 attempt's historical worker-instruction selection" in provenance
-    assert "This is attempt provenance and does not assert that the attempt or assignment remains active." in provenance
-    assert "completed GH-305 implementor assignment" in normalized_provenance
-    assert "live GH-305" not in provenance
-
-    current_resources = {
-        'start-an-issue.md': (37944, '6883453f1481a2374bb6b6ba11c144bff5990c315e1b7111c33ce921a1cf763d'),
-        'worker-instructions.md': (20609, '4ce69c3ced5bc75ed41788a299b5ac263ac75c84fd5cd4d6bcbdfc8397e99b71'),
-        'capsule-controller-workflow.md': (16877, '48d1ac88e64bd95c2d29246cbe477c15b9371d8da44f9e2e7366ce50e1798091'),
-        'new-project-setup.md': (19392, '98f0a7d9fcc69d38f2b545be8965e30d1a100ba8c81d3bd43764814a3df483d1'),
-        'skill-templates/README.md': (9035, 'cb50bd75af739d20ba8f4fa23ee8a49a43cdf75078b8c7872dcd5b4667f53d71'),
-        'skill-templates/capsule-queue/SKILL.md': (2029, '584ab90dbc121fd7119d363c5a013d9a42b9ce40dbeb4955137f47dd5d9d0b1f'),
-        'workflow-tools.md': (28257, '078ff071c077b547afb6f69b157b119caa263ea01e03715bca8b7fadeb573872'),
-    }
-    changed_destinations = {
-        'start-an-issue.md': (40896, '63296e0880573b2d0fe52fe2892797b166672514406ed9b332cb503fb8e2402b'),
-        'worker-instructions.md': (20894, '0e735e279dd4db6f2d2aaed68fb7f4d22ea8346eff0ed77fec2f12ef1fabe6e2'),
-        'workflow-tools.md': (32833, '37ffeba04cf0bb22248da7994b4771a15ad78f625b622da5734af9375ca2ff2f'),
-    }
-    for name, (size, digest) in current_resources.items():
-        assert name in provenance and digest in provenance
-        if name not in changed_destinations:
-            data = (shared / name).read_bytes()
-            assert len(data) == size
-            assert hashlib.sha256(data).hexdigest() == digest
-    # These three canonical guides now retain their selected source identities
-    # in SOURCE.md and include the separately selected RI949 lifecycle material.
-    # Pin the exact transformed destination bytes there as well as in this test.
-    for name, (size, digest) in changed_destinations.items():
-        data = (shared / name).read_bytes()
-        assert len(data) == size
-        assert hashlib.sha256(data).hexdigest() == digest
-        assert f"engineering/workflow/shared/{name}" in provenance
-        assert digest in provenance
-
-    assert "docs/workflow-tools.md" in provenance
-    assert "Both complete kickoff folders were inventoried" in normalized_provenance
-    assert "20a5039e7731eaa1303443b782caa81a383a0af1" in provenance
-    assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in provenance
-    assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in provenance
-    assert "## Section reader" in (shared / "workflow-tools.md").read_text()
-    assert "repository_intelligence.adoption" in (shared / "workflow-tools.md").read_text()
-
-    kickoff = {
-        ".agents/skills/ri-work-kickoff/SKILL.md": (1609, "da59ae6229c966c9d8d092c28b9cde03d28fb4e52d0b09d21c2ad677e7d4179a"),
-        ".agents/skills/ri-work-kickoff/references/project-procedure.md": (1448, "c1cea1280a89737d274f0f5d05a66d795f35331192fc5913e620c9f8978611a7"),
-        ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md": (1640, "01d7933a5811c1d8341afe41dbe52556105bb4c338b8ba5cb2575c3859d5d31a"),
-        ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md": (1448, "c1cea1280a89737d274f0f5d05a66d795f35331192fc5913e620c9f8978611a7"),
-    }
-    for name, (size, digest) in kickoff.items():
-        data = (ROOT / name).read_bytes()
-        assert len(data) == size
-        assert hashlib.sha256(data).hexdigest() == digest
-        assert digest in provenance
-    assert "workflow-tools contract" in (ROOT / ".agents/skills/ri-work-kickoff/references/project-procedure.md").read_text()
-    assert "workflow-tools contract" in (ROOT / ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md").read_text()
-    assert "This proves file contents only" in provenance
-
-    assert "https://github.com/MitCaine/repository-intelligence/blob/" + current_revision in (shared / "skill-templates/capsule-queue/SKILL.md").read_text()
-    assert "collaboration.spawn_agent" in normalized_map
-    assert "gpt-6.1-sol" in normalized_map and "gpt-6-luna" in normalized_map
-    assert "Main qualification" in normalized_map and "4708441" in normalized_map
-    assert "secret scanning" in normalized_map.lower()
-
-    lock = json.loads((ROOT / "engineering/tooling/ri-lock.json").read_text())
-    assert lock["revision"] == "20a5039e7731eaa1303443b782caa81a383a0af1"
-    assert lock["contracts"]["navigation"] == 7
-    assert lock["contracts"]["inventory"] == 16
-    assert lock["contracts"]["adapter"] == 13
-    assert lock["contracts"]["mapping"].endswith("markdown-source-units-v13")
-    assert len(lock["source_files"]) == 21
+    assert f"future task intake is pinned at `{revision}`" in local_map
+    destinations = set()
+    for item in lock["resources"]:
+        assert item["destination"] not in destinations
+        destinations.add(item["destination"])
+        data = (ROOT / item["destination"]).read_bytes()
+        assert len(data) == item["destination_bytes"]
+        assert hashlib.sha256(data).hexdigest() == item["destination_sha256"]
+        assert item["source_sha256"] in source and item["destination_sha256"] in source
+        for relocation in item["relocations"]:
+            assert unquote(relocation["to"]) in unquote(data.decode())
+            assert unquote(relocation["from"]) in source and unquote(relocation["to"]) in source
+    for role in ("ri-capsule-creator", "ri-implementor", "ri-independent-reviewer", "ri-dispatcher"):
+        for name in ("SKILL.md", "references/project-procedure.md"):
+            assert f".agents/skills/{role}/{name}" in destinations
+    producer = json.loads((ROOT / "engineering/tooling/ri-lock.json").read_text())
+    assert producer["revision"] == "20a5039e7731eaa1303443b782caa81a383a0af1"
+    assert producer["contracts"]["navigation"] == 7 and producer["contracts"]["inventory"] == 16
+    assert "00117a3b216b089e1e3a0a693c83efab9dcf12f0" in local_map
 
 
 def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intake():
@@ -245,25 +184,17 @@ def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intak
     headings = re.findall(r"^## (.+)$", worker, re.MULTILINE)
     assert headings == ["Role index", "Shared worker rules", "Capsule builder", "Implementor",
                         "Independent reviewer", "Codex dispatcher"]
-    assert len(headings) == len(set(headings))
-    worker_normalized = " ".join(worker.split())
-    for rule in ("These links navigate one document", "the next level-two heading or end of file",
-                 "Recover truncated sections", "stable headings, not line-number pointers"):
-        assert rule.lower() in worker_normalized.lower()
-    implementor = worker.split("## Implementor\n", 1)[1].split("\n## ", 1)[0]
-    reviewer = worker.split("## Independent reviewer\n", 1)[1].split("\n## ", 1)[0]
-    dispatcher = worker.split("## Codex dispatcher\n", 1)[1]
-    shared_rules = worker.split("## Shared worker rules\n", 1)[1].split("\n## ", 1)[0]
-    shared_rules_normalized = " ".join(shared_rules.split())
-    assert ("Original issue/decision reading belongs to the controller, capsule builder and "
-            "independent reviewer, not the implementor or dispatcher.") in shared_rules_normalized
-    assert "accepted capsule or controller-approved maintenance handoff" in " ".join(implementor.split())
-    assert "complete assigned task input" in " ".join(implementor.split())
-    assert "complete task and original" in reviewer
-    assert "both directions" in dispatcher
-    assert "direct Work controller maintenance exception" in implementor
-    assert "fresh nonauthor independent review" in implementor
-    assert "author/implementor cannot be its reviewer" in reviewer
+    assert "one authoritative role skill" in worker
+    for role in ("ri-capsule-creator", "ri-implementor", "ri-independent-reviewer", "ri-dispatcher"):
+        skill = (ROOT / f".agents/skills/{role}/SKILL.md").read_text()
+        locator = (ROOT / f".agents/skills/{role}/references/project-procedure.md").read_text()
+        assert "Shared worker" in locator and "complete assigned SKILL.md" in locator
+        assert "references/project-procedure.md" in skill
+    review = (ROOT / ".agents/skills/ri-independent-reviewer/SKILL.md").read_text()
+    assert "planning" in review and "full original-baseline integration diff" in review
+    implementor = (ROOT / ".agents/skills/ri-implementor/SKILL.md").read_text()
+    assert "same original obligation" in implementor.lower()
+    assert "Do not retrieve original issue/decision" in implementor
 
 
 def test_direct_work_route_instructions_keep_scope_and_review_controller_owned():
@@ -334,12 +265,12 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
         "docs/local_project_map.md": ("worker role index", "assigned dispatcher"),
         "engineering/tasks/TEMPLATE.md": ("Shared worker rules", "Initial builder"),
         "engineering/workflow/TASK_CAPSULE.md": ("Shared worker rules", "future capsule"),
-        "engineering/workflow/EXECUTION.md": ("Shared worker rules", "next level-two heading"),
-        "engineering/workflow/AUTHORITY.md": ("Shared worker rules", "level-two section"),
+        "engineering/workflow/EXECUTION.md": ("Shared worker rules", "complete selected role"),
+        "engineering/workflow/AUTHORITY.md": ("Shared worker rules", "complete selected role"),
         "engineering/workflow/README.md": ("Shared worker rules", "Initial builders"),
         "engineering/README.md": ("Shared worker rules", "Initial builders"),
         "engineering/workflow/shared/skill-templates/README.md": (
-            "daily publication sequence", "Workers read only their role/task inputs"
+            "daily publication sequence", "Shared worker"
         ),
     }
     old_pin = "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd"
@@ -354,11 +285,11 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
                 assert phrase.lower() in normalized_lower
         else:
             _assert_canonical_guidance(ROOT, name, "engineering/workflow/shared/worker-instructions.md",
-                                       "role-index", ("next level-two heading or end of file",))
+                                       "role-index", ("Read each complete role skill and its locator",))
     for name in ("WORKFLOW.md", "ROUTING.md", "EVIDENCE.md", "FAILURE_TAXONOMY.md"):
         _assert_canonical_guidance(ROOT, "engineering/workflow/" + name,
                                    "engineering/workflow/shared/worker-instructions.md",
-                                   "role-index", ("next level-two heading or end of file",))
+                                   "role-index", ("Read each complete role skill and its locator",))
     map_text = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(map_text.split())
     assert "controller, capsule builder and independent reviewer | work" in normalized_map.lower()
@@ -375,7 +306,7 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
     assert "collaboration.spawn_agent" in normalized_map
     assert "policy acceptance does not establish measured execution" in normalized_map.lower()
     assert "worker-instructions.md#role-index" in normalized_map
-    assert "worker-instructions.md#codex-dispatcher" in normalized_map
+    assert "../.agents/skills/ri-dispatcher/SKILL.md" in normalized_map
     assert "start-an-issue.md#execute-serially" in normalized_map
     assert "start-an-issue.md#wait-recover-and-resume" in normalized_map
     assert "start-an-issue.md#evidence-eligibility-and-corrections" in normalized_map
@@ -1412,7 +1343,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "685a2584a38cbc23286eda9c11a0404835059773/docs/skill-templates/capsule-queue/")
+              "8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1426,52 +1357,18 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "685a2584a38cbc23286eda9c11a0404835059773"
+    revision = "8db4d56323db31f27af151c542967b4ef13a79af"
+    lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
+    declared = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text().split(
+        f"## Current selection: {revision}", 1)[1]
+    for item in lock["resources"]:
+        for relocation in item["relocations"]:
+            target = relocation["to"]
+            assert target in declared
+            if target.startswith("https://github.com/MitCaine/repository-intelligence/blob/"):
+                assert "/" + revision + "/" in target
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
-    templates = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
-    import html
-    provenance = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text()
-    current = provenance.split(f"## Current selection: {revision}\n", 1)[1]
-    rows = {}
-    for line in current.splitlines():
-        if line.startswith("| ") and len(line.split("|")) == 8:
-            cells = [cell.strip().strip("`") for cell in line.split("|")[1:-1]]
-            name = html.unescape(cells[0].replace("<code>", "").replace("</code>", ""))
-            rows[name] = cells[1:4]
-    assert (
-        f"https://github.com/MitCaine/repository-intelligence/blob/{revision}/docs/consumer-guide.md"
-        in setup
-    )
-    for path in (
-        "docs/skill-templates/capsule-preflight/SKILL.md",
-        "docs/skill-templates/capsule-preflight/references/evidence-contract.md",
-        "docs/skill-templates/capsule-scope-review/SKILL.md",
-        "docs/skill-templates/ri-evidence-handoff/SKILL.md",
-        "docs/skill-templates/capsule-independent-review/SKILL.md",
-    ):
-        assert f"https://github.com/MitCaine/repository-intelligence/blob/{revision}/{path}" in templates
-    # Exact current rows must match upstream identities; historical rows cannot satisfy them.
-    expected = (
-        ('docs/consumer-guide.md', '00bbf8e6a660e781cc802464c14ac0db32e787a5', 11178, '545fa13e53d28332673e218e615f0407b7814b615ad87350578c388529e21acf'),
-        ('docs/skill-templates/capsule-preflight/SKILL.md', '4615ba5327763abc2fd028adb77f163c34d0be8f', 2532,
-         '19e72cd8c672a34301fe770699f51cb877b6a7f464e5386e2d56a9646c50d9cb'),
-        ('docs/skill-templates/capsule-preflight/references/evidence-contract.md', '35c018fa1c699b677e2f22794a69059b3ec81be7', 16040,
-         '879ace62064ea2bba036f723a09ab7dd10265095f6f8f70f8b471847d56eb359'),
-        ('docs/skill-templates/capsule-preflight/scripts/evidence_preflight.py', '8c520de6c35a40b690278d675463aba141562e74', 27222,
-         'afdd20be1a0465d202aa133c79927bbb8f1a8b00b9e569d314df1382e86fab63'),
-        ('docs/skill-templates/capsule-queue/SKILL.md', '2e01cf01bb0830e5addc4d46c1257f737793e695', 8811,
-         'ed9e3a3ebfe7c4639f58b6e2595a782ca577d0ba07a1175b6dbabc29c61d3f39'),
-        ('docs/skill-templates/capsule-queue/scripts/run_and_queue.py', 'cf5655ad3f5a66fa46831a06701aba295819bbaf', 13857,
-         '9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191'),
-        ('docs/skill-templates/capsule-scope-review/SKILL.md', '295253dda1a590f4b6bb303c9afba06e4d3acb41', 1318,
-         '12fd1e9ff74a971f9d53dcdb68ac156a4bfbf9ecc31e3ec3f0eeac82695d4799'),
-        ('docs/skill-templates/ri-evidence-handoff/SKILL.md', '70ff680d4c2a1eef68905b6e1fe136061f998fe2', 1321,
-         '701216b4fb1ce949078d38fa62f7022168b0b816d340e7c97fde19f7565719ce'),
-        ('docs/skill-templates/capsule-independent-review/SKILL.md', '7c0e18ce6d9a5de1331354b899a723379c792a6d', 2359,
-         '3d4da861fdfa9eeb90bd22e1731f9a061015ac92b14ec4870bbb188765b7f73e'),
-    )
-    for source, blob, size, digest in expected:
-        assert rows[source] == [blob, str(size), digest]
+    assert f"/{revision}/docs/consumer-guide.md" in setup
 
 
 def test_controller_permissions_waiting_and_external_closeout_contract():
@@ -1480,7 +1377,7 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
     normalized = " ".join(text.split())
     headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
     assert headings == ["Selected instructions", "Runtime", "Nutrition permissions and routing",
-                        "Standards and checks", "Storage and recovery", "Integration and closeout"]
+                        "Standards and checks", "Storage and recovery", "Integration and closeout", "Consolidated engineering selection"]
     for authority in (
         "engineering/workflow/shared/start-an-issue.md#execute-serially",
         "engineering/workflow/shared/start-an-issue.md#work-to-codex-implementation-handoff",
@@ -1754,7 +1651,7 @@ def test_current_task_docs_preserve_historical_qualification_without_selecting_i
 def test_native_dispatch_decisions_are_separate_from_execution_and_host_authentication():
     local_map = (ROOT / "docs/local_project_map.md").read_text()
     assert "Native dispatch guard source revision:" in local_map
-    assert "Optional helper source revision: `e0b82f52cdd728b4ef80986a3541fc8f1d07486a`" in local_map
+    assert "Optional helper source revision: `8db4d56323db31f27af151c542967b4ef13a79af`" in local_map
     assert (ROOT / "scripts/native-dispatch").is_file()
     contract = (ROOT / "docs/operations/testing.md").read_text().split("### Native dispatch transition decisions", 1)[1].split("### Prepared worker execution binding", 1)[0]
     assert "before recording running" in local_map

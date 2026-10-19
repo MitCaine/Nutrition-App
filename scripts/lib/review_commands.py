@@ -325,6 +325,42 @@ def _validate_request(request: Any, root: Path, expected_head: str, attempt: str
     }
 
 
+def export_execution_definition(definition: dict[str, Any], root: Path, expected_head: str,
+                                attempt: str) -> dict[str, Any]:
+    """Export inputs and native selectors from the same definition that runs checks.
+
+    The controller supplies accepted engineering metadata; this owner never
+    reconstructs requirements from command output or worker-authored aliases.
+    """
+    _expect_keys(definition, {"check_request", "inputs", "engineering"}, "execution definition")
+    plan = _validate_request(definition["check_request"], root, expected_head, attempt)
+    inputs = definition["inputs"]
+    if not isinstance(inputs, list) or not 1 <= len(inputs) <= 120:
+        raise RequestError("Definition needs bounded owning inputs")
+    observed = []
+    for item in inputs:
+        _expect_keys(item, {"path", "sha256"}, "definition input")
+        path = Path(item["path"])
+        _no_symlink_components(path)
+        if not path.is_absolute() or not path.is_file() or _hash_file(path) != item["sha256"]:
+            raise RequestError("Definition input changed")
+        if item in observed or any(row["path"] == item["path"] for row in observed):
+            raise RequestError("Duplicate definition input")
+        observed.append(dict(item))
+    engineering = definition["engineering"]
+    if engineering is not None:
+        _expect_keys(engineering, {"phases", "routes", "entries", "anchors"}, "engineering selection")
+    mapping = {}
+    for step in plan["steps"]:
+        mapping[step["id"]] = {
+            "fields": {key: ["native_case", key] for key in
+                       ("case", "status", "candidate", "attempt", "request_sha256")},
+            "artifacts": {key: ["native_case", "artifacts", key] for key in ("stdout", "stderr")},
+            "measurements": {"duration_seconds": ["native_case", "measurements", "duration_seconds"]},
+        }
+    return {"inputs": observed, "native_proof": mapping, "engineering": engineering}
+
+
 def _hash_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -690,7 +726,7 @@ def _attempt_file(attempt_dir: Path, relative: str) -> Path:
 
 def _record_runner_result(args: argparse.Namespace) -> int:
     attempt_dir = Path(args.attempt_dir).resolve(strict=True)
-    normalized, _, _ = _load_attempt(attempt_dir)
+    normalized, request_identity, _ = _load_attempt(attempt_dir)
     matches = [step for step in normalized["steps"] if step["id"] == args.step_id]
     if len(matches) != 1:
         raise RequestError(f"unknown step ID: {args.step_id}")
@@ -717,6 +753,15 @@ def _record_runner_result(args: argparse.Namespace) -> int:
     if row["status"] != "passed" and result.get("status") == "passed":
         result["status"] = "failed"
         result["outcome_error"] = "existing run_step evidence machinery reported failure"
+    result["native_case"] = {
+        "case": step["id"], "status": result["status"],
+        "candidate": normalized["expected_head"], "attempt": normalized["attempt"],
+        "request_sha256": request_identity["sha256"],
+        "artifacts": {name: {"path": str(_attempt_file(attempt_dir, result[name + "_log"])),
+                              "sha256": result[name + "_sha256"]}
+                      for name in ("stdout", "stderr")},
+        "measurements": {"duration_seconds": result.get("duration_seconds")},
+    }
     _write_step_result(attempt_dir / "commands" / step["id"], result)
     print(json.dumps({"step": step["id"], "runner_status": row["status"], "runner_exit_code": row["exit_code"], "runner_log_sha256": result["runner_log_sha256"]}))
     return 0

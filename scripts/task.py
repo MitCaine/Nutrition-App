@@ -4398,6 +4398,17 @@ def rework_task(
 def command_prepare(
     args: argparse.Namespace,
 ) -> int:
+    record_binding = None
+    route = getattr(args, "route", "normal")
+    record_path = getattr(args, "task_record", None)
+    if route != "normal" or record_path is not None:
+        if record_path is None:
+            raise TaskControllerError("SELECTED_ROUTE_REQUIRES_TASK_RECORD")
+        command_validate_record(argparse.Namespace(task_record=record_path, route=route,
+                                                 repo_root=args.repo_root))
+        raw_record = Path(record_path).read_bytes()
+        record_binding = {"route": route, "path": str(Path(record_path).absolute()),
+                          "sha256": hashlib.sha256(raw_record).hexdigest()}
     repo = resolve_repo_root(
         args.repo_root
     )
@@ -4467,6 +4478,12 @@ def command_prepare(
         workflow_mode=getattr(args, "workflow_mode", "standard"),
         compatibility_reason=getattr(args, "compatibility_reason", None),
     )
+
+    if record_binding is not None:
+        def bind_preparation(current):
+            current.setdefault("execution", {})["preparation_record"] = record_binding
+            return current
+        checkpoint_transaction(args.state_dir, args.issue_number, bind_preparation)
 
     emit(
         {
@@ -6089,7 +6106,7 @@ def _validate_maintenance_task_record(sections: list[tuple[str, str]]) -> list[s
 def command_validate_record(args: argparse.Namespace) -> int:
     task_record = Path(args.task_record).expanduser()
     route = args.route
-    if route not in {"normal", "maintenance"}:
+    if route not in {"normal", "maintenance", "engineering"}:
         raise TaskControllerError("TASK_RECORD_ROUTE_INVALID")
     if task_record.is_symlink() or not task_record.is_file():
         raise TaskControllerError(
@@ -6110,9 +6127,21 @@ def command_validate_record(args: argparse.Namespace) -> int:
     if route == "normal":
         issues = _validate_normal_task_record(sections)
         fields = list(TASK_RECORD_NORMAL_HEADINGS)
-    else:
+    elif route == "maintenance":
         issues = _validate_maintenance_task_record(sections)
         fields = list(TASK_RECORD_MAINTENANCE_HEADINGS)
+    else:
+        fields = ["Original requirements", "Engineering decisions", "Source boundaries",
+                  "Proof and sequencing", "Closeout"]
+        grouped = {}
+        for heading, body in sections:
+            grouped.setdefault(heading, []).append(body)
+        issues = ["Engineering record needs one nonempty " + heading
+                  for heading in fields
+                  if len(grouped.get(heading, [])) != 1
+                  or not _task_record_content(grouped[heading][0])]
+        if len({heading for heading, _ in sections}) != len(sections):
+            issues.append("Engineering record headings must be unique")
     if issues:
         raise TaskControllerError(
             f"TASK_RECORD_INVALID route={route}: " + "; ".join(issues)
@@ -8118,7 +8147,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_record.add_argument(
         "--route",
-        choices=("normal", "maintenance"),
+        choices=("normal", "maintenance", "engineering"),
         default="normal",
         help="Selected route (default: normal); maintenance must be explicit.",
     )
@@ -8136,6 +8165,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--task-id",
         required=True,
     )
+    prepare.add_argument("--task-record", type=Path)
+    prepare.add_argument("--route", choices=("normal", "maintenance", "engineering"), default="normal")
+
     prepare.add_argument(
         "--trusted-author",
         help=(

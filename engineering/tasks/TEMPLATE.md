@@ -9,7 +9,7 @@ maintenance handoff with `## Objective`, `## Exact base`, `## Allowed changes`, 
 `Decision: eligible` under Controller eligibility. Before dispatch, run the public
 `./scripts/task validate-record` command with the selected route; its field checks do not decide
 semantic eligibility. Store new records under `engineering/tasks/`;
-preserve historical formats and stopped attempts unchanged.
+preserve historical formats and stopped attempts unchanged. An expressly selected experimental route uses the [engineering record](ENGINEERING_TEMPLATE.md) and the [selected engineering rule](../workflow/shared/start-an-issue.md#experimental-engineering-route), after its adoption prerequisites.
 
 ## Objective
 

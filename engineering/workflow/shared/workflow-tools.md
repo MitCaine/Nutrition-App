@@ -36,7 +36,7 @@ equivalence. Apply the selected [evidence rules](start-an-issue.md#evidence-elig
 
 ## Accepted dispatch decisions
 
-The optional [`dispatch_guard.py`](https://github.com/MitCaine/repository-intelligence/blob/685a2584a38cbc23286eda9c11a0404835059773/src/repository%5Fintelligence/dispatch%5Fguard.py)
+The optional [`dispatch_guard.py`](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/src/repository_intelligence/dispatch_guard.py)
 helper evaluates a consumer's authenticated projection of existing native launch,
 resumption and job-state records. It neither launches agents nor creates a job
 registry. The dispatcher/host adapter still owns authentic observation, freshness,
@@ -211,12 +211,12 @@ evidence location; the helper does not create a state store.
 
 ## Existing optional evidence helpers
 
-The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/685a2584a38cbc23286eda9c11a0404835059773/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
+The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
 contains pure input-equivalence predicates; unknown relevant inputs are not
 cacheable. Its extended packet validation remains optional and is not required
-by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/685a2584a38cbc23286eda9c11a0404835059773/scripts/check%5Fdocs%5Fand%5Fskills.py),
-the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/685a2584a38cbc23286eda9c11a0404835059773/docs/consumer-guide.md) and
-[review bundles](https://github.com/MitCaine/repository-intelligence/blob/685a2584a38cbc23286eda9c11a0404835059773/docs/review-evidence.md) retain their existing separate scopes.
+by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/scripts/check%5Fdocs%5Fand%5Fskills.py),
+the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md) and
+[review bundles](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/review-evidence.md) retain their existing separate scopes.
 None authenticates task authority or proves runtime availability.
 
 ## Prepared worker execution linkage
@@ -227,6 +227,66 @@ consumer check runner and mechanically validated terminal facts. The consumer
 still owns commands, permissions, request/result formats and substantive review.
 It does not publish refs, connect chats or replace the check executor. Select it
 only under existing task authority; no remote-free capture policy is imposed.
+
+### Task-output lifecycle
+
+The optional Python interface in
+[`output_cleanup.py`](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/src/repository_intelligence/output_cleanup.py) serves the
+same consumer-owned worker/closeout seam. The governing
+[retention and disposal rule](start-an-issue.md#retain-evidence-and-dispose-of-owned-outputs)
+owns eligibility; this interface does not change the version-1 worker request or
+automatically enable cleanup in an existing consumer.
+This optional implementation supports POSIX local identities; other platforms
+require their consumer's supported native route and are refused here.
+
+The consumer's authoritative output definition invokes `create_output(path,
+task=..., attempt=..., definition=...)` instead of its exclusive directory creation,
+and stores the returned version-1 receipt in its existing execution record. The
+definition binding is its authenticated regular-file `path`/`sha256`; derive actual
+paths from that same definition, not an agent-written duplicate list. Existing
+directories are refused. The receipt binds task, attempt, definition, directory and
+parent device/inode identities. If creation succeeds but receipt persistence fails,
+preserve the directory as unknown; do not adopt it on retry. Other creation owners
+need their own equivalent native binding; the helper does not take over worktree,
+compiler or cache creation.
+
+`assess_output(receipt, observation, protected=[...], retained=[...])` is a read-only
+per-item dry-run returning `eligible`, `retained` or `absent`, reason and logical
+regular-file bytes when known. The consumer maps its **current authenticated**
+observations into matching `task`/`attempt`, `state` (`completed` or
+`superseded_terminal`), and explicit booleans `exclusive`, `quiescent`,
+`regenerable`, `source_preserved`, `references_relocated`. Missing/unknown facts
+retain the item. These mapped assertions are not independent proof of completeness,
+process inactivity, terminal status or source recovery. `protected` is a nonempty
+list of exact source/runtime/shared/recovery paths from the owning route; `retained`
+is a nonempty list of original raw-hash bindings at their readable retained paths.
+The helper verifies supplied bytes, not whether the consumer omitted evidence or
+a protected path. Overlapping protected paths, changed definition/node/parent,
+symlink ancestors/contents, hardlinks and special files refuse disposal. Permission
+errors cannot produce an apparently complete size. Paths must be normalized and
+absolute; safely canonicalize a supported host alias before binding it.
+
+`dispose_output(..., authorized=True, dispose=consumer_callback)` rechecks the same
+inputs before invoking the selected consumer's safe adapter. The authorization
+boolean records an existing grant, never manufactures one. A callback returns
+`{"kind": "deleted"}` or `{"kind": "quarantined", "path": "/exact/destination"}`.
+The latter must preserve the original directory identity and logical size. An
+ordinary callback exception, unknown response or remaining original path yields `incomplete`; reconcile
+actual partial state before retry. This is a synchronous per-item call, not a new
+executor, registry, arbitrary-directory discovery or recursive deletion command. Consumers must
+exclude concurrent mutation, implement safe native disposal, and retain the returned
+facts in existing closeout records; filesystem checks are not an atomic transaction.
+Record the pending operation in that existing record before invocation. Process death
+or interruption cannot guarantee a returned result; reconcile actual state before retry,
+never infer successful disposal from a lost reply.
+
+Results distinguish logical `bytes`, verified adapter-reported `removed_bytes`, and
+physical `reclaimed_bytes` (unknown unless measured outside this helper; quarantine
+reports zero). Incomplete removal has unknown removed bytes. A retry of an absent
+owned path reports no new removal. No batch abort is imposed for another item's
+unknown ownership. Focused disposable fixtures exercise the shared seam with tiny
+synthetic consumer callbacks; they do not prove Poker/Nutrition's ordinary wiring
+or authorize cleanup of their real directories.
 
 ```sh
 PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --request execution.json --evidence /absolute/private/evidence --mode prepare
@@ -240,7 +300,17 @@ exact relative `allowed_changes`, optional `route` (`subprocess`, the compatible
 default, or explicitly selected `interactive`), `capture_authority` (consumer grant reference),
 selected child `environment`, optional `edit`, required `capture` and `runner`,
 `require_new_candidate` (explicit boolean), `check_request`, `runner_result` and
-`result_bindings`. Optional `timeout_seconds` is 1–3600 per operation. Each operation
+`result_bindings`. Optional `timeout_seconds` is 1–3600 per operation. RETURN's
+operation rows record measured monotonic `duration_seconds` for launch through
+owned-process completion/cleanup, including failure and timeout. Their existing
+PREPARED reference binds selected source/tool inputs, command definitions and the
+environment hash. This is a conservative operation binding, not proof that every
+transitive input was declared or that individual nested gates have timings. The
+consumer runner owns per-gate timing, input coverage and configured investigation
+budgets under [check selection](start-an-issue.md#select-checks-and-control-runtime).
+Timeout remains incomplete; timing never grants evidence reuse or a missing pass.
+The additive observation does not change legacy packet version or acceptance.
+Each operation
 contains only `argv` and the selected executable's `executable_sha256`; use its
 absolute resolved non-symlink path. Bind interpreted scripts and relevant toolchain
 inputs in `inputs`, not merely the interpreter. Authority references record a
@@ -336,71 +406,6 @@ These additive options retain helper schema version 1; existing subprocess
 bindings retain their selected behavior. Consumer adapters and actual host return
 consumption need their own bounded proof when selected, not routine live exercises.
 
-### Task-output lifecycle
-
-The optional Python interface in
-[`output_cleanup.py`](https://github.com/MitCaine/repository-intelligence/blob/949b838809bcddb01e2cbe161faed6f6f1f705fe/src/repository_intelligence/output_cleanup.py) serves the
-same consumer-owned worker/closeout seam. The governing
-[retention and disposal rule](start-an-issue.md#retain-evidence-and-dispose-of-owned-outputs)
-owns eligibility; this interface does not change the version-1 worker request or
-automatically enable cleanup in an existing consumer.
-This optional implementation supports POSIX local identities; other platforms
-require their consumer's supported native route and are refused here.
-
-The consumer's authoritative output definition invokes `create_output(path,
-task=..., attempt=..., definition=...)` instead of its exclusive directory creation,
-and stores the returned version-1 receipt in its existing execution record. The
-definition binding is its authenticated regular-file `path`/`sha256`; derive actual
-paths from that same definition, not an agent-written duplicate list. Existing
-directories are refused. The receipt binds task, attempt, definition, directory and
-parent device/inode identities. If creation succeeds but receipt persistence fails,
-preserve the directory as unknown; do not adopt it on retry. Other creation owners
-need their own equivalent native binding; the helper does not take over worktree,
-compiler or cache creation.
-
-`assess_output(receipt, observation, protected=[...], retained=[...])` is a read-only
-per-item dry-run returning `eligible`, `retained` or `absent`, reason and logical
-regular-file bytes when known. The consumer maps its **current authenticated**
-observations into matching `task`/`attempt`, `state` (`completed` or
-`superseded_terminal`), and explicit booleans `exclusive`, `quiescent`,
-`regenerable`, `source_preserved`, `references_relocated`. Missing/unknown facts
-retain the item. These mapped assertions are not independent proof of completeness,
-process inactivity, terminal status or source recovery. `protected` is a nonempty
-list of exact source/runtime/shared/recovery paths from the owning route; `retained`
-is a nonempty list of original raw-hash bindings at their readable retained paths.
-The helper verifies supplied bytes, not whether the consumer omitted evidence or
-a protected path. Overlapping protected paths, changed definition/node/parent,
-symlink ancestors/contents, hardlinks and special files refuse disposal. Permission
-errors cannot produce an apparently complete size. Paths must be normalized and
-absolute; safely canonicalize a supported host alias before binding it.
-
-`dispose_output(..., authorized=True, dispose=consumer_callback)` rechecks the same
-inputs before invoking the selected consumer's safe adapter. The authorization
-boolean records an existing grant, never manufactures one. A callback returns
-`{"kind": "deleted"}` or `{"kind": "quarantined", "path": "/exact/destination"}`.
-The latter must preserve the original directory identity and logical size. An
-ordinary callback exception, unknown response or remaining original path yields `incomplete`; reconcile
-actual partial state before retry. This is a synchronous per-item call, not a new
-executor, registry, arbitrary-directory discovery or recursive deletion command. Consumers must
-exclude concurrent mutation, implement safe native disposal, and retain the returned
-facts in existing closeout records; filesystem checks are not an atomic transaction.
-Record the pending operation in that existing record before invocation. Process death
-or interruption cannot guarantee a returned result; reconcile actual state before retry,
-never infer successful disposal from a lost reply.
-
-Results distinguish logical `bytes`, verified adapter-reported `removed_bytes`, and
-physical `reclaimed_bytes` (unknown unless measured outside this helper; quarantine
-reports zero). Incomplete removal has unknown removed bytes. A retry of an absent
-owned path reports no new removal. No batch abort is imposed for another item's
-unknown ownership. Focused disposable fixtures exercise the shared seam with tiny
-synthetic consumer callbacks; they do not prove Poker/Nutrition's ordinary wiring
-or authorize cleanup of their real directories.
-
-```sh
-PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --request execution.json --evidence /absolute/private/evidence --mode prepare
-PYTHONPATH=src .venv/bin/python -m repository_intelligence.worker_execution --request execution.json --evidence /absolute/private/evidence --mode run
-```
-
 ### Operation finality and adapter conformance
 
 Local operation launch supports owned POSIX process groups. A timeout or interruption handled by the helper
@@ -486,3 +491,188 @@ with `mandatory: false`, retaining visibility without premature gating. Without 
 binding, adapters retain responsibility for independently proving required-set coverage.
 This additive mapping does not certify semantic judgment, consumer adoption or honesty
 of the accepted obligation inventory. Actual consumer adapters require their own tests.
+
+### Final completeness reconciliation
+
+The [controller/implementor rule](start-an-issue.md#execute-serially) owns final
+accounting; it is part of existing checks/return and intake, not a new stage or
+report. Optional `accepted_capsule` selects the mechanical extension with exactly
+`path`, original raw `sha256`, `phase` and `route`. The task must be an authenticated
+regular-file input in the same owning execution inventory. Original IDs, steps and
+prescribed cases come from that accepted source, not a worker-authored replacement.
+Six capsule headings remain unchanged. Other existing routes perform this accounting
+in their existing records; this optional interface does not impose a universal JSON
+capsule or imply that legacy helpers now enforce it.
+
+For this selected interface, put the accepted proof entries' machine metadata in
+one `ri-obligations` JSON fence inside **Checks**, alongside or linked to the
+original Acceptance and Source/scope descriptions. This is the authoritative
+phase/route/case metadata for those entries, not a second hand-maintained inventory.
+Creator/controller must compare every original outcome, step and prescribed case
+against it before acceptance. Metadata cannot prove arbitrary prose was covered.
+For example, these entries reference original `A5` and source step `S1`:
+
+```json
+{
+  "phases": ["implementor", "qualification", "installed"],
+  "routes": ["normal"],
+  "entries": [
+    {"id":"A5","kind":"outcome","outcome":"A5","due":"implementor","owner":"implementor","routes":["normal"]},
+    {"id":"S1","kind":"step","outcome":"A5","due":"implementor","owner":"implementor","routes":["normal"]},
+    {"id":"A5.failure","kind":"proof","outcome":"A5","due":"implementor","owner":"implementor","routes":["normal"],
+     "native_id":"test_failed_write_preserves_original","success":0,"artifacts":["stdout","fixture"],"measurements":["unchanged_bytes"]},
+    {"id":"A5.installed","kind":"proof","outcome":"A5","due":"installed","owner":"controller","routes":["normal"],
+     "native_id":"test_installed","success":"passed","artifacts":[],"measurements":[]}
+  ]
+}
+```
+
+Names are original task identities, not reserved labels to copy blindly. `phases`
+orders this task's due points; it imposes no universal execution/history order.
+Each entry's `due` and routes must be accepted names; its outcome must reference an
+original outcome entry. IDs are globally unique. Source is bounded by the existing
+1 MB worker input limit; at most 128 entries. Listed/quoted/fenced examples outside
+the actual Checks metadata do not become obligations. Unknown fields and duplicate
+JSON keys refuse rather than silently dropping proof. Never silently retrofit a
+frozen active task with these fields; adopting consumers select them for new or
+explicitly amended attempts.
+
+The selected derivation operation requires RI's parser dependencies declared in
+`pyproject.toml`, including its Markdown grammar, in the consumer's authenticated
+helper execution environment. A source-file copy is not dependency provisioning;
+an older navigation runtime without that grammar does not satisfy this binding.
+Provision and verify that environment reproducibly through the consumer's own
+setup route, then bind its interpreter and dependency identities into the actual
+helper subprocess. Do not silently use RI's development environment or change an
+active attempt's runtime. Ordinary legacy helper imports and unselected operations
+do not load parsers; missing dependencies on selected derivation are a blocking
+error, never a switch to weaker Markdown parsing. This import boundary does not
+establish consumer provisioning or end-to-end adoption.
+
+Generation derives `required_outcomes`; preparation rederives and refuses a supplied
+competing set. `PREPARED`, the generated `CHECK_REQUEST.accepted_obligations`, and
+`RETURN` retain the same source, inventory and per-entry definition identities.
+Route exclusions remain explicit. A route/source/phase change changes the binding;
+it does not silently transfer earlier proof. Consumers retain original execution
+identities and apply their existing evidence-reuse policy, not relabel old records
+to satisfy the new request. This interface validates the selected native frame;
+cross-frame equivalence is not inferred here.
+
+The existing conformance facts carry `inventory_sha256` and one outcome row for
+**each** selected entry, retaining its `id`, `definition_sha256`, status and mandatory
+mapping. A future `pending` row has the accepted `next_owner`; it does not need
+unavailable future artifacts. Already-due proof cannot be relabeled pending.
+Passed outcome/step rows supply concise `basis` and nonempty retained
+`evidence` path/raw-hash bindings; their adequacy is a review responsibility.
+Passed proof rows supply only `native: {"record": {"path": "...", "sha256": "..."}}`.
+Native selectors are **not worker-supplied**. Required `proof_mapping` in the selected
+request is an object-key path such as `["native_proof"]` in the SAME authenticated
+`input_inventory` JSON projection. Its owner exports actual native result selectors
+from its runner definition alongside its required inputs, not a handwritten second
+inventory. The projection maps accepted native case names to:
+
+- `fields`: native key paths for `case`, `status`, `candidate`, `attempt` and
+  `request_sha256`. Actual case and success scalar must equal the accepted entry;
+  native source/attempt/request must match this actual execution frame;
+- `artifacts`: accepted artifact names mapped to native paths containing retained
+  files' `path`/raw `sha256` bindings;
+- `measurements`: accepted metric names mapped to native numeric values' paths.
+  Tools read finite numbers directly; missing, unknown or Boolean values do not
+  establish required measurements. The worker does not transcribe counts.
+
+For example, an owner's `native_proof.test_failed_write_preserves_original` can
+map `fields.status` to `["exit_code"]`, `fields.case` to `["test_id"]`, and
+`measurements.unchanged_bytes` to `["metrics", "unchanged_bytes"]`, with all five
+identity fields and the accepted artifact names also present. The tooling binds
+this owner projection and its identity into the same derived inventory. A returned
+alias pointing success at an unrelated zero-valued metric is refused. Missing due
+native case mappings fail preparation; unavailable future mappings do not force
+execution before their accepted phase.
+
+Native key paths are lists of object keys or nonnegative list indexes, at most 32 elements.
+Native records retain the existing 1 MB read limit; file identities use the existing
+1 GB streaming limit. Complete logs/fixtures must survive teardown at their bound
+locations. Missing, changed or unreadable records/artifacts, missing measurements,
+duplicate/renamed/substituted IDs or stale bindings block readiness. Identity and
+coverage do not prove actual assertions discriminate the required behavior; native
+adapter authenticity and substantive independent review remain necessary.
+
+`worker_execution --mode run` records `completeness` in its existing RETURN before
+ready. Controller `--mode intake` uses the same request/evidence location, verifies
+the prepared/terminal/source/native/result/log/artifact identities, recomputes the
+same reconciliation and refuses changed results without rewriting the original
+RETURN. The complete original runner-reference list is authenticated from the
+runner's bound result and must equal RETURN's derived list; omitting a reference
+cannot hide missing or altered evidence. No rerun or dispatch occurs. The prepared
+helper's exclusive launch/finality remains intact: preserve a blocked return and
+use the existing authorized correction/evidence-reuse route, not another run of
+that launched attempt. Standalone consumer-native handoffs can call
+`derive`/`bind_native_mapping`/`reconcile` at their existing return/intake seam instead: future controller
+capture/qualification stays pending when that route permits uncaptured source.
+Selecting this API grants no worker Git authority and does not remove the separate
+prepared helper's existing capture/clean-source requirements. Shared fixtures cover
+the public selected path; consumer ordinary wiring still requires its own integration.
+
+### Approved engineering selection
+
+The [experimental route](start-an-issue.md#experimental-engineering-route) may select
+`accepted_engineering` **instead of** `accepted_capsule`. Both at once, null selection
+or a missing approval refuse. This is an additive, explicitly selected interface,
+`engineering-selection-v1`; worker request/RETURN version 1 and existing capsule
+digests remain unchanged. Older helpers reject the new field; consumers must adopt
+and wire it explicitly rather than infer compatibility from the version number.
+Navigation, classification, inventory-comparison and dispatch contracts do not change.
+
+The engineering specification is ordinary prose with uniquely named real Markdown
+sections for its outcomes. It needs neither the six capsule headings nor an
+`ri-obligations` fence. The **same authoritative runner/controller definition** that
+exports required inputs and native proof selectors exports `phases`, `routes`,
+`entries` (the existing metadata described above) and `anchors`, keyed by every
+original outcome ID. Do not handwrite a competing inventory or duplicate requirement
+descriptions. Each anchor selects a specification `section` and an `original`
+`{path, sha256, section}` in the authenticated original requirements. Steps/proofs
+retain their IDs and parent outcomes; they inherit that outcome's original anchor.
+Tools bind the selected source sections, original file identities and selection
+metadata; reviewers still establish semantic coverage and engineering adequacy.
+An unintegrated owner export is a consumer gap, not automatic derivation from prose.
+
+For example, the owning projection's engineering selection can extend its existing
+entry metadata with:
+
+```json
+{"anchors":{"A5":{"section":"A5","original":{"path":"/project/requirements.md","sha256":"<raw hash>","section":"A5"}}}}
+```
+
+This is an illustrative fragment, not another required execution document.
+`derive_engineering(source_bytes, binding, selection, load_source=...)` takes the
+usual `{path, sha256, phase, route}` binding, uses the selected Markdown parser and
+returns the derived inventory plus `selection_sha256` and original-section bindings.
+The caller authenticates/bounds regular source reads; the prepared adapter does this
+against the same owning input inventory. Fenced examples and ambiguous sections
+cannot substitute for the selected section. All outcome anchors, including those
+outside the selected route, are checked before dispatch.
+
+The controller records the authenticated independent planning decision using existing
+task evidence, with exactly `decision: "approved"`, `specification: {path, sha256}`,
+the tool-derived `selection_sha256`, a nonempty `reviewer` identity and
+`reviewer_report: {path, sha256}`. The consumer authenticates actor independence and
+authority; a locally authored JSON assertion or a report hash alone is not approval.
+`bind_engineering_review` binds that exact decision to the inventory; native mapping
+then uses the existing `bind_native_mapping` API. There is no signature service or
+new review stage beyond the selected route's planning review.
+
+The prepared request selects:
+
+```json
+{"accepted_engineering":{"path":"/project/engineering.md","sha256":"<raw hash>","phase":"implementor","route":"normal","selection":["engineering"],"approval":{"path":"/evidence/planning-decision.json","sha256":"<raw hash>"}}}
+```
+
+`selection` is a nonempty object-key path in the SAME authenticated `input_inventory`
+projection; `proof_mapping` still selects that owner's native case mappings. The
+specification, original files, decision and reviewer report must all be selected
+owning inputs. Generation derives required outcomes; prepare/run/intake reauthenticate
+the same selection, approval and sources. Changed plans, entries, original bindings,
+approval/report or native proof cannot inherit old approval/results. All existing
+1 MB reads, 128-entry limits, duplicate/unknown-field refusals and candidate/attempt/
+request-specific reconciliation remain. This is no cross-branch evidence equivalence
+engine: preserve original results and use final affected reruns when needed.

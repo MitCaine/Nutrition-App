@@ -7,8 +7,8 @@ or missing inputs before dependent decisions, edits or dispatch; summaries do
 not replace unread requirements. Read in bounded sections and recover truncated
 portions before reliance. Select the checkpoint's active object, not its history.
 
-This is the controller’s complete daily entrypoint. Workers use their own
-[worker instructions](worker-instructions.md#role-index), not this whole procedure. Read
+This is the controller’s complete daily entrypoint. Workers use their selected authoritative
+[role skills](worker-instructions.md#role-index), not this whole procedure. Read
 relevant source/standards as needed; RI architecture, setup and adoption history
 are conditional. The project README/AGENTS points to the exact map above. If it
 is missing, report and resolve that adoption input rather than substitute another
@@ -98,9 +98,91 @@ selecting maintenance; this route does not bypass project controls. A kickoff ma
 request maintenance, but the controller confirms eligibility before implementation
 or dispatch.
 
+## Experimental engineering route
+
+This is an opt-in experiment, not a replacement for capsule or maintenance work.
+Select it only through explicit owner/project authority after the consumer map,
+record validator and execution/evidence bindings support it. Adoption selects an
+exact published revision; existing attempts keep their selected instructions.
+A missing local interface is a concrete adoption gap, not permission to bypass it.
+
+The sequence is controller engineering -> independent planning review -> controller
+acceptance -> bounded implementation assignment(s) and intermediate review -> full
+integrated implementation review -> project qualification, approval, integration and
+verified closeout. Project-required gate order still applies. Planning and final
+implementation reviews ordinarily use distinct fresh nonauthor instances. The
+controller cannot self-review its engineering specification or implementation.
+The selected [reviewer skill](../../../.agents/skills/ri-independent-reviewer/SKILL.md)
+provides both review modes; they are different assignments, not transferred verdicts.
+
+The controller performs the builder's actual engineering work on this route. Use
+[task-directed source preparation](#task-directed-source-preparation), inspect owning
+code, callers, contracts and tests, resolve product/design decisions, and write one
+concise engineering specification in the existing tracked task location. Record
+original requirements and observable outcomes, consequential interface/architecture
+choices, source/edit boundaries, dependencies and discriminating proof/check selection.
+No six-heading capsule or embedded machine JSON is required for this route. Do not
+copy project-wide rules, raw tool dumps or mechanical identities already available
+through authenticated results. Explicit engineering judgments cannot be replaced
+by pointers. Unresolved decisions return to the owner before dependent work.
+
+Publish the engineering specification under project authority. Give the planning
+reviewer the exact specification, original issue/accepted decisions, relevant actual
+source and intended tests. It must reject incomplete or incorrectly engineered work.
+The controller authenticates the review and records accepted specification/review
+identities in existing task state before implementation. Changed requirements,
+engineering decisions or selection invalidate affected planning approval; obtain
+fresh affected review rather than transferring approval to changed instructions.
+Planning approval grants no file, Git, settings or qualification authority.
+
+Select each implementation assignment from that same accepted specification, naming
+its original requirement IDs, expected outcome, exact starting source, predecessor,
+allowed changes, due checks and return route. Do not have another role rewrite the
+engineering problem. One accepted specification may support several planned
+assignments: planned advancement is distinct from correction of rejected work.
+Prefer simple sequential stacked branches for the initial pilot; independent branches
+need justified composition and review. The controller owns project Git under existing
+authority. Retain the original issue integration baseline separately from each
+assignment base; optional helper `integration_base` is a source identity, not approval.
+
+Before each next dispatch authenticate the unchanged accepted plan and previous
+result's exact commit, independent review, due evidence and unresolved findings.
+A rejected/interrupted result, moved predecessor or missing review is not an accepted
+base. Record relationships in existing task state, not a new branch manager. The
+native dispatch guard continues to authenticate launches, not plan/predecessor approval.
+Intermediate acceptance covers only the assigned portion, not issue completion or
+main integration. Do not route planned advancement through a rejected-work transition.
+Recover uncertain publication by observing exact refs before retry; do not duplicate
+mutations or work. Correct in-scope findings under existing correction rules.
+
+Final review compares the full combined candidate against the ORIGINAL integration
+baseline, accepted specification and original issue, including interactions between
+individually accepted portions. Accumulated intermediate PASSes cannot replace it.
+Preserve old checks under original source/attempt/request identities. Select final
+checks through [evidence eligibility](#evidence-eligibility-and-corrections); use
+conservative affected reruns when transitive equivalence is unknown and all required
+qualification. The optional [engineering selection binding](workflow-tools.md#approved-engineering-selection)
+retains candidate-specific reconciliation; no cross-branch proof relabeling is allowed.
+Follow existing final approval, guarded integration and closeout for one complete
+candidate. Keep intermediate refs protected until final integration, ancestry and
+required evidence retention are verified; deletion still needs exact-ref authority.
+
+Evaluate the experiment through separately authorized consumer pilots, not another
+routine stage. Retain full lifecycle preparation, planning review, implementation,
+corrections, intermediate/final review, qualification and closeout costs in existing
+records. Distinguish measured elapsed/usage from unknown telemetry and compare like
+scope/conditions; shorter implementor reading alone is not a net improvement. Exercise
+incomplete/altered plans, unauthorized next dispatch, moved/rejected predecessors,
+out-of-scope renames, missing/stale proof, failing integrated interactions, uncertain
+publication and protected unmerged refs with bounded fixtures where suitable. These
+scenarios and documentation checks do not prove live host behavior. Return pilot
+findings for a keep/revise/retire decision before broader replacement. Definition of
+this route does not itself establish pilot success or satisfy the separate RI #135
+normal-route experiment.
+
 ## Capsule format
 
-RI owns this shared capsule format for every adopting project. Use one ordinary
+For the normal capsule route, RI owns this shared capsule format. Use one ordinary
 Markdown task file with these headings:
 
 - **Objective:** live issue and original required specifications/decisions.
@@ -118,7 +200,12 @@ Markdown task file with these headings:
   its implementation steps. State setup/preconditions, action or fault, the
   independently expected observation, a plausible defect/control that the case
   distinguishes, the due stage, literal commands and intended environment, and
-  results to retain.
+  results to retain. Give individually prescribed cases stable identities and name
+  required measurements/artifacts, applicable routes and the next owner for future
+  proof. Creator and controller establish completeness against original requirements;
+  do not leave the implementor to reconstruct or rename the inventory.
+  Select implementation, correction and acceptance checks with their scope/risk,
+  input bindings and expensive-suite budgets under [check selection](#select-checks-and-control-runtime).
 - **Prerequisites:** known dependencies, unresolved decisions, and any genuinely
   post-installation obligation with its satisfaction method.
 - **Handoff and closeout:** authorized actor/actions, exact returned source/results,
@@ -150,7 +237,9 @@ Controller -> capsule builder -> controller checks plan
 ### Assign roles and supply inputs
 
 The controller assigns roles serially with fresh worker contexts by default:
-one builder, one implementor and one independent reviewer. Maintenance omits the
+one builder, one implementor and one independent reviewer on the normal capsule route.
+The experimental route uses its independent planning review and explicitly planned
+implementation assignments under the [governing rule](#experimental-engineering-route). Maintenance omits the
 builder and, where permitted, uses direct controller implementation. No-change
 work follows its disposition below. Workers cannot recruit other workers except
 for the expressly delegated Codex implementor launch.
@@ -203,7 +292,7 @@ Supply the [dispatcher](worker-instructions.md#codex-dispatcher) with the exact
 task/attempt, accepted task location, branch/SHA, selected role instructions,
 implementation inputs, read/edit scopes, checks, evidence locations, Git ownership
 and return destination. It launches under the selected
-[context/fallback rules](worker-instructions.md#read-and-dispatch) and relays the
+[dispatcher skill](../../../.agents/skills/ri-dispatcher/SKILL.md) and relays the
 terminal result; it does not reorient as controller, replan, review or integrate.
 Only the assigned actor edits/publishes; prevent simultaneous edits. Work
 authenticates the result before independent review. Unavailable routing requires
@@ -225,6 +314,7 @@ An additional substantive assignment requires one of these reasons:
 - An authorized scope change.
 - A confirmed inability of the assignee or host to proceed.
 - An independent scope challenge permitted in step 2.
+- A planned assignment or review selected under the [experimental engineering route](#experimental-engineering-route).
 
 Before dispatch, record the reason and bounded objective in the existing
 checkpoint. Existing availability and recovery limits still apply. Clarification
@@ -237,7 +327,7 @@ Retain and authenticate each completed agent's terminal handoff before closing
 it through the host's supported operation to free capacity. Do not close running
 agents. Supply role-specific inputs under the selected
 [ownership and handoff contract](new-project-setup.md#instruction-ownership-and-handoffs):
-selected worker sections, applicable local requirements/standards, complete task
+selected role skills and common contract, applicable local requirements/standards, complete task
 inputs, authoritative source/evidence references, read/edit limits and return route.
 Original requirements go to builder/reviewer; the implementor receives the accepted
 self-contained task and relevant source, and the dispatcher authenticates/relays.
@@ -254,11 +344,12 @@ inaccessible material is a gap, not permission to guess.
 Except for [permitted no-change review](#planning-only-and-no-change-outcomes),
 before worker dispatch the controller creates and publishes the dedicated
 non-main task branch on GitHub from the authenticated base. For direct-controller
-maintenance, do this before implementation rather than worker dispatch. On the normal route,
+maintenance, do this before implementation rather than worker dispatch. On the normal capsule route,
 the builder returns the capsule; the map assigns its capsule-only commit/push to
 the builder or controller. Publish that planning commit before implementor dispatch.
 Maintenance instead uses the accepted brief handoff in the existing task record,
-without a planning-only commit/publication. Implementation uses the task branch;
+without a planning-only commit/publication. The experimental route publishes its
+engineering specification and assignment refs under its governing rule. Implementation uses the selected task branch;
 its assigned actor publishes the exact candidate before independent review. The
 controller publishes for roles without Git authority.
 Use clear commit messages describing the changes. Verify remote refs at each
@@ -295,12 +386,44 @@ costly qualification. On failure, report before further expensive checks unless
 the assignment requires collecting independent results. This grants no frozen
 candidate edits or omission of required checks.
 
+### Select checks and control runtime
+
+Select required checks in the accepted capsule, engineering specification/assignment
+or maintenance handoff before
+implementation, with literal commands, intended phase, affected scope, relevant
+transitive inputs/environment and the reason for broader coverage. During
+implementation test changed behavior and affected callers. After correction rerun
+failed cases and checks affected by the correction; the controller updates the
+selection when scope changes. Before acceptance run broader checks required by
+the actual change risk and project gates. A full suite needs a project requirement
+or a concrete cross-cutting risk, such as shared execution, authentication or
+serialization. Do not repeat it automatically after every correction; an ordinary
+documentation pin change does not itself justify expensive integration fixtures.
+Workers follow this selection rather than guessing which required checks to skip.
+
+Use owning runner records for individual durations, command/source identity and
+relevant dependency/tool/configuration bindings. Reuse unaffected evidence only
+under [input equivalence](#evidence-eligibility-and-corrections), preserving its
+original execution identity. A wrapper's total time is not each nested gate's time;
+missing input coverage or runtime data remains unknown, never inferred.
+
+Give expensive suites project-defined runtime investigation budgets in their
+existing check definitions, informed by retained measurements where available.
+Tooling signals exceedance for bounded investigation before further expensive
+work; an actual completed pass and an exceeded budget are separate observations.
+A budget does not waive required proof or convert a timeout, omitted test or
+unfinished result into PASS. Preserve those as incomplete and reconcile the active
+operation before retry. Missing budget controls are an owning-runner integration
+gap, not permission to invent a pass or another monitoring framework.
+
 ### Task-directed source preparation
 
+The experimental engineering controller assumes the following preparation duties;
+the output informs its specification rather than a six-heading capsule.
 For the normal capsule route, the capsule builder or assigned task author uses
 the consumer-selected compatible Tree-sitter route on applicable supported
 source before returning the plan. Start with bounded task terms and relevant
-paths using the [consumer navigation guide](https://github.com/MitCaine/repository-intelligence/blob/685a2584a38cbc23286eda9c11a0404835059773/docs/consumer-guide.md#navigate-before-expanding-scope).
+paths using the [consumer navigation guide](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md#navigate-before-expanding-scope).
 Inspect the exact returned source locations and the relevant owning symbols,
 callers, interfaces, tests, and contracts directly. Locator call candidates are
 lexical hints, not resolved call edges. A help/import/link check alone does not
@@ -331,7 +454,9 @@ diff, and log evidence remains useful for checking the map and proving outcomes.
 For maintenance, the controller verifies the brief handoff against intake and
 project controls, including the route-feasibility rule in step 2, then follows steps 3–6; under the permitted direct-controller
 exception it performs step 3 itself and still obtains fresh review in step 5.
-Steps 1–2 apply to the normal route.
+Steps 1–2 apply to the normal capsule route. The experimental route uses its
+[engineering and planning-review boundary](#experimental-engineering-route) before
+implementation and intermediate reviews; steps 4–6 still govern its FINAL candidate.
 
 1. **Capsule builder:** use the supplied branch and [shared format](#capsule-format).
    Require affected stale docs/examples/maps/links to be corrected, or justify why
@@ -342,7 +467,8 @@ Steps 1–2 apply to the normal route.
    and relevant source, including fidelity, completeness, scope, criteria, affected
    documentation, substantive engineering and proof sufficiency. Check that source
    steps and independently discriminating proof entries preserve the original
-   outcomes and their dependencies, then establish that the selected implementation
+   outcomes and relationships sharing interfaces, transitions, dependencies or
+   fixtures, then establish that the selected implementation
    route, prerequisites, sequence and evidence obligations are jointly executable
    from the starting source or through explicitly authorized setup that does not
    depend circularly on the capability being built. Confirm applicable source
@@ -357,11 +483,25 @@ Steps 1–2 apply to the normal route.
    separate independent reviewer cannot be replaced by the controller. Follow the additional
    assignment rule above; a scope challenge is not a routine fourth role.
 3. **Implementor:** make only authorized changes, including affected docs, and run
-   relevant checks. Return source/branch identity, changes, results/skips and gaps.
+   relevant checks. Read the whole accepted task, then choose/adjust coherent groups
+   of related implementation/proof items. Reconcile the same original obligation
+   record after each group, retaining unresolved work and distinguishing code from
+   satisfied proof; no mandatory second plan or elaborate pseudocode. Before the
+   ready handoff, reconcile the original accepted
+   outcomes, implementation steps and individually prescribed proof cases against
+   actual execution, case results, required measurements and retained readable
+   hash-matching artifacts. Already-due missing/unsupported proof blocks readiness;
+   legitimate later controller-owned actions stay pending with their accepted owner.
+   Use the [existing reconciliation binding](workflow-tools.md#final-completeness-reconciliation)
+   where selected, not a replacement checklist or another report/stage. Candidate or
+   evidence changes require affected reconciliation. Return source/branch identity,
+   changes, results/skips and gaps.
    Commit/push only when the map grants that action. Keep useful work for corrections.
-   Follow the worker instructions for alternate execution paths and their tests.
+   Follow the selected implementor skill for alternate paths and discriminating proof.
 4. **Controller:** authenticate the exact published candidate, authorized scope,
    required check completion/results, evidence identity and unresolved blockers.
+   Authenticate and consume the same final completeness result, rather than
+   rebuilding its accepted inventory or inferring success from a passing aggregate.
    Capture/publish when assigned and verify the remote ref. This is readiness for
    independent review, not a second substantive review of implementation
    correctness or test adequacy; those belong to the reviewer. Act on any concrete
@@ -482,7 +622,7 @@ branch as merged or invent a product change merely to clean it up.
   retry, never an unfinished-work inspection or monitoring loop. Result
   delivery to an active parent does not prove an idle parent will start a new turn.
   End the turn only with verified idle wake-up for that controller/host route.
-- **External jobs:** use native delivery or the [queue skill](skill-templates/capsule-queue/SKILL.md)
+- **External jobs:** use native delivery or the [queue skill](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-queue/SKILL.md)
   with a supported watcher and verified wake-up. CLI acceptance alone is not
   consumption. Reuse a proven route until it changes or fails; do not add duplicate
   notifications or restart a job to attach a watcher. Otherwise keep blocking wait.
@@ -520,7 +660,7 @@ set. Establish the observed failure and causal evidence; reexamine implementatio
 fixture, independently justified expectations and execution setup when they conflict.
 Inspect relevant source, tests and callers for related uses sharing the assumption,
 including incomplete migrations, and choose a distinguishing check. Revise only
-affected implementation-sketch portions before building on changed assumptions.
+affected working references to original obligations before building on changed assumptions.
 Incomplete evidence permits bounded probes and explicit uncertainty, not a confident
 diagnosis. Scale obvious compile/format fixes proportionately; no new planning stage,
 whole-file mandate or grant is required. Repair related mistakes within authorized
@@ -570,7 +710,8 @@ does not establish that every required gate passed. A source or relevant-input
 change during a check makes its result ineligible. Evaluate each gate's actual exit/result,
 including failures/skips; resolve failed required gates before acceptance.
 
-After correction, the controller selects reruns from changed inputs and the
+After correction, the controller applies [check selection](#select-checks-and-control-runtime)
+and selects reruns from changed inputs and the
 project's accepted evidence-equivalence policy. Preserve eligible results under
 their original source/command/environment identities; never label them newly
 executed. Run full qualification when required, or record why reuse is insufficient.

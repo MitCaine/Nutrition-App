@@ -2,314 +2,116 @@
 
 ## Role index
 
-At the selected RI revision, read [Shared worker rules](#shared-worker-rules)
-and your assigned role section in full:
+Workers use one authoritative role skill at the attempt's accepted RI revision,
+plus [Shared worker rules](#shared-worker-rules). This document is the common
+contract and compatibility navigator, not another set of role procedures.
 
-- [Capsule builder](#capsule-builder)
-- [Implementor](#implementor)
-- [Independent reviewer](#independent-reviewer)
-- [Codex dispatcher](#codex-dispatcher)
+- [Capsule builder](#capsule-builder): `ri-capsule-creator`
+- [Implementor](#implementor): `ri-implementor`
+- [Independent reviewer](#independent-reviewer): `ri-independent-reviewer` (assigned plan, intermediate or final review mode)
+- [Codex dispatcher](#codex-dispatcher): `ri-dispatcher`
 
-Read only the task inputs assigned to your role below. The project map points
-here rather than reproducing these instructions. Controller intake and end-to-end
-decisions remain in [Start an issue](start-an-issue.md).
-
-These links navigate one document, not separate instruction copies. To limit
-context, find the exact unique level-two heading and read through to the next
-level-two heading or end of file. Recover truncated sections. If the reading tool
-returns the whole file, an anchor has not limited what was loaded. Use stable
-headings, not line-number pointers.
+The handoff/map authenticates the actual skill folder, common contract and local
+requirements. Read each complete role skill and its locator, and this complete
+shared section; recover truncated reads. Installation is not required when those
+same selected resources are supplied through a supported document route. Missing
+resources return to the controller, never newest upstream or another role.
+Conditional links are references only when relevant, not mandatory controller
+reading. Controllers retain the full [daily procedure](start-an-issue.md).
 
 ## Shared worker rules
 
-Read the complete Shared worker rules, assigned role section and that role's
-supplied inputs before acting. Original issue/decision reading belongs to the
-controller, capsule builder and independent reviewer, not the implementor or
-dispatcher. Initial capsule creation does not require an existing capsule.
-Handoffs distinguish the initial reading set and any explicit access limits from
-edit authorization; reading relevant source does not expand edit authority. Recover truncated reads and authenticate assigned source,
-phase, instruction resources and authority. Missing or conflicting required
-inputs go to the controller, never guessed replacements.
+Authenticate the assignment, role, exact source/base, selected instruction resources,
+authority, applicable project standards and return destination before acting.
+Read complete role-permitted inputs. Briefly connect the task to the role's outcome
+in existing notes or the terminal handoff; hashes alone do not show understanding.
+No extra acknowledgment or report is required. Instructions grant no authority:
+Git, issue, checkpoint, external actions and recruitment need an assignment grant.
+Only the controller selects workflow stages; a dispatcher has only its explicit
+implementor-launch exception. Preserve unrelated work, historical evidence, active
+instruction/runtime selections and explicit task/attempt stops or owner pauses.
 
-Before acting, verify the assigned role, selected instructions and applicability of
-the supplied inputs/actions. Record a concise task-to-role and outcome mapping,
-plus missing/conflicting inputs, in existing assignment notes, the implementation
-sketch or terminal handoff as appropriate. Source/hash equality alone does not
-establish understanding. Apply this to correction/replacement inputs too; do not
-add a routine acknowledgment or copy the instructions into another record.
+Use available selected authoritative tooling for dependency/resource inventories,
+source/instruction identities, original obligation IDs, execution/case outcomes,
+artifact survival and measurements. Consume its bound results by reference rather
+than reconstructing, retyping or inferring those facts. Agents judge requirement
+meaning, engineering choices and proof adequacy; tools verify mechanical facts.
+If required automation is not wired into the selected route, identify the missing
+operation and its owning component to the controller. Use only the project's
+authorized disposition, and do not call manual checking or an unwired helper
+automated. This requires no additional report, inventory or approval stage.
 
-Stay within the assignment. Reading an instruction grants no additional authority.
-Only the controller owns recruitment and workflow-stage decisions; any delegated
-dispatch authority must be explicit in the assignment. Git, issue,
-checkpoint and external actions require an explicit assignment grant. Preserve
-unrelated work, historical evidence and terminal stops. Do not change instruction,
-skill or runtime selection during an attempt.
-Use the controller's [output retention and disposal rule](start-an-issue.md#retain-evidence-and-dispose-of-owned-outputs)
-for assigned workspace/build outputs. Their creation owners record actual ownership;
-workers do not infer disposal authority or delete required recovery evidence.
+Before changing inputs to a downstream gate, check its applicable source, history,
+authorization and configuration constraints; resolve conflicts without premature
+qualification. History/base rules belong to the project, not a universal RI policy.
+The launching actor checks command, working directory, paths and effective child
+configuration before dependent/expensive work. Use bounded prerequisites, not a
+product-suite rehearsal. Reuse readiness only with unchanged relevant inputs.
+After failed setup, run only checks with satisfied prerequisites; other results
+are diagnostic. Where gate order permits, cheap validity checks precede expensive
+qualification. Follow assigned checks; no worker waives required checks.
+Use the controller's recorded implementation/correction/acceptance selection;
+do not automatically repeat every broader suite after a fix. Report missing
+selection or budget controls to the controller rather than guessing omissions.
 
-For a suspected blocker, use the canonical [bounded diagnosis and recovery
-rules](start-an-issue.md#diagnose-blockers-and-recover), not the whole controller
-procedure. Clarify ordinary in-scope questions with the controller without another
-human approval. STOP_REPLAN is last resort, never an opening progress status.
-Report actual failures and unknowns; terminal stops cannot be cleared by later success.
+Keep tested source stable and identifiable. Retain commands, environment, raw
+results/logs, failures/skips and original source identities. Evaluate individual
+required gates, not names, counts or aggregate exit alone. Changed source or
+relevant inputs during a check invalidate it. Controller-selected reuse requires
+relevant transitive-input/environment equivalence; unknown equivalence needs
+affected reruns. Compare source, command, directory, toolchain and configuration
+when results conflict; a passing repetition alone does not explain a failure.
 
-Return one terminal handoff with source/branch identity, completed work, actual
-checks and evidence locations, failures/skips, findings and remaining obligations.
-Report requested and host-confirmed settings separately under the map's accepted
-policy and [shared reporting rule](start-an-issue.md#execution-routing-models-and-efforts).
-Unknown telemetry is neither compliance, mismatch nor capacity failure; follow
-[accepted launch/confirmation policy](new-project-setup.md#accepted-worker-launch-routes)
-and report unresolved mandatory confirmation without substitution.
-Follow the assigned [return and relay route](start-an-issue.md#assign-roles-and-supply-inputs).
-Keep progress distinct from terminal outcomes. Apply the controller's
-[correction and reuse rules](start-an-issue.md#evidence-eligibility-and-corrections).
-Missing proof is not PASS.
+A failed command or terminal worker handoff does not stop an otherwise active task.
+Preserve failures and use bounded in-scope diagnosis/correction without another
+human approval for ordinary fixes. Do not guess consequential decisions, weaken
+criteria/tests or infer a cause from incomplete evidence. Report wider scope,
+protected inputs, missing decisions/permissions or unresolved prerequisites to
+the controller before dependent work; preserve valid work and pause the affected
+part. Diagnosis cannot resume an explicit stopped/paused attempt, and later success
+cannot clear it. STOP_REPLAN is last resort, not opening progress.
+
+Use the map's accepted confirmation policy: identify requested settings separately
+from host-confirmed settings and unresolved confirmation. Unknown telemetry proves
+neither compliance, mismatch nor capacity failure. Do not infer mode from tools,
+substitute settings or use capacity recovery for unknown confirmation. Keep routine
+progress in existing records; no repeated waiting messages, status polling or
+unfinished-work inspection. Use blocking completion; ordinary wait expiry means
+continue waiting. A delivery failure/task deadline permits bounded authoritative
+state reconciliation before retry, never duplicate dispatch.
+
+Return one terminal handoff through the named immediate destination; the assigned
+relay confirms controller consumption. A local report or accepted send is not
+delivery. Include exact source/branch, work, actual checks/evidence, failures/skips,
+findings and remaining obligations. Missing due proof is not PASS; future obligations
+retain their accepted owner. Preserve evidence/artifacts after teardown and before
+any specifically authorized cleanup; ownership of a path is not disposal authority.
+Active/paused work, shared or selected runtimes and unique source/recovery evidence
+are protected. Use the existing consumer retention/disposal route, not inferred
+permission from a temporary or ignored path.
+After compaction recover authoritative selected instructions, complete accepted task,
+actual assignment/source and original obligations, not a lossy replacement specification.
 
 ## Capsule builder
 
-Read the [Shared worker rules](#shared-worker-rules) and all supplied issue,
-specification/decision, source and project requirements. Use the controller’s
-selected branch, instruction identities and authority. Do not repeat controller
-intake, select a workflow or recruit additional roles.
-
-Write one decision-complete task using the [shared capsule format](start-an-issue.md#capsule-format).
-Inspect relevant callers, tests and documentation to identify bounded edit paths,
-requirements and viable proof routes under the controller's
-[route-feasibility plan check](start-an-issue.md#complete-the-phases).
-For applicable supported source on the normal capsule route, perform the selected
-task-directed navigation described in
-[source preparation](start-an-issue.md#task-directed-source-preparation). Inspect
-the returned locations directly and carry relevant generated pointers or a bounded
-mechanical projection, with their source and coverage context, into the capsule.
-Do not treat a link/import/help check or lexical call candidates as source analysis.
-Documentation-only work needs no parse; keep maintenance proportionate.
-Make the accepted capsule self-contained for
-implementation, carrying required decisions and behavior rather than requiring
-the implementor to retrieve issue or decision history. Map each acceptance outcome to a concrete
-check or inspectable evidence; include literal commands and their required environment.
-Retain original outcome IDs as the acceptance authority, put concise implementation
-steps keyed by those IDs in Source and scope, and put linked, independently
-discriminating proof entries with the same IDs in Checks. Resolve consequential
-specification, architecture or proof-plan gaps with the controller before return;
-do not make them implicit implementation choices. Permit coherent bounded units
-only when they preserve complete criteria and necessary interfaces; do not split
-by file or token count alone.
-Require affected stale docs/examples/links to be corrected, or explain why unaffected.
-Identify unresolved product decisions and prerequisites without inventing parameters.
-For genuine post-installation obligations, specify when and how they are satisfied.
-
-Return the draft and source-grounded gaps to the controller for its plan check.
-Publish a capsule-only commit only if explicitly assigned; otherwise the controller
-publishes it. Do not implement source, grant readiness/implementation authority or
-turn an advisory scope opinion into independent candidate acceptance.
+Use [ri-capsule-creator](../../../.agents/skills/ri-capsule-creator/SKILL.md).
 
 ## Implementor
 
-Implement the accepted capsule or controller-approved maintenance handoff using
-the supplied implementation inputs and applicable implementation standards.
-The initial reading list is a starting set: follow task-relevant source, callers,
-tests and contracts as needed for correct implementation, subject to explicit
-project access restrictions. This does not expand authorized edits. Read the
-[Shared worker rules](#shared-worker-rules) and the complete assigned task input.
-The maintenance handoff replaces the capsule only under the controller-selected
-[maintenance route](start-an-issue.md#optional-maintenance-route). Do not
-independently retrieve the original issue or linked decision history. If a
-requirement or consequential implementation/proof decision is missing,
-contradictory or insufficient, report the gap to the controller and creator before
-dependent work; do not reconstruct a product decision, drop hard proof, or loosen
-an accepted criterion. Ordinary code choices and focused technical uncertainty
-remain yours to resolve within scope.
-Use supplied commands, environment, evidence locations and authority limits.
-The controller has already selected the workflow and project route; do not repeat
-its issue-start orientation or dispatch other roles. A failed assigned check permits
-diagnosis and repair throughout the accepted scope and authorized edits under the
-[existing correction authority](start-an-issue.md#diagnose-blockers-and-recover),
-without a separate grant for each ordinary compile, lint or test fix; unresolved decisions or wider
-impact go to the controller under the governing maintenance rule. Preserve valid
-work/evidence and pause only the affected part pending that decision.
-For a Work-to-Codex handoff, return your terminal result to the assigned Codex
-dispatcher for relay to the Work controller; routing grants no additional authority.
-
-Implement only authorized paths and outcomes, including affected documentation.
-For a new or changed path to existing behavior, inspect the established contract,
-validation and relevant callers. Preserve applicable invariants unless a difference
-is explicitly authorized, and test distinguishing valid and invalid cases through
-the affected paths. Restoration examples include terminal states, ownership,
-allocation limits and ordinary application callers.
-
-Before substantive edits, record a brief source-grounded implementation sketch
-connecting accepted outcomes to intended code and tests: existing interfaces,
-consequential transitions or invariants, and assumptions. Show your concise
-comprehension of the accepted flow and its local source/test mapping; this sketch
-does not replace or expand the accepted design and proof plan. Resolve technical
-uncertainties through targeted inspection or permitted focused probes before
-building on them; return missing product decisions to the controller. Reuse
-accepted detail, scale the sketch to the change, and revise it when evidence
-changes the approach. Use existing assignment notes or plan facilities, not
-private reasoning, a mandatory new file, capsule edit, handoff or approval gate.
-Trivial maintenance may need one sentence; complex logic a compact flow. Format
-is optional; no complete upfront understanding or whole-file reading is required.
-
-Turn the accepted proof plan into concrete test scenarios: initial state, actions,
-expected outcome and plausible incorrect behavior each case must distinguish. Ground
-expectations independently of the proposed implementation. Exercise the relevant caller through the outcome
-claimed; ask what plausible broken implementation could still pass the assertions.
-Preserve legitimate historical-version expectations and test corrected current
-behavior separately when applicable. A focused unit test is sufficient when it
-proves the claimed outcome; this is not a blanket integration-test requirement.
-Passing counts alone do not prove a required behavior.
-
-Use proof details that distinguish the accepted behavior. Exercise the actual
-owner and relevant caller with all stated preconditions, controls, and journey
-steps. For layered validation, keep inputs valid through earlier layers and
-isolate the intended fault so it reaches the target validator. When failure
-preservation is required, verify that preexisting nonempty state remains available
-afterward. For privacy, trace sensitive or reversible values through relevant
-transformations, wrappers, and aggregate outputs; keyword absence alone is weak
-evidence. For compatibility, retain the identity of historical fixtures and test
-current behavior against its current contract separately, without assuming equal
-serialized representations. Use concrete case details from the accepted task
-records only where they refine existing requirements; these principles create no
-new product criteria or causal claims.
-
-Follow the [command readiness and check-order rules](start-an-issue.md#command-readiness).
-Retain actual commands, source/environment identities and results/logs, including
-failures/skips, under [evidence eligibility](start-an-issue.md#evidence-eligibility-and-corrections).
-Report changed inputs or missing results; do not infer acceptance. When the
-handoff selects an available adopted [consumer execution binding](workflow-tools.md#prepared-worker-execution-linkage),
-use its prepared edit/capture/check/return operations under the assigned authority;
-do not invoke unselected helpers. Other supported project routes remain valid.
-Preserve useful work for bounded corrections; confirm scope changes with the controller.
-
-Return the full change, criterion evidence and unresolved obligations under the
-[shared disposition contract](workflow-tools.md#consequential-dispositions) for controller
-verification and independent review. Commit/push only under an explicit grant.
-A worker implementor must not approve, integrate, close the issue, edit controller
-state or self-review. Under the project-permitted
-[direct Work controller maintenance exception](start-an-issue.md#optional-maintenance-route),
-the controller assumes these implementation duties without a worker dispatch;
-it retains controller authority for later approval/integration/closeout, but must
-obtain a fresh nonauthor independent review. The dispatcher is not used for that
-selection and cannot choose it.
+Use [ri-implementor](../../../.agents/skills/ri-implementor/SKILL.md).
 
 ## Independent reviewer
 
-Read the [Shared worker rules](#shared-worker-rules), complete task and original
-requirements, exact candidate, full diff, applicable standards and actual check evidence.
-The task is the accepted capsule or maintenance handoff under the selected route;
-maintenance retains independent review of the original objective and full change.
-For [permitted no-change review](start-an-issue.md#planning-only-and-no-change-outcomes),
-use the existing task record, original criteria and evidence against the exact
-existing remote source; no capsule or implementation is implied.
-Use the supplied selected review route and limits; do not repeat controller intake.
-The author/implementor cannot be its reviewer. A previous verdict is not a new review.
-
-Review the full change and affected callers, tests, current docs/examples/links.
-RI navigation is supporting evidence, not a substitute for direct inspection.
-Assess each acceptance outcome and applicable standard, distinguishing concrete
-defects, missing proof and uncertainty. Check evidence’s source, command/workflow
-identity and reuse eligibility; a passing name or aggregate count is insufficient.
-Assess the [implementor's scenario-based proof](#implementor): do the scenarios
-distinguish plausible failures and do their assertions prove the claimed behavior?
-Completed checklist entries and valid links are not semantic proof; judge the
-observed implementation and test discrimination against the original criteria.
-
-Remain read-only: no source/Git/issue/checkpoint mutation or recruitment. Execute
-checks only if the assigned review route permits them; otherwise request required
-existing evidence through the controller. No custom report schema or retrieval
-transcript is required unless separately adopted by the project.
-
-Return concise evidence-backed dispositions, exact source identity and actionable
-findings. Missing proof already due cannot pass. For explicitly post-installation
-criteria, assess the implementation/check plan now and identify proof still due;
-do not require installation before the approval needed to install. The controller
-owns findings disposition, separate approval, integration and closeout; review
-grants none of those actions.
-
-Identify the substantive reviewer, report settings under the
-[shared confirmation policy](#shared-worker-rules), and state inspection limits.
-Do not present delegated inspection as a requested model's personal review. For an assigned repeated-rejection diagnosis,
-compare the original requirements, capsule, source and rejection history; return
-the underlying problem and bounded correction without restarting valid phases.
+Use [ri-independent-reviewer](../../../.agents/skills/ri-independent-reviewer/SKILL.md).
+The optional [inspection-only helper](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-independent-review/SKILL.md)
+cannot override a route requiring expressly authorized reviewer-executed checks.
 
 ## Codex dispatcher
 
-Use this entrypoint at the project-selected RI revision. One reusable dispatcher
-chat serves one project; each accepted implementation assignment gets a fresh
-implementor by default. Exceptions require the controller-authorized fallback below.
-You relay work for the Work controller, not act as a second controller.
-Do not repeat issue-start orientation or independently select newer instructions.
-The optional [dispatcher kickoff](../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md)
-locates this selected section; it grants no implementation assignment.
+Use [ri-dispatcher](../../../.agents/skills/ri-dispatcher/SKILL.md).
 
 ### Read and dispatch
 
-Read the complete controller handoff before acting. It names the project,
-controller/return destination, task and attempt, accepted capsule or maintenance handoff,
-branch and exact source, selected implementor/shared instructions, authorized
-read/edit scopes, checks, evidence locations and Git ownership. Authenticate the
-handoff, task-record/source identities, dispatcher instructions and launch configuration
-under the [per-chat source orientation rule](new-project-setup.md#chat-source-orientation);
-report missing or conflicting dispatch inputs to Work. Relay the supplied
-implementation inputs unchanged. Do not retrieve original issues/decision history,
-inspect product source to reassess requirements or repeat planning. Requirement
-pointers in the task record are provenance for the controller/reviewer, not dispatcher
-or implementor reading authority.
-
-Use the owner-authorized messaging route in both directions. Its small delivery
-check must establish actual consumption and result recovery; sending alone does
-not prove idle wake-up. Reuse the proven route until it changes or fails. If direct
-messaging is unavailable, return the handoff location through the explicitly
-selected manual route rather than claiming automatic delivery.
-
-Use a fresh implementor unless the controller explicitly authorizes the documented
-[last-resort idle-context fallback](start-an-issue.md#checkpoint-and-resume).
-Reauthenticate the complete handoff and ensure the reused context has no active
-assignment; the dispatcher cannot select this exception. Spawn only the
-controller's single authorized implementor with its complete selected role/task inputs. Configure and verify the handoff's actual model and
-effort from the controller's resolved project configuration, not an inherited or
-independently chosen pair. Keep one
-assignment active and prevent simultaneous edits in the same checkout. Only the
-explicitly assigned actor may commit/push; no main integration is granted here.
-
-### Wait and return
-
-Before recording an active worker or waiting for its completion, establish actual
-accepted launch/resumption identity for this assignment and attempt under the
-[dispatch decision contract](workflow-tools.md#accepted-dispatch-decisions).
-A planned/delivered handoff is insufficient; reconcile uncertain delivery without
-duplicate launch. Use supported blocking completion, or a previously verified wake route. Do not
-poll unfinished work, fill waiting time with inspection or launch duplicate work.
-Apply the [quiet-wait rule](start-an-issue.md#wait-for-completion): record routine
-progress quietly in existing records; do not send repeated “still waiting” or
-“no new evidence” messages when a wait interval expires. Relay terminal results
-and actionable questions requiring Work's intervention, and answer requested
-status questions; do not decide scope or product requirements.
-
-Retain the terminal handoff, then return its location and task/attempt/source
-identity, full diff/change locations, actual commands/results/logs, requested and
-host-confirmed environment/model/effort under the Shared worker rules, failures/skips
-and unresolved findings to Work. Preserve
-original evidence identities. Follow the [return and relay ownership rule](start-an-issue.md#assign-roles-and-supply-inputs)
-and confirm Work controller consumption. Work verifies the candidate and owns review,
-approval, integration and closeout; your relay is not an independent review.
-Throughout the exchange, follow the shared
-[handoff message boundary](start-an-issue.md#work-to-codex-implementation-handoff).
-
-Keep only enough durable state in the existing handoff/checkpoint location to
-identify the assignment, active job, selected instructions/source, result and
-delivery status. After compaction or dispatcher replacement, recover that state
-before dispatch; reconcile stale records with authenticated assignment/source
-and terminal evidence without repeating completed work. Apply the linked
-waiting/recovery rules; duplicate/stale handoffs cannot start another assignment.
-Preserve terminal stops. Capacity or routing failures go to Work without silent
-model/environment substitution or retry loops.
-
-Routine fixes within the existing assignment follow the
-[correction authority](start-an-issue.md#diagnose-blockers-and-recover); relay their
-terminal evidence without requiring a new handoff for each fix. A new controller
-correction assignment requires its bounded handoff under that rule. Do not replan, recruit builders
-or reviewers, implement the task yourself, mutate controller decisions, approve,
-integrate or close issues. No new service, receipt framework or additional normal
-reasoning stage is implied.
+Compatibility anchor: dispatch duties now have one owner in the selected dispatcher
+skill. Fresh implementor context remains default; only the controller may authorize
+the documented idle-context fallback.

@@ -1,0 +1,320 @@
+{
+  "schema_version": 1,
+  "revision": "8db4d56323db31f27af151c542967b4ef13a79af",
+  "pyproject_sha256": "1c10aea7c74bc4dc35df98ede469ac490b6d9f47523ec19e7ae3e15f22d4b364",
+  "source_files": {
+    "src/repository_intelligence/__init__.py": "5ba708c807e59fb3bdd807d6cc2b3b7f143a324c7ba6afa2e49bb4ccb2ade203",
+    "src/repository_intelligence/adapter_conformance.py": "663d62abf07888d6e6c1ce7fcea89bf2a5ecaecb794eb61cb476fc200c024da3",
+    "src/repository_intelligence/adapters.py": "d3f4050285a785848b5f937613c74f5b180363e70721a03a19aee758b786cd08",
+    "src/repository_intelligence/adoption.py": "4d642a3ab03537e398e4aa4506acafc809b921c084cd848a30968a0147a92f98",
+    "src/repository_intelligence/c_family_tree_index.py": "bd616bbee43ec0e47793f21cb50a89dd8eee316fbdf63eba42fc9e9cbffff6c1",
+    "src/repository_intelligence/csharp_tree_index.py": "355b7e85067df4327b65fae4ed7bf12882bfd94fdb186567f14f04de760f9854",
+    "src/repository_intelligence/declarations.py": "26dec086a4c7bc35e5f4176ecea297276eba8421bf6fe80de008210d5059e7c1",
+    "src/repository_intelligence/dispatch_guard.py": "1f4f51b061d7bf17727452acbfbf82752cb89c825cb51a8d390de76020e12c5e",
+    "src/repository_intelligence/go_tree_index.py": "a6800ceecbce20e1f03435cecd8c0da547c79dbfc99af6fc113eb4773ea8b7dd",
+    "src/repository_intelligence/inventory.py": "b33e6c6c17e28a0f6237cf324a0f283fbac1869bbcd748d79cdc76ae9ee7df6d",
+    "src/repository_intelligence/java_tree_index.py": "a063dac2ee5b796b27fd91d1ccd98bba61bce3d40fbd9e5cdd4195acca606fe7",
+    "src/repository_intelligence/js_tree_index.py": "58e6303c51c19f21d009fee14a48eff980f947e688c2162a4f1bc1bb33e1802e",
+    "src/repository_intelligence/locator.py": "ebfe53ff4b02aecf77733052c85884c6c95a8919b811b91e42c7ba00e01cb2da",
+    "src/repository_intelligence/markdown_tree_index.py": "4ea152d3921e8f2e26b1327a1a0870208e65c01cf06e1eab1af159794eb360e4",
+    "src/repository_intelligence/obligation_reconciliation.py": "0e4c1743740ae77b94ebe993be0591478c3a07a132e78fbba88d894583a10b69",
+    "src/repository_intelligence/output_cleanup.py": "500f09b11db44fea5f8a0ffeafeb922c23138872290281507d9422df93d7f0b7",
+    "src/repository_intelligence/python_index.py": "f86a0e75a50cc334de1004c3ffdc45753b181f40504122649a3d1c21123f9b34",
+    "src/repository_intelligence/python_tree_index.py": "cc66b55f0bb53fb6978184ce0e2670a3513c3a7b1dbaecf14957723dea0a4174",
+    "src/repository_intelligence/review_bundle.py": "2d6ee6f6135aec5af01fbd911d75121fab2721ca3ca814794d26fffb8b7324d1",
+    "src/repository_intelligence/rust_index.py": "e5527c16bb3d4bba4329ce7bd2ffc0cb001faf5f6caee0daa007bbabef07aaba",
+    "src/repository_intelligence/rust_semantic.py": "0e3e0ce7faaa84467610cc9677a7aa0415de607bd684978c701395b1e52e0772",
+    "src/repository_intelligence/rust_tree_index.py": "b3e42a41764dd1df229b8194bcabeee85a2f8591bb84ea1d2292a99a3a56420d",
+    "src/repository_intelligence/scan.py": "dd3caadc1727052a5d0188e114bb662b6fa82e79d91b53f02ae2064b10107cad",
+    "src/repository_intelligence/search.py": "c59930ff73bfb3f21ff3bc2ea91e727d77cea871c548fe4f51db6d69e5cfb181",
+    "src/repository_intelligence/section_reader.py": "b7936fedc4ce199a38035a0e03c43ab25b05d17dada6c4df2ebffdad0eee5790",
+    "src/repository_intelligence/source.py": "7c35ccba31509f84f129a18486d27b0e5140548320357a0b81fd63f28596eff0",
+    "src/repository_intelligence/structural.py": "b7e1b0f2b006e826400bf8b43ce70d623fb7e8a204fc417ac34599f0f9edfcbb",
+    "src/repository_intelligence/worker_execution.py": "cd5a87ae7442e56541ec852d2daf5f4f724e0dc7ab6c036674305c67545c7e91"
+  },
+  "resources": [
+    {
+      "source": "docs/start-an-issue.md",
+      "destination": "engineering/workflow/shared/start-an-issue.md",
+      "source_bytes": 51289,
+      "source_sha256": "a1ec9e4dec7521b9f5c70e97e8d72ad28916c6d5838b55ea80b3bda9c8ea6392",
+      "destination_bytes": 51511,
+      "destination_sha256": "bd4c641adab0531b648b05b958100ed826b42b8b8f60242a881b7351c83e2fb4",
+      "relocations": [
+        {
+          "from": "skill-templates/ri-independent-reviewer/SKILL.md",
+          "to": "../../../.agents/skills/ri-independent-reviewer/SKILL.md"
+        },
+        {
+          "from": "skill-templates/ri-dispatcher/SKILL.md",
+          "to": "../../../.agents/skills/ri-dispatcher/SKILL.md"
+        },
+        {
+          "from": "consumer-guide.md#navigate-before-expanding-scope",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md#navigate-before-expanding-scope"
+        },
+        {
+          "from": "skill-templates/capsule-queue/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-queue/SKILL.md"
+        }
+      ]
+    },
+    {
+      "source": "docs/new-project-setup.md",
+      "destination": "engineering/workflow/shared/new-project-setup.md",
+      "source_bytes": 19776,
+      "source_sha256": "95d722756a1477e17f2293dfb073986adf21c1b5c2e8c0697967687c53608e20",
+      "destination_bytes": 19879,
+      "destination_sha256": "40942108d1c982fad1b65a2ad42fc519fbdce2be44938570d3d4b7f953a3a024",
+      "relocations": [
+        {
+          "from": "consumer-guide.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md"
+        }
+      ]
+    },
+    {
+      "source": "docs/worker-instructions.md",
+      "destination": "engineering/workflow/shared/worker-instructions.md",
+      "source_bytes": 7018,
+      "source_sha256": "a138079bb297186023995bed2800bea6678bafcb76e2fde43f81924e6f25de39",
+      "destination_bytes": 7153,
+      "destination_sha256": "12e05988ade9f9a66e2442fb8835bbba02cd41d7bd3a7a56b824f0cb497396c7",
+      "relocations": [
+        {
+          "from": "skill-templates/ri-capsule-creator/SKILL.md",
+          "to": "../../../.agents/skills/ri-capsule-creator/SKILL.md"
+        },
+        {
+          "from": "skill-templates/ri-implementor/SKILL.md",
+          "to": "../../../.agents/skills/ri-implementor/SKILL.md"
+        },
+        {
+          "from": "skill-templates/ri-independent-reviewer/SKILL.md",
+          "to": "../../../.agents/skills/ri-independent-reviewer/SKILL.md"
+        },
+        {
+          "from": "skill-templates/capsule-independent-review/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-independent-review/SKILL.md"
+        },
+        {
+          "from": "skill-templates/ri-dispatcher/SKILL.md",
+          "to": "../../../.agents/skills/ri-dispatcher/SKILL.md"
+        }
+      ]
+    },
+    {
+      "source": "docs/workflow-tools.md",
+      "destination": "engineering/workflow/shared/workflow-tools.md",
+      "source_bytes": 45036,
+      "source_sha256": "6ffbdf791f9ad8119396ed347e9ee0dadb3ab4c37ab9f02f919a42c9d3fc7692",
+      "destination_bytes": 45638,
+      "destination_sha256": "cedebb966d51c0716433fe9480a8bfe86d4b469bd6ca22f0a8db95ee4a157bd1",
+      "relocations": [
+        {
+          "from": "../src/repository_intelligence/dispatch_guard.py",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/src/repository_intelligence/dispatch_guard.py"
+        },
+        {
+          "from": "skill-templates/capsule-preflight/scripts/evidence_preflight.py",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py"
+        },
+        {
+          "from": "../scripts/check_docs_and_skills.py",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/scripts/check%5Fdocs%5Fand%5Fskills.py"
+        },
+        {
+          "from": "consumer-guide.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md"
+        },
+        {
+          "from": "review-evidence.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/review-evidence.md"
+        },
+        {
+          "from": "../src/repository_intelligence/output_cleanup.py",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/src/repository_intelligence/output_cleanup.py"
+        }
+      ]
+    },
+    {
+      "source": "docs/capsule-controller-workflow.md",
+      "destination": "engineering/workflow/shared/capsule-controller-workflow.md",
+      "source_bytes": 17272,
+      "source_sha256": "419b098aa8b2a6c265f4ec1d64bbf3e24bc1c3bc272a4f47f6ca4d70b3181be9",
+      "destination_bytes": 17272,
+      "destination_sha256": "419b098aa8b2a6c265f4ec1d64bbf3e24bc1c3bc272a4f47f6ca4d70b3181be9",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/README.md",
+      "destination": "engineering/workflow/shared/skill-templates/README.md",
+      "source_bytes": 9977,
+      "source_sha256": "bd0124e6e213dbaf1d6984578d2e2d07a329b2023095153306785bf3fb28e6f4",
+      "destination_bytes": 10972,
+      "destination_sha256": "c8e57a44e624b014137631c3eddeacb6424ef083e7e99f83c4024e97a2e77d45",
+      "relocations": [
+        {
+          "from": "ri-capsule-creator/SKILL.md",
+          "to": "../../../../.agents/skills/ri-capsule-creator/SKILL.md"
+        },
+        {
+          "from": "ri-implementor/SKILL.md",
+          "to": "../../../../.agents/skills/ri-implementor/SKILL.md"
+        },
+        {
+          "from": "ri-independent-reviewer/SKILL.md",
+          "to": "../../../../.agents/skills/ri-independent-reviewer/SKILL.md"
+        },
+        {
+          "from": "ri-dispatcher/SKILL.md",
+          "to": "../../../../.agents/skills/ri-dispatcher/SKILL.md"
+        },
+        {
+          "from": "ri-work-kickoff/SKILL.md",
+          "to": "../../../../.agents/skills/ri-work-kickoff/SKILL.md"
+        },
+        {
+          "from": "ri-codex-dispatcher-kickoff/SKILL.md",
+          "to": "../../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md"
+        },
+        {
+          "from": "capsule-preflight/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/SKILL.md"
+        },
+        {
+          "from": "capsule-scope-review/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-scope-review/SKILL.md"
+        },
+        {
+          "from": "ri-evidence-handoff/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/ri-evidence-handoff/SKILL.md"
+        },
+        {
+          "from": "capsule-independent-review/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-independent-review/SKILL.md"
+        },
+        {
+          "from": "capsule-queue/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-queue/SKILL.md"
+        },
+        {
+          "from": "capsule-preflight/references/evidence-contract.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/references/evidence-contract.md"
+        },
+        {
+          "from": "capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes"
+        }
+      ]
+    },
+    {
+      "source": "docs/skill-templates/ri-work-kickoff/SKILL.md",
+      "destination": ".agents/skills/ri-work-kickoff/SKILL.md",
+      "source_bytes": 1637,
+      "source_sha256": "e62ab702eaa3b34699a252dec74d30cd47b94d09032682114d8f6c9e3244d45b",
+      "destination_bytes": 1637,
+      "destination_sha256": "e62ab702eaa3b34699a252dec74d30cd47b94d09032682114d8f6c9e3244d45b",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-work-kickoff/references/project-procedure.md",
+      "destination": ".agents/skills/ri-work-kickoff/references/project-procedure.md",
+      "source_bytes": 1389,
+      "source_sha256": "24abc2181aa445c2ab6c72dc96572137ad5738cd1c66a12cb797e3566f49a88f",
+      "destination_bytes": 1389,
+      "destination_sha256": "24abc2181aa445c2ab6c72dc96572137ad5738cd1c66a12cb797e3566f49a88f",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-codex-dispatcher-kickoff/SKILL.md",
+      "destination": ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md",
+      "source_bytes": 1661,
+      "source_sha256": "1428ded3f122049f070544abdb5b36a72f5f60e6188c589719548712ef0b24b3",
+      "destination_bytes": 1661,
+      "destination_sha256": "1428ded3f122049f070544abdb5b36a72f5f60e6188c589719548712ef0b24b3",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-codex-dispatcher-kickoff/references/project-procedure.md",
+      "destination": ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md",
+      "source_bytes": 1389,
+      "source_sha256": "24abc2181aa445c2ab6c72dc96572137ad5738cd1c66a12cb797e3566f49a88f",
+      "destination_bytes": 1389,
+      "destination_sha256": "24abc2181aa445c2ab6c72dc96572137ad5738cd1c66a12cb797e3566f49a88f",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-capsule-creator/SKILL.md",
+      "destination": ".agents/skills/ri-capsule-creator/SKILL.md",
+      "source_bytes": 3604,
+      "source_sha256": "cbf6b87a8c581afff717428c80fadbec14a4de2949ef1ac0e885492dc6d67778",
+      "destination_bytes": 3604,
+      "destination_sha256": "cbf6b87a8c581afff717428c80fadbec14a4de2949ef1ac0e885492dc6d67778",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-capsule-creator/references/project-procedure.md",
+      "destination": ".agents/skills/ri-capsule-creator/references/project-procedure.md",
+      "source_bytes": 1083,
+      "source_sha256": "30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700",
+      "destination_bytes": 1083,
+      "destination_sha256": "30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-implementor/SKILL.md",
+      "destination": ".agents/skills/ri-implementor/SKILL.md",
+      "source_bytes": 4950,
+      "source_sha256": "629f693934c13fabf26630df30834c08b082ee9e1d753b8051f82419b98cef7a",
+      "destination_bytes": 4950,
+      "destination_sha256": "629f693934c13fabf26630df30834c08b082ee9e1d753b8051f82419b98cef7a",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-implementor/references/project-procedure.md",
+      "destination": ".agents/skills/ri-implementor/references/project-procedure.md",
+      "source_bytes": 1083,
+      "source_sha256": "30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700",
+      "destination_bytes": 1083,
+      "destination_sha256": "30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-independent-reviewer/SKILL.md",
+      "destination": ".agents/skills/ri-independent-reviewer/SKILL.md",
+      "source_bytes": 4138,
+      "source_sha256": "c2fd32b016f1d5308434ed7ec7437d6d083d4a87edf3b399964418d0413ec614",
+      "destination_bytes": 4138,
+      "destination_sha256": "c2fd32b016f1d5308434ed7ec7437d6d083d4a87edf3b399964418d0413ec614",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-independent-reviewer/references/project-procedure.md",
+      "destination": ".agents/skills/ri-independent-reviewer/references/project-procedure.md",
+      "source_bytes": 1083,
+      "source_sha256": "30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700",
+      "destination_bytes": 1083,
+      "destination_sha256": "30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-dispatcher/SKILL.md",
+      "destination": ".agents/skills/ri-dispatcher/SKILL.md",
+      "source_bytes": 3530,
+      "source_sha256": "5e66fa25390a6617895aeef8164d5452da99760ba1ad95d963aaf0a3b46e32b9",
+      "destination_bytes": 3530,
+      "destination_sha256": "5e66fa25390a6617895aeef8164d5452da99760ba1ad95d963aaf0a3b46e32b9",
+      "relocations": []
+    },
+    {
+      "source": "docs/skill-templates/ri-dispatcher/references/project-procedure.md",
+      "destination": ".agents/skills/ri-dispatcher/references/project-procedure.md",
+      "source_bytes": 1083,
+      "source_sha256": "30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700",
+      "destination_bytes": 1083,
+      "destination_sha256": "30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700",
+      "relocations": []
+    }
+  ]
+}

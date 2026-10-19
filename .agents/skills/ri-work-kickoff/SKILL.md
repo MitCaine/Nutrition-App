@@ -15,7 +15,7 @@ and directed inputs, and authenticate existing task state before new work. Use
 the adopted revision, not automatically upstream main.
 
 Resolve the issue assignment, role selections, dispatcher route and task authority
-and any requested maintenance route/implementation execution under the selected
+and any requested maintenance or experimental engineering route/implementation execution under the selected
 setup's kickoff-input
 rules, including selected task authority and accepted worker-launch policy;
 the controller confirms eligibility. Loading the skill supplies no grant. Record

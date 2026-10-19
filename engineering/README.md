@@ -47,7 +47,7 @@ Controllers use the sole [local project map](../docs/local_project_map.md) and i
 pinned [daily issue procedure](workflow/shared/start-an-issue.md). Worker input selection follows
 the [role index](workflow/shared/worker-instructions.md#role-index) and shared
 [ownership/handoff contract](workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs).
-Use the [task template](tasks/TEMPLATE.md) for new Markdown tasks. The shared
+Use the [task template](tasks/TEMPLATE.md) for ordinary Markdown tasks and the [engineering template](tasks/ENGINEERING_TEMPLATE.md) only for an explicitly selected experiment after its prerequisites. The shared
 [capsule format](workflow/shared/start-an-issue.md#capsule-format),
 [maintenance rule](workflow/shared/start-an-issue.md#optional-maintenance-route) and
 [phase sequence](workflow/shared/start-an-issue.md#complete-the-phases) own those procedures;

@@ -1,5 +1,12 @@
 # Lightweight controller workflow with RI
 
+The ordinary capsule route remains supported. An explicitly adopted
+[experimental engineering route](start-an-issue.md#experimental-engineering-route)
+uses controller engineering and separate planning review before bounded assignments;
+its governing rule owns that exception. It changes neither active attempt selections
+nor project integration authority. Consumer pilots establish results separately.
+
+
 **Read the complete directed orientation material before acting.** Read the
 selected execution instructions, local map, complete issue and required linked
 specifications/decisions before task decisions, edits or dispatch. Resolve
@@ -129,7 +136,7 @@ additional report or gate file is needed:
   prove an omitted required case. Explain any required proof left unexecuted.
 - At each handoff, return the source/branch identity, completed work, actual
   results, unresolved findings and next permitted action. Supply each role with
-  its selected [worker instructions](worker-instructions.md#role-index), task inputs and relevant project
+  its selected [role skill](worker-instructions.md#role-index), task inputs and relevant project
   requirements; workers do not repeat controller orientation. Controller
   checks returned scope and evidence before dispatching the next role; it does
   not implement or self-review the assigned source changes on the normal route.
