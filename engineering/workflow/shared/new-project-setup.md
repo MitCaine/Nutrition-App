@@ -1,7 +1,7 @@
 # Set up RI in a project
 
 Use the [controller workflow](capsule-controller-workflow.md) for RI-assisted
-capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md) for ordinary navigation.
+capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md) for ordinary navigation.
 RI does not require an execution framework or every optional skill to be installed.
 
 ## Minimal setup
@@ -117,6 +117,8 @@ may be supplied or established by an authorized handoff; until then orient and
 wait without inventing a destination. Its implementor selection comes solely
 from that handoff, not a second dispatcher-side configuration.
 
+### Role model and effort defaults
+
 The project's selected configuration owns defaults. Adopt this initial
 configuration in the project map or its existing configuration record; these are
 setup values, not runtime observations or a competing daily-procedure table:
@@ -125,8 +127,26 @@ setup values, not runtime observations or a competing daily-procedure table:
 | --- | --- | --- | --- |
 | Controller | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
 | Capsule builder | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
-| Independent reviewer | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
+| Planning reviewer | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
+| Implementation reviewer (intermediate and final) | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
 | Implementor | Codex | `gpt-6-luna / max` | Luna 6 Max |
+| Codex dispatcher | Codex | Existing owner-selected chat model / effort | Preserve the selected relay chat |
+
+Both review modes use the independent-reviewer role; planning and implementation
+reviews use distinct fresh nonauthor instances under the selected route. Luna is
+not the reviewer default. Normal candidate/maintenance review and experimental
+intermediate/final review use the implementation-reviewer row. The dispatcher has
+no separately established fixed model pair: retain its owner-selected existing
+chat settings rather than infer Luna or switch the running chat.
+
+For each handoff, first resolve the role and review mode against this adopted
+mapping and the project's applicable authorized overrides. Record the resolved
+full model ID and effort in the existing handoff/launch settings and explicitly
+request that pair when launching a worker; do not leave them to host inheritance.
+The controller supplies that resolved pair to the dispatcher, which uses it unchanged
+for the authorized implementor. An omitted task override uses selected project
+defaults, not an arbitrary model choice. This is the handoff-construction rule,
+not an automatic host launcher or proof of effective runtime settings.
 
 Accept full IDs and explicit efforts, or these unambiguous labels. Explicit owner
 kickoff values select run-specific overrides within applicable permissions;

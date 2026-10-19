@@ -8,6 +8,9 @@ description: Independently assess an assigned engineering plan or exact implemen
 Read the [selected common contract](references/project-procedure.md), original issue
 and required decisions. Identify the assigned planning, intermediate-implementation
 or final-implementation review mode; one mode's verdict does not discharge another.
+Use the handoff's explicitly resolved review-mode model/effort under the selected
+setup defaults and authorized overrides; no implicit implementor-model substitution.
+Report a missing selection rather than choosing another model.
 For implementation, read the complete accepted capsule/maintenance handoff or accepted
 engineering specification and assigned portion, exact candidate,
 full proposed integration diff, applicable standards and actual evidence. A no-change

@@ -37,6 +37,7 @@ def test_changed_source_is_rejected_before_install(tmp_path, monkeypatch, fault)
 def test_lock_does_not_duplicate_upstream_dependency_inventory():
     lock = json.loads((ROOT / 'engineering/tooling/ri-helper-lock.json').read_text())
     assert lock['revision'] == '8db4d56323db31f27af151c542967b4ef13a79af'
+    assert lock['instruction_revision'] == 'c25603685e66cd057db12026f3701e33cb456b60'
     assert len(lock['pyproject_sha256']) == 64
     assert 'dependencies' not in lock
     assert 'src/repository_intelligence/obligation_reconciliation.py' in lock['source_files']

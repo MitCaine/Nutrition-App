@@ -17,7 +17,9 @@ repeat planning. Provenance links do not grant original-history reading authorit
 For planned sequential work authenticate each new controller handoff; do not infer
 next-dispatch authority from the prior worker's PASS or launch-guard result.
 Launch only the controller's one explicitly authorized implementor, requesting its
-resolved model/effort and using the project's accepted confirmation route. Fresh
+resolved full model/effort explicitly in the actual launch and using the project's
+accepted confirmation route. Do not inherit this relay chat's settings or reconstruct
+a different pair from an omitted override. Fresh
 implementor context is default. Only the controller may authorize last-resort idle-
 context reuse when fresh capacity cannot be created/freed; reauthenticate the complete
 handoff and prove no active assignment before reuse. Never reuse the candidate's

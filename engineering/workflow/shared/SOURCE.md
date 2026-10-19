@@ -1,7 +1,7 @@
 # Shared instruction identity
 
 The Repository Intelligence instruction set for future task intake is selected at
-`8db4d56323db31f27af151c542967b4ef13a79af`. This updates future intake only.
+`c25603685e66cd057db12026f3701e33cb456b60`. This updates future intake only.
 Its complete resource inventory, prior destination identities, declared relocations
 and installed hashes are recorded in the current-selection section below.
 The GH-311 attempt's historical worker-instruction selection is
@@ -584,7 +584,7 @@ candidate identity. The map carries the optional RI949 checkout and exact commit
 for the explicitly selected closeout mode; it does not alter prior helper pins.
 
 
-## Current selection: 8db4d56323db31f27af151c542967b4ef13a79af
+## Previous selection: 8db4d56323db31f27af151c542967b4ef13a79af
 
 Consolidated GH-422 adoption replaces future intake once. Historical selections and the completed GH-420/421 attempts retain their original identities. Producer/runtime20a, guard00117 and historical e0/949 bindings are preserved separately. This record proves copied bytes, not host registration, worker launch or completed pilot integration. Relative links to adopted resources relocate to their exact installed destinations; unadopted resources link to this exact upstream revision. Complete role folders and kickoff locators are included.
 
@@ -652,3 +652,71 @@ These exact RI8db resources remain pinned upstream, not installed executables. H
 | <code>docs/skill-templates/capsule-queue/scripts&#47;run_and_queue.py</code> | `cf5655ad3f5a66fa46831a06701aba295819bbaf` | 13857 | `9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191` |
 
 The consumer redirect `engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md` is 2029 bytes, SHA-256 `03fccf417b93855dcd3e795cbe046c6bcf403c85407bf497df1cf99c88d544f3`; only pinned resource URLs change from its preserved historical form. No queue helper is installed or invoked by this adoption.
+
+
+## Current selection: c25603685e66cd057db12026f3701e33cb456b60
+
+GH-429 adopts the inspected six-document delta for future intake after completed GH-422/GH-423. All historical evidence and original selected attempts remain preserved. Role/review-mode defaults and mechanical corrections use the single adopted governing passages. Instruction copying proves byte identity, not host registration or effective model telemetry.
+
+The existing helper lock instruction_revision selects these resources; its revision/source_files/pyproject still select the compatible unchanged8db helper code and installed runtime. No helper provisioning, dependency or runtime change. Producer20a, guard00117 and cleanup949 remain separately selected.
+
+| Upstream resource | Source bytes | Source SHA-256 | Destination | Installed bytes | Installed SHA-256 |
+| --- | ---: | --- | --- | ---: | --- |
+| `docs/start-an-issue.md` | 53890 | `9fe7120191c55f6d7bbc478beba60f61d710d61f801a80498f5952aa8f360f64` | `engineering/workflow/shared/start-an-issue.md` | 54112 | `b53af0c021b65f17d1b2aaa9d4eb04483ac29143eb7c7bef0a1089cd05620349` |
+| `docs/new-project-setup.md` | 21121 | `457bc6b0b535ecfedba3f02310fd0c3f4aacf0ec7a4aaaa9ae989ede36eadc1c` | `engineering/workflow/shared/new-project-setup.md` | 21224 | `789245ad5af9700c94663e7f407da73ac36017441088c9b22103e5434dfc990e` |
+| `docs/worker-instructions.md` | 7590 | `af19aa7caae356c74e7f3274f5e0b334acb8e20893a7e8c2655b3c6625b34b8c` | `engineering/workflow/shared/worker-instructions.md` | 7725 | `e5af0dcc61c7152894709a05e546a906cf9dd3b1191026665e8efee5dde06d6e` |
+| `docs/workflow-tools.md` | 45036 | `6ffbdf791f9ad8119396ed347e9ee0dadb3ab4c37ab9f02f919a42c9d3fc7692` | `engineering/workflow/shared/workflow-tools.md` | 45638 | `39be6662b74d2c902780fd5f294e36f80a20e1c0c4a65ddfa9c0d27075ea9665` |
+| `docs/capsule-controller-workflow.md` | 17272 | `419b098aa8b2a6c265f4ec1d64bbf3e24bc1c3bc272a4f47f6ca4d70b3181be9` | `engineering/workflow/shared/capsule-controller-workflow.md` | 17272 | `419b098aa8b2a6c265f4ec1d64bbf3e24bc1c3bc272a4f47f6ca4d70b3181be9` |
+| `docs/skill-templates/README.md` | 9977 | `bd0124e6e213dbaf1d6984578d2e2d07a329b2023095153306785bf3fb28e6f4` | `engineering/workflow/shared/skill-templates/README.md` | 11091 | `18833223087a089564e68ad4f1dc693895a795daaf26d1ec25a85153897f8ddc` |
+| `docs/skill-templates/ri-work-kickoff/SKILL.md` | 1637 | `e62ab702eaa3b34699a252dec74d30cd47b94d09032682114d8f6c9e3244d45b` | `.agents/skills/ri-work-kickoff/SKILL.md` | 1637 | `e62ab702eaa3b34699a252dec74d30cd47b94d09032682114d8f6c9e3244d45b` |
+| `docs/skill-templates/ri-work-kickoff/references/project-procedure.md` | 1389 | `24abc2181aa445c2ab6c72dc96572137ad5738cd1c66a12cb797e3566f49a88f` | `.agents/skills/ri-work-kickoff/references/project-procedure.md` | 1389 | `24abc2181aa445c2ab6c72dc96572137ad5738cd1c66a12cb797e3566f49a88f` |
+| `docs/skill-templates/ri-codex-dispatcher-kickoff/SKILL.md` | 1661 | `1428ded3f122049f070544abdb5b36a72f5f60e6188c589719548712ef0b24b3` | `.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md` | 1661 | `1428ded3f122049f070544abdb5b36a72f5f60e6188c589719548712ef0b24b3` |
+| `docs/skill-templates/ri-codex-dispatcher-kickoff/references/project-procedure.md` | 1389 | `24abc2181aa445c2ab6c72dc96572137ad5738cd1c66a12cb797e3566f49a88f` | `.agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md` | 1389 | `24abc2181aa445c2ab6c72dc96572137ad5738cd1c66a12cb797e3566f49a88f` |
+| `docs/skill-templates/ri-capsule-creator/SKILL.md` | 3604 | `cbf6b87a8c581afff717428c80fadbec14a4de2949ef1ac0e885492dc6d67778` | `.agents/skills/ri-capsule-creator/SKILL.md` | 3604 | `cbf6b87a8c581afff717428c80fadbec14a4de2949ef1ac0e885492dc6d67778` |
+| `docs/skill-templates/ri-capsule-creator/references/project-procedure.md` | 1083 | `30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700` | `.agents/skills/ri-capsule-creator/references/project-procedure.md` | 1083 | `30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700` |
+| `docs/skill-templates/ri-implementor/SKILL.md` | 5219 | `678d706fb20ea56569c55e5aa7ba0b4643c0dcafa7f04c2d7830806c51801ec6` | `.agents/skills/ri-implementor/SKILL.md` | 5219 | `678d706fb20ea56569c55e5aa7ba0b4643c0dcafa7f04c2d7830806c51801ec6` |
+| `docs/skill-templates/ri-implementor/references/project-procedure.md` | 1083 | `30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700` | `.agents/skills/ri-implementor/references/project-procedure.md` | 1083 | `30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700` |
+| `docs/skill-templates/ri-independent-reviewer/SKILL.md` | 4368 | `1b9e8936a5ddcfaa2246e5b5c5877f0cc49b9ffe4cbaa8d8ffd65200c5dde6b6` | `.agents/skills/ri-independent-reviewer/SKILL.md` | 4368 | `1b9e8936a5ddcfaa2246e5b5c5877f0cc49b9ffe4cbaa8d8ffd65200c5dde6b6` |
+| `docs/skill-templates/ri-independent-reviewer/references/project-procedure.md` | 1083 | `30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700` | `.agents/skills/ri-independent-reviewer/references/project-procedure.md` | 1083 | `30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700` |
+| `docs/skill-templates/ri-dispatcher/SKILL.md` | 3667 | `acaf118c94575f1a8bfa07f2e6d846c9185cd6a3f464238778ab5aeaf2fb431b` | `.agents/skills/ri-dispatcher/SKILL.md` | 3667 | `acaf118c94575f1a8bfa07f2e6d846c9185cd6a3f464238778ab5aeaf2fb431b` |
+| `docs/skill-templates/ri-dispatcher/references/project-procedure.md` | 1083 | `30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700` | `.agents/skills/ri-dispatcher/references/project-procedure.md` | 1083 | `30b3cd37485a692313012d853aae3d63db420058ed2776bebb51beda4ec58700` |
+
+Declared relocations (upstream target → installed/pinned target):
+
+- `docs/start-an-issue.md`: `skill-templates/ri-independent-reviewer/SKILL.md` → `../../../.agents/skills/ri-independent-reviewer/SKILL.md`
+- `docs/start-an-issue.md`: `skill-templates/ri-dispatcher/SKILL.md` → `../../../.agents/skills/ri-dispatcher/SKILL.md`
+- `docs/start-an-issue.md`: `consumer-guide.md#navigate-before-expanding-scope` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md#navigate-before-expanding-scope`
+- `docs/start-an-issue.md`: `skill-templates/capsule-queue/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/SKILL.md`
+- `docs/new-project-setup.md`: `consumer-guide.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md`
+- `docs/worker-instructions.md`: `skill-templates/ri-capsule-creator/SKILL.md` → `../../../.agents/skills/ri-capsule-creator/SKILL.md`
+- `docs/worker-instructions.md`: `skill-templates/ri-implementor/SKILL.md` → `../../../.agents/skills/ri-implementor/SKILL.md`
+- `docs/worker-instructions.md`: `skill-templates/ri-independent-reviewer/SKILL.md` → `../../../.agents/skills/ri-independent-reviewer/SKILL.md`
+- `docs/worker-instructions.md`: `skill-templates/capsule-independent-review/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-independent-review/SKILL.md`
+- `docs/worker-instructions.md`: `skill-templates/ri-dispatcher/SKILL.md` → `../../../.agents/skills/ri-dispatcher/SKILL.md`
+- `docs/workflow-tools.md`: `../src/repository_intelligence/dispatch_guard.py` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/src/repository_intelligence/dispatch_guard.py`
+- `docs/workflow-tools.md`: `skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py`
+- `docs/workflow-tools.md`: `../scripts/check%5Fdocs%5Fand%5Fskills.py` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/scripts/check%5Fdocs%5Fand%5Fskills.py`
+- `docs/workflow-tools.md`: `consumer-guide.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md`
+- `docs/workflow-tools.md`: `review-evidence.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/review-evidence.md`
+- `docs/workflow-tools.md`: `../src/repository_intelligence/output_cleanup.py` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/src/repository_intelligence/output_cleanup.py`
+- `docs/skill-templates/README.md`: `ri-capsule-creator/SKILL.md` → `../../../../.agents/skills/ri-capsule-creator/SKILL.md`
+- `docs/skill-templates/README.md`: `ri-implementor/SKILL.md` → `../../../../.agents/skills/ri-implementor/SKILL.md`
+- `docs/skill-templates/README.md`: `ri-independent-reviewer/SKILL.md` → `../../../../.agents/skills/ri-independent-reviewer/SKILL.md`
+- `docs/skill-templates/README.md`: `ri-dispatcher/SKILL.md` → `../../../../.agents/skills/ri-dispatcher/SKILL.md`
+- `docs/skill-templates/README.md`: `ri-work-kickoff/SKILL.md` → `../../../../.agents/skills/ri-work-kickoff/SKILL.md`
+- `docs/skill-templates/README.md`: `ri-codex-dispatcher-kickoff/SKILL.md` → `../../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md`
+- `docs/skill-templates/README.md`: `capsule-preflight/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/SKILL.md`
+- `docs/skill-templates/README.md`: `capsule-scope-review/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-scope-review/SKILL.md`
+- `docs/skill-templates/README.md`: `ri-evidence-handoff/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/ri-evidence-handoff/SKILL.md`
+- `docs/skill-templates/README.md`: `capsule-independent-review/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-independent-review/SKILL.md`
+- `docs/skill-templates/README.md`: `capsule-queue/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/SKILL.md`
+- `docs/skill-templates/README.md`: `capsule-preflight/references/evidence-contract.md` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/references/evidence-contract.md`
+- `docs/skill-templates/README.md`: `capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes` → `https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes`
+
+Optional queue sources remain pinned links, not installed executable skills:
+
+- `docs/skill-templates/capsule-queue/SKILL.md` blob `2e01cf01bb0830e5addc4d46c1257f737793e695`, 8811 bytes, SHA-256 `ed9e3a3ebfe7c4639f58b6e2595a782ca577d0ba07a1175b6dbabc29c61d3f39`.
+- `docs/skill-templates/capsule-queue/references/project-procedure.md` blob `47c37667eff63c02ac0b842ce60f3c6c8de8b5c2`, 1850 bytes, SHA-256 `c443911ce761d3d40694a1d16cd7043517e1892946a7eb65b164b6662f6a4280`.
+- `docs/skill-templates/capsule-queue/scripts/run%5Fand%5Fqueue.py` blob `cf5655ad3f5a66fa46831a06701aba295819bbaf`, 13857 bytes, SHA-256 `9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191`.
+
+Consumer queue redirect `engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md`: 2029 bytes, SHA-256 `918d7d8f3c05c50882b1590e7ef480691a75eb3cd370a1abcfd7f1aadbdb6fae`.

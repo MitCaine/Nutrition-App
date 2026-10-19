@@ -43,7 +43,10 @@ implementation, fixtures, justified expectations and setup, including related ca
 sharing the assumption. Revise affected working references and run distinguishing
 checks; never weaken tests to match output. Account for every applicable finding as
 addressed, unresolved or requiring a decision. Ordinary compile/lint/test corrections
-within scope need no new grant. Wider impact returns to the controller; preserve
+within scope need no new grant. The controller may author only an expressly permitted mechanical correction under
+the selected controller procedure; reconcile edit ownership first, with no concurrent
+edits or transferred authorship. Semantic corrections remain with the selected
+implementation actor. Wider impact returns to the controller; preserve
 valid work and pause only the affected portion. Controller selects evidence reuse
 and reruns; preserve eligible prior results under ORIGINAL identities and refresh
 affected evidence/reconciliation after correction.

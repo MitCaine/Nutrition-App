@@ -150,8 +150,9 @@ def test_retired_model_evidence_cli_cannot_dispatch():
 def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
-    revision = "8db4d56323db31f27af151c542967b4ef13a79af"
-    assert lock["revision"] == revision
+    revision = "c25603685e66cd057db12026f3701e33cb456b60"
+    assert lock["instruction_revision"] == revision
+    assert lock["revision"] == "8db4d56323db31f27af151c542967b4ef13a79af"
     from urllib.parse import unquote
     source = unquote((ROOT / "engineering/workflow/shared/SOURCE.md").read_text())
     assert f"## Current selection: {revision}" in source
@@ -292,10 +293,11 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
                                    "role-index", ("Read each complete role skill and its locator",))
     map_text = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(map_text.split())
-    assert "controller, capsule builder and independent reviewer | work" in normalized_map.lower()
-    assert "implementor | codex" in normalized_map.lower()
-    assert "`gpt-6.1-sol` / `low`" in normalized_map
-    assert "`gpt-6-luna` / `max`" in normalized_map
+    for role in ("controller and capsule builder", "planning reviewer",
+                 "implementation reviewer (intermediate/final)"):
+        assert f"| {role} | work | `gpt-6.1-sol` / `low` |" in normalized_map.lower()
+    assert "| implementor | codex | `gpt-6-luna` / `max` |" in normalized_map.lower()
+    assert "| dispatcher | codex | existing owner-selected chat settings |" in normalized_map.lower()
     normalized_map_lower = normalized_map.lower()
     assert "requested settings, launch evidence, host-confirmed settings and measured telemetry" in normalized_map_lower
     assert "when effective telemetry is unavailable, record it as unverified" in normalized_map_lower
@@ -1343,7 +1345,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-queue/")
+              "c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1351,7 +1353,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     import hashlib
     lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
     current = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text().split(
-        "## Current selection: 8db4d56323db31f27af151c542967b4ef13a79af", 1)[1]
+        "## Current selection: c25603685e66cd057db12026f3701e33cb456b60", 1)[1]
     expected = {"docs/skill-templates/capsule-queue/" + leaf
                 for leaf in ("SKILL.md", "references/project-procedure.md", "scripts/run_and_queue.py")}
     assert {row["source"] for row in lock["optional_queue_resources"]} == expected
@@ -1371,7 +1373,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "8db4d56323db31f27af151c542967b4ef13a79af"
+    revision = "c25603685e66cd057db12026f3701e33cb456b60"
     lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
     declared = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text().split(
         f"## Current selection: {revision}", 1)[1]
@@ -1707,3 +1709,24 @@ def test_preparation_guidance_uses_selected_owner_and_existing_record_carries_ou
     # The public validator carries these references unchanged; it neither runs
     # navigation nor authenticates source/output or the controller's plan check.
     assert json.loads(result.stdout)["route"] == "normal"
+
+
+def test_adopted_role_defaults_and_mechanical_corrections_have_canonical_owners():
+    _assert_canonical_guidance(
+        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/new-project-setup.md",
+        "role-model-and-effort-defaults", (
+            "Planning reviewer", "Implementation reviewer (intermediate and final)",
+            "gpt-6.1-sol / low", "gpt-6-luna / max", "distinct fresh nonauthor instances",
+            "Existing owner-selected chat model / effort", "explicitly request that pair",
+            "An omitted task override uses selected project defaults",
+        ))
+    _assert_canonical_guidance(
+        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/start-an-issue.md",
+        "controller-authored-mechanical-corrections", (
+            "authorized edit scope and project/owner permissions cover",
+            "AUTHENTICATED ACCEPTED selection, never merely the revision observed in execution",
+            "Preserve test intent and original expected behavior",
+            "acceptance meaning, compatibility behavior, security or evidence acceptance does not qualify",
+            "never edit concurrently with an active worker or bypass a frozen candidate",
+            "fresh nonauthor review must cover the actual corrected candidate",
+        ))

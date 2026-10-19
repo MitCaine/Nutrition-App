@@ -36,10 +36,10 @@
     {
       "source": "docs/start-an-issue.md",
       "destination": "engineering/workflow/shared/start-an-issue.md",
-      "source_bytes": 51289,
-      "source_sha256": "a1ec9e4dec7521b9f5c70e97e8d72ad28916c6d5838b55ea80b3bda9c8ea6392",
-      "destination_bytes": 51511,
-      "destination_sha256": "bd4c641adab0531b648b05b958100ed826b42b8b8f60242a881b7351c83e2fb4",
+      "source_bytes": 53890,
+      "source_sha256": "9fe7120191c55f6d7bbc478beba60f61d710d61f801a80498f5952aa8f360f64",
+      "destination_bytes": 54112,
+      "destination_sha256": "b53af0c021b65f17d1b2aaa9d4eb04483ac29143eb7c7bef0a1089cd05620349",
       "relocations": [
         {
           "from": "skill-templates/ri-independent-reviewer/SKILL.md",
@@ -51,35 +51,35 @@
         },
         {
           "from": "consumer-guide.md#navigate-before-expanding-scope",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md#navigate-before-expanding-scope"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md#navigate-before-expanding-scope"
         },
         {
           "from": "skill-templates/capsule-queue/SKILL.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-queue/SKILL.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/SKILL.md"
         }
       ]
     },
     {
       "source": "docs/new-project-setup.md",
       "destination": "engineering/workflow/shared/new-project-setup.md",
-      "source_bytes": 19776,
-      "source_sha256": "95d722756a1477e17f2293dfb073986adf21c1b5c2e8c0697967687c53608e20",
-      "destination_bytes": 19879,
-      "destination_sha256": "40942108d1c982fad1b65a2ad42fc519fbdce2be44938570d3d4b7f953a3a024",
+      "source_bytes": 21121,
+      "source_sha256": "457bc6b0b535ecfedba3f02310fd0c3f4aacf0ec7a4aaaa9ae989ede36eadc1c",
+      "destination_bytes": 21224,
+      "destination_sha256": "789245ad5af9700c94663e7f407da73ac36017441088c9b22103e5434dfc990e",
       "relocations": [
         {
           "from": "consumer-guide.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md"
         }
       ]
     },
     {
       "source": "docs/worker-instructions.md",
       "destination": "engineering/workflow/shared/worker-instructions.md",
-      "source_bytes": 7018,
-      "source_sha256": "a138079bb297186023995bed2800bea6678bafcb76e2fde43f81924e6f25de39",
-      "destination_bytes": 7153,
-      "destination_sha256": "12e05988ade9f9a66e2442fb8835bbba02cd41d7bd3a7a56b824f0cb497396c7",
+      "source_bytes": 7590,
+      "source_sha256": "af19aa7caae356c74e7f3274f5e0b334acb8e20893a7e8c2655b3c6625b34b8c",
+      "destination_bytes": 7725,
+      "destination_sha256": "e5af0dcc61c7152894709a05e546a906cf9dd3b1191026665e8efee5dde06d6e",
       "relocations": [
         {
           "from": "skill-templates/ri-capsule-creator/SKILL.md",
@@ -95,7 +95,7 @@
         },
         {
           "from": "skill-templates/capsule-independent-review/SKILL.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-independent-review/SKILL.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-independent-review/SKILL.md"
         },
         {
           "from": "skill-templates/ri-dispatcher/SKILL.md",
@@ -109,31 +109,31 @@
       "source_bytes": 45036,
       "source_sha256": "6ffbdf791f9ad8119396ed347e9ee0dadb3ab4c37ab9f02f919a42c9d3fc7692",
       "destination_bytes": 45638,
-      "destination_sha256": "cedebb966d51c0716433fe9480a8bfe86d4b469bd6ca22f0a8db95ee4a157bd1",
+      "destination_sha256": "39be6662b74d2c902780fd5f294e36f80a20e1c0c4a65ddfa9c0d27075ea9665",
       "relocations": [
         {
           "from": "../src/repository_intelligence/dispatch_guard.py",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/src/repository_intelligence/dispatch_guard.py"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/src/repository_intelligence/dispatch_guard.py"
         },
         {
           "from": "skill-templates/capsule-preflight/scripts/evidence_preflight.py",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py"
         },
         {
           "from": "../scripts/check_docs_and_skills.py",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/scripts/check%5Fdocs%5Fand%5Fskills.py"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/scripts/check%5Fdocs%5Fand%5Fskills.py"
         },
         {
           "from": "consumer-guide.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md"
         },
         {
           "from": "review-evidence.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/review-evidence.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/review-evidence.md"
         },
         {
           "from": "../src/repository_intelligence/output_cleanup.py",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/src/repository_intelligence/output_cleanup.py"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/src/repository_intelligence/output_cleanup.py"
         }
       ]
     },
@@ -151,8 +151,8 @@
       "destination": "engineering/workflow/shared/skill-templates/README.md",
       "source_bytes": 9977,
       "source_sha256": "bd0124e6e213dbaf1d6984578d2e2d07a329b2023095153306785bf3fb28e6f4",
-      "destination_bytes": 10972,
-      "destination_sha256": "c8e57a44e624b014137631c3eddeacb6424ef083e7e99f83c4024e97a2e77d45",
+      "destination_bytes": 11091,
+      "destination_sha256": "18833223087a089564e68ad4f1dc693895a795daaf26d1ec25a85153897f8ddc",
       "relocations": [
         {
           "from": "ri-capsule-creator/SKILL.md",
@@ -180,31 +180,31 @@
         },
         {
           "from": "capsule-preflight/SKILL.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/SKILL.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/SKILL.md"
         },
         {
           "from": "capsule-scope-review/SKILL.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-scope-review/SKILL.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-scope-review/SKILL.md"
         },
         {
           "from": "ri-evidence-handoff/SKILL.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/ri-evidence-handoff/SKILL.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/ri-evidence-handoff/SKILL.md"
         },
         {
           "from": "capsule-independent-review/SKILL.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-independent-review/SKILL.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-independent-review/SKILL.md"
         },
         {
           "from": "capsule-queue/SKILL.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-queue/SKILL.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/SKILL.md"
         },
         {
           "from": "capsule-preflight/references/evidence-contract.md",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/references/evidence-contract.md"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/references/evidence-contract.md"
         },
         {
           "from": "capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes",
-          "to": "https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes"
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes"
         }
       ]
     },
@@ -265,10 +265,10 @@
     {
       "source": "docs/skill-templates/ri-implementor/SKILL.md",
       "destination": ".agents/skills/ri-implementor/SKILL.md",
-      "source_bytes": 4950,
-      "source_sha256": "629f693934c13fabf26630df30834c08b082ee9e1d753b8051f82419b98cef7a",
-      "destination_bytes": 4950,
-      "destination_sha256": "629f693934c13fabf26630df30834c08b082ee9e1d753b8051f82419b98cef7a",
+      "source_bytes": 5219,
+      "source_sha256": "678d706fb20ea56569c55e5aa7ba0b4643c0dcafa7f04c2d7830806c51801ec6",
+      "destination_bytes": 5219,
+      "destination_sha256": "678d706fb20ea56569c55e5aa7ba0b4643c0dcafa7f04c2d7830806c51801ec6",
       "relocations": []
     },
     {
@@ -283,10 +283,10 @@
     {
       "source": "docs/skill-templates/ri-independent-reviewer/SKILL.md",
       "destination": ".agents/skills/ri-independent-reviewer/SKILL.md",
-      "source_bytes": 4138,
-      "source_sha256": "c2fd32b016f1d5308434ed7ec7437d6d083d4a87edf3b399964418d0413ec614",
-      "destination_bytes": 4138,
-      "destination_sha256": "c2fd32b016f1d5308434ed7ec7437d6d083d4a87edf3b399964418d0413ec614",
+      "source_bytes": 4368,
+      "source_sha256": "1b9e8936a5ddcfaa2246e5b5c5877f0cc49b9ffe4cbaa8d8ffd65200c5dde6b6",
+      "destination_bytes": 4368,
+      "destination_sha256": "1b9e8936a5ddcfaa2246e5b5c5877f0cc49b9ffe4cbaa8d8ffd65200c5dde6b6",
       "relocations": []
     },
     {
@@ -301,10 +301,10 @@
     {
       "source": "docs/skill-templates/ri-dispatcher/SKILL.md",
       "destination": ".agents/skills/ri-dispatcher/SKILL.md",
-      "source_bytes": 3530,
-      "source_sha256": "5e66fa25390a6617895aeef8164d5452da99760ba1ad95d963aaf0a3b46e32b9",
-      "destination_bytes": 3530,
-      "destination_sha256": "5e66fa25390a6617895aeef8164d5452da99760ba1ad95d963aaf0a3b46e32b9",
+      "source_bytes": 3667,
+      "source_sha256": "acaf118c94575f1a8bfa07f2e6d846c9185cd6a3f464238778ab5aeaf2fb431b",
+      "destination_bytes": 3667,
+      "destination_sha256": "acaf118c94575f1a8bfa07f2e6d846c9185cd6a3f464238778ab5aeaf2fb431b",
       "relocations": []
     },
     {
@@ -340,6 +340,7 @@
   "queue_redirect": {
     "path": "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md",
     "bytes": 2029,
-    "sha256": "03fccf417b93855dcd3e795cbe046c6bcf403c85407bf497df1cf99c88d544f3"
-  }
+    "sha256": "918d7d8f3c05c50882b1590e7ef480691a75eb3cd370a1abcfd7f1aadbdb6fae"
+  },
+  "instruction_revision": "c25603685e66cd057db12026f3701e33cb456b60"
 }

@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `8db4d56323db31f27af151c542967b4ef13a79af`: controllers use the complete
+future task intake is pinned at `c25603685e66cd057db12026f3701e33cb456b60`: controllers use the complete
 [daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
 [setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
 [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
@@ -60,9 +60,9 @@ direct inspection supplements required operation evidence. Documentation-only ma
 
 Optional helper source revision: `8db4d56323db31f27af151c542967b4ef13a79af`
 
-The authenticated RI checkout `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/8db4d56323db31f27af151c542967b4ef13a79af-gh422-clean` is the controller-selected clean same-revision checkout at the accepted revision above. The separately provisioned helper environment is `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-helper-environments/8db4d56323db31f27af151c542967b4ef13a79af-nutrition-runtime`; use its `bin/python`, never RI's development venv. The reproducible setup/verification command is `python3 scripts/setup-ri-helpers.py --source SOURCE --environment ENVIRONMENT --mode provision|verify` from the Nutrition root. The tracked `engineering/tooling/ri-helper-lock.json` binds exact source and resource identities; upstream `pyproject.toml` owns dependency definitions. Provisioning is explicit controller work, never an automatic wrapper fallback or runtime upgrade. Keep historical e0/949 source bindings and old requests untouched.
+The authenticated RI checkout `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/8db4d56323db31f27af151c542967b4ef13a79af-gh422-clean` is the controller-selected clean same-revision checkout at the accepted revision above. The separately provisioned helper environment is `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-helper-environments/8db4d56323db31f27af151c542967b4ef13a79af-nutrition-runtime`; use its `bin/python`, never RI's development venv. The reproducible setup/verification command is `python3 scripts/setup-ri-helpers.py --source SOURCE --environment ENVIRONMENT --mode provision|verify` from the Nutrition root. The tracked `engineering/tooling/ri-helper-lock.json` binds exact source and resource identities; its `instruction_revision` selects the separately adopted c256 instruction resources while `revision` retains the unchanged8db executable helper binding; upstream `pyproject.toml` owns dependency definitions. Provisioning is explicit controller work, never an automatic wrapper fallback or runtime upgrade. Keep historical e0/949 source bindings and old requests untouched.
 
-Selected helper subprocesses authenticate exact source closure, interpreter and installed dependency identities before use. Public generation/preparation/execution/intake is supported only when its actual installed binding and acceptance proof are recorded, not by copying instructions. Until the consolidated pilot is verified, bootstrap assignments use the reviewed existing ordinary-owner route; retain that explicit distinction in handoffs. The navigation producer/runtime and native guard below keep their independent selections.
+Selected helper subprocesses authenticate exact source closure, interpreter and installed dependency identities before use. Public generation/preparation/execution/intake is supported only when its actual installed binding and acceptance proof are recorded, not by copying instructions. The completed consolidated pilot is retained in GH-422 and its external closeout evidence; later assignments still require their own authenticated execution binding and acceptance proof. The navigation producer/runtime and native guard below keep their independent selections.
 
 Use the selected `section_reader`, `adoption`, `worker_execution` and `obligation_reconciliation` interfaces only through their authenticated source/environment bindings and the [workflow-tools contract](../engineering/workflow/shared/workflow-tools.md). New accepted capsule/engineering derivation requires the declared Markdown parser stack. No manual dependency inventory, substituted parser, current-development environment or silent operation fallback is selected.
 
@@ -75,9 +75,8 @@ projection derives case selectors from those actual command IDs. Generation and 
 operation authenticate the selected RI source and installed runtime before using the helper. The
 controller's `task inspect-engineering-assignment ISSUE --request SEED` is a read-only checkpoint,
 scope, profile and predecessor-sequence check before dispatch; it does not create authority or
-replace substantive controller review. Until the controller completes the selected public pilot and
-installed verification, bootstrap assignments continue through their separately authenticated
-existing route, including this implementation assignment's frozen standalone runner.
+replace substantive controller review. The completed GH-422 public pilot and installed verification remain historical proof;
+current task acceptance and actual generated bindings remain task-specific.
 
 ### Optional task-output cleanup helper
 
@@ -145,6 +144,8 @@ while the exact permission line above remains present once in this section and c
 authority and live checkpoint are authenticated. A direct selection records `Requested route:
 maintenance` and `Implementation execution: direct Work controller` in that task record, plus the
 actual author in the existing handoff or operational record. Execution duties and independent review follow that same canonical maintenance rule.
+The adopted [mechanical-correction rule](../engineering/workflow/shared/start-an-issue.md#controller-authored-mechanical-corrections)
+applies only within covered controller edit authority and reconciled editor ownership; it does not replace separately permitted direct maintenance.
 This map gives no additional task, host, Git, issue or settings authority.
 
 The project-scoped Codex kickoff folders are `.agents/skills/ri-work-kickoff/` and
@@ -154,12 +155,16 @@ document-based kickoff when Work registration is unavailable or unverified. Each
 project-procedure locator links the optional [workflow tools contract](../engineering/workflow/shared/workflow-tools.md);
 the linked modules remain optional source tools and are not host skills.
 
-The selected role settings are owner-authorized requests:
+The selected role settings are owner-authorized requests resolved through the adopted
+[role and review-mode mapping](../engineering/workflow/shared/new-project-setup.md#role-model-and-effort-defaults):
 
 | Role | Environment | Model / effort |
 | --- | --- | --- |
-| Controller, capsule builder and independent reviewer | Work | `gpt-6.1-sol` / `low` |
+| Controller and capsule builder | Work | `gpt-6.1-sol` / `low` |
+| Planning reviewer | Work | `gpt-6.1-sol` / `low` |
+| Implementation reviewer (intermediate/final) | Work | `gpt-6.1-sol` / `low` |
 | Implementor | Codex | `gpt-6-luna` / `max` |
+| Dispatcher | Codex | Existing owner-selected chat settings |
 
 The table records owner-selected requested settings. Direct Work controller implementation continues
 with the existing controller settings; it neither creates an implementor launch nor transfers

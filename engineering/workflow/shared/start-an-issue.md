@@ -98,6 +98,36 @@ selecting maintenance; this route does not bypass project controls. A kickoff ma
 request maintenance, but the controller confirms eligibility before implementation
 or dispatch.
 
+### Controller-authored mechanical corrections
+
+Within an existing normal or engineering task, the controller may make a mechanical
+correction without another implementor dispatch only when its intended result is
+already established, authorized edit scope and project/owner permissions cover the
+controller's edit, and no new behavior or engineering decision is introduced.
+Judge semantic risk, not file or line counts. Examples are a typo, behavior-preserving
+import ordering, a broken reference, or a stale pin assertion corrected to the
+AUTHENTICATED ACCEPTED selection, never merely the revision observed in execution.
+Preserve test intent and original expected behavior; do not adjust assertions to
+make a failing execution pass. An additional path still needs existing scope authority.
+
+A change to acceptance meaning, compatibility behavior, security or evidence
+acceptance does not qualify, even if one line: keep it with the selected implementor
+on delegated routes. This exception neither expands nor replaces separately selected
+[direct maintenance](#optional-maintenance-route) authority. Before editing reconcile
+the current assignment, editor ownership and candidate through the existing handoff
+route; never edit concurrently with an active worker or bypass a frozen candidate.
+Record the bounded correction and actual author in the existing task/checkpoint,
+using the controller's current model/effort. No new plan, template or tracking stage
+is required. If the assumption proves false, preserve valid work and return the
+affected correction to the selected implementation route.
+
+Run affected checks and preserve original failures/source identities. The controller
+is the correction's author and cannot independently review it: fresh nonauthor review
+must cover the actual corrected candidate before separate controller approval,
+authorized integration and verified closeout. Existing evidence-reuse and changed-
+candidate rules still apply. Consumers must adopt/permit this selection; the shared
+passage alone does not amend an active attempt or grant project Git/edit authority.
+
 ## Experimental engineering route
 
 This is an opt-in experiment, not a replacement for capsule or maintenance work.
@@ -112,7 +142,11 @@ integrated implementation review -> project qualification, approval, integration
 verified closeout. Project-required gate order still applies. Planning and final
 implementation reviews ordinarily use distinct fresh nonauthor instances. The
 controller cannot self-review its engineering specification or implementation.
-The selected [reviewer skill](../../../.agents/skills/ri-independent-reviewer/SKILL.md)
+Resolve every role and both review modes from the single adopted
+[model/effort default mapping](new-project-setup.md#role-model-and-effort-defaults)
+before constructing handoffs or launches; no model substitution is implied by
+adding a review stage. The selected
+[reviewer skill](../../../.agents/skills/ri-independent-reviewer/SKILL.md)
 provides both review modes; they are different assignments, not transferred verdicts.
 
 The controller performs the builder's actual engineering work on this route. Use
@@ -255,7 +289,9 @@ location; no mandatory export, duplicate manifest or new record schema is implie
 Environment, model and effort are separate settings. Resolve them from the
 selected project configuration and explicit owner inputs under the
 [kickoff-input contract](new-project-setup.md#kickoff-inputs-and-selected-configuration).
-Use the map's supported route; no new launcher or service is required. Configure
+Use the map's supported route and the
+[role/default resolution rule](new-project-setup.md#role-model-and-effort-defaults)
+when constructing the actual handoff and launch; no new launcher or service is required. Configure
 each worker explicitly before dispatch, matching the full selected model ID and
 effort rather than inheriting the controller's pair. Kickoff does not switch an
 already-running chat's model.
@@ -423,7 +459,7 @@ the output informs its specification rather than a six-heading capsule.
 For the normal capsule route, the capsule builder or assigned task author uses
 the consumer-selected compatible Tree-sitter route on applicable supported
 source before returning the plan. Start with bounded task terms and relevant
-paths using the [consumer navigation guide](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/consumer-guide.md#navigate-before-expanding-scope).
+paths using the [consumer navigation guide](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md#navigate-before-expanding-scope).
 Inspect the exact returned source locations and the relevant owning symbols,
 callers, interfaces, tests, and contracts directly. Locator call candidates are
 lexical hints, not resolved call edges. A help/import/link check alone does not
@@ -516,7 +552,8 @@ implementation and intermediate reviews; steps 4–6 still govern its FINAL cand
    dispositions for every criterion and applicable standard, including docs.
    Missing evidence already due cannot pass. For post-installation obligations,
    assess the implementation/check plan now; installed proof remains due at closeout.
-6. **Controller:** have the selected implementation actor address in-scope findings,
+6. **Controller:** have the selected implementation actor address in-scope findings
+   (or use only the authorized [mechanical-correction exception](#controller-authored-mechanical-corrections)),
    then obtain affected
    checks and independent review. Approval must cover the actual integrated result.
    Use authorized integration, verify it and any pending installed checks, record
@@ -622,7 +659,7 @@ branch as merged or invent a product change merely to clean it up.
   retry, never an unfinished-work inspection or monitoring loop. Result
   delivery to an active parent does not prove an idle parent will start a new turn.
   End the turn only with verified idle wake-up for that controller/host route.
-- **External jobs:** use native delivery or the [queue skill](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-queue/SKILL.md)
+- **External jobs:** use native delivery or the [queue skill](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/SKILL.md)
   with a supported watcher and verified wake-up. CLI acceptance alone is not
   consumption. Reuse a proven route until it changes or fails; do not add duplicate
   notifications or restart a job to attach a watcher. Otherwise keep blocking wait.

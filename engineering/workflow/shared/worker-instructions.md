@@ -62,6 +62,11 @@ relevant transitive-input/environment equivalence; unknown equivalence needs
 affected reruns. Compare source, command, directory, toolchain and configuration
 when results conflict; a passing repetition alone does not explain a failure.
 
+The selected controller procedure owns the narrow controller-authored mechanical-
+correction exception. It requires covered edit authority and reconciled editor
+ownership; the controller then counts as author and cannot independently review
+that correction. It does not waive scope, checks or changed-candidate evidence.
+
 A failed command or terminal worker handoff does not stop an otherwise active task.
 Preserve failures and use bounded in-scope diagnosis/correction without another
 human approval for ordinary fixes. Do not guess consequential decisions, weaken
@@ -71,6 +76,9 @@ the controller before dependent work; preserve valid work and pause the affected
 part. Diagnosis cannot resume an explicit stopped/paused attempt, and later success
 cannot clear it. STOP_REPLAN is last resort, not opening progress.
 
+The controller handoff carries the resolved role/review-mode model and effort from
+the selected setup mapping; roles do not choose a different pair because a task
+override was omitted. A dispatcher requests that resolved implementor pair explicitly.
 Use the map's accepted confirmation policy: identify requested settings separately
 from host-confirmed settings and unresolved confirmation. Unknown telemetry proves
 neither compliance, mismatch nor capacity failure. Do not infer mode from tools,
@@ -103,7 +111,7 @@ Use [ri-implementor](../../../.agents/skills/ri-implementor/SKILL.md).
 ## Independent reviewer
 
 Use [ri-independent-reviewer](../../../.agents/skills/ri-independent-reviewer/SKILL.md).
-The optional [inspection-only helper](https://github.com/MitCaine/repository-intelligence/blob/8db4d56323db31f27af151c542967b4ef13a79af/docs/skill-templates/capsule-independent-review/SKILL.md)
+The optional [inspection-only helper](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-independent-review/SKILL.md)
 cannot override a route requiring expressly authorized reviewer-executed checks.
 
 ## Codex dispatcher
