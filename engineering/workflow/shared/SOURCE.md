@@ -1,7 +1,7 @@
 # Shared instruction identity
 
 The Repository Intelligence instruction set for future task intake is selected at
-`c25603685e66cd057db12026f3701e33cb456b60`. This updates future intake only.
+`6058b143610c1902faf1bf832227359c9fc4f5a4`. This updates future intake only.
 Its complete resource inventory, prior destination identities, declared relocations
 and installed hashes are recorded in the current-selection section below.
 The GH-311 attempt's historical worker-instruction selection is
@@ -654,7 +654,7 @@ These exact RI8db resources remain pinned upstream, not installed executables. H
 The consumer redirect `engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md` is 2029 bytes, SHA-256 `03fccf417b93855dcd3e795cbe046c6bcf403c85407bf497df1cf99c88d544f3`; only pinned resource URLs change from its preserved historical form. No queue helper is installed or invoked by this adoption.
 
 
-## Current selection: c25603685e66cd057db12026f3701e33cb456b60
+## Previous selection: c25603685e66cd057db12026f3701e33cb456b60
 
 GH-429 adopts the inspected six-document delta for future intake after completed GH-422/GH-423. All historical evidence and original selected attempts remain preserved. Role/review-mode defaults and mechanical corrections use the single adopted governing passages. Instruction copying proves byte identity, not host registration or effective model telemetry.
 
@@ -720,3 +720,90 @@ Optional queue sources remain pinned links, not installed executable skills:
 - `docs/skill-templates/capsule-queue/scripts/run%5Fand%5Fqueue.py` blob `cf5655ad3f5a66fa46831a06701aba295819bbaf`, 13857 bytes, SHA-256 `9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191`.
 
 Consumer queue redirect `engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md`: 2029 bytes, SHA-256 `918d7d8f3c05c50882b1590e7ef480691a75eb3cd370a1abcfd7f1aadbdb6fae`.
+
+
+## Current selection: 6058b143610c1902faf1bf832227359c9fc4f5a4
+GH-432 selects the one-author daily procedure and fresh independent reviewer for new work. Prior sections are historical preparation; active attempts retain their selected bytes. Runtime/helper source pins and installed dependencies are unchanged. The generated resource records in `engineering/tooling/ri-helper-lock.json` own the complete mechanical inventory; the entries below render that same definition.
+### engineering/workflow/shared/start-an-issue.md
+
+Source `docs/start-an-issue.md`: 27675 bytes, SHA-256 `c5147c3f2aa9799f7b9c50558fb131b0f1144718cf0f8df7dbbc05bf5cfd0c0f`. Installed: 27881 bytes, SHA-256 `1a0187c6a5c99b466ac28a330ccfaae08c105a259567d4d472204e3fc2392278`.
+- Relocation: `consumer-guide.md#navigate-before-expanding-scope` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/consumer-guide.md#navigate-before-expanding-scope`.
+- Relocation: `skill-templates/capsule-queue/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/SKILL.md`.
+### engineering/workflow/shared/new-project-setup.md
+
+Source `docs/new-project-setup.md`: 10857 bytes, SHA-256 `712b83496f32df456bc23c7ac691dc2d895dd1d8e0915316d54ce6da041028ea`. Installed: 10960 bytes, SHA-256 `799805b591585a25e7a83244573a78ff2067e424850740606619791d04ab60c9`.
+- Relocation: `consumer-guide.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/consumer-guide.md`.
+### engineering/workflow/shared/worker-instructions.md
+
+Source `docs/worker-instructions.md`: 3748 bytes, SHA-256 `62cd53a10638e0f02f0aaa3c093a7322986cf8d7ba001a721133ee6fc6d4bc08`. Installed: 3891 bytes, SHA-256 `40089645a213f6cbe1fafbc846fe2e7c7fb35f48efb202352b520de689a846b1`.
+- Relocation: `skill-templates/ri-independent-reviewer/SKILL.md` → `../../../.agents/skills/ri-independent-reviewer/SKILL.md`.
+- Relocation: `skill-templates/capsule-independent-review/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-independent-review/SKILL.md`.
+- Relocation: `skill-templates/ri-capsule-creator/SKILL.md` → `../../../.agents/skills/ri-capsule-creator/SKILL.md`.
+- Relocation: `skill-templates/ri-implementor/SKILL.md` → `../../../.agents/skills/ri-implementor/SKILL.md`.
+- Relocation: `skill-templates/ri-dispatcher/SKILL.md` → `../../../.agents/skills/ri-dispatcher/SKILL.md`.
+### engineering/workflow/shared/workflow-tools.md
+
+Source `docs/workflow-tools.md`: 45591 bytes, SHA-256 `5e10ae0e9a620628e0fc2e339396208abd2737273104878d71721d8a4a9ea392`. Installed: 46193 bytes, SHA-256 `d9c8c7e1eaafcba37c946f01af6c43a9830777ea54486e1dee2a98e4a59d9d82`.
+- Relocation: `../src/repository_intelligence/dispatch_guard.py` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/src/repository_intelligence/dispatch_guard.py`.
+- Relocation: `skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py`.
+- Relocation: `../scripts/check%5Fdocs%5Fand%5Fskills.py` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/scripts/check%5Fdocs%5Fand%5Fskills.py`.
+- Relocation: `consumer-guide.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/consumer-guide.md`.
+- Relocation: `review-evidence.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/review-evidence.md`.
+- Relocation: `../src/repository_intelligence/output_cleanup.py` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/src/repository_intelligence/output_cleanup.py`.
+### engineering/workflow/shared/capsule-controller-workflow.md
+
+Source `docs/capsule-controller-workflow.md`: 5433 bytes, SHA-256 `fb6200f2fea55c9cf308b5bf809ee9c6e3a99876693049af1b339041cbde1a6f`. Installed: 5433 bytes, SHA-256 `fb6200f2fea55c9cf308b5bf809ee9c6e3a99876693049af1b339041cbde1a6f`.
+### engineering/workflow/shared/skill-templates/README.md
+
+Source `docs/skill-templates/README.md`: 4756 bytes, SHA-256 `fb5aa4196151989598693927d7d173bed63c9a4f0c5a5ddb277e52c224fa109c`. Installed: 5513 bytes, SHA-256 `0df7b16f3587ecdf9a2c94311223c148835054baef3b1f7fac5d097b6176274a`.
+- Relocation: `ri-work-kickoff/SKILL.md` → `../../../../.agents/skills/ri-work-kickoff/SKILL.md`.
+- Relocation: `ri-independent-reviewer/SKILL.md` → `../../../../.agents/skills/ri-independent-reviewer/SKILL.md`.
+- Relocation: `ri-evidence-handoff/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-evidence-handoff/SKILL.md`.
+- Relocation: `capsule-independent-review/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-independent-review/SKILL.md`.
+- Relocation: `capsule-queue/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/SKILL.md`.
+- Relocation: `ri-capsule-creator/SKILL.md` → `../../../../.agents/skills/ri-capsule-creator/SKILL.md`.
+- Relocation: `ri-implementor/SKILL.md` → `../../../../.agents/skills/ri-implementor/SKILL.md`.
+- Relocation: `ri-dispatcher/SKILL.md` → `../../../../.agents/skills/ri-dispatcher/SKILL.md`.
+- Relocation: `ri-codex-dispatcher-kickoff/SKILL.md` → `../../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md`.
+- Relocation: `capsule-preflight/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-preflight/SKILL.md`.
+- Relocation: `capsule-scope-review/SKILL.md` → `https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-scope-review/SKILL.md`.
+### .agents/skills/ri-work-kickoff/SKILL.md
+
+Source `docs/skill-templates/ri-work-kickoff/SKILL.md`: 1545 bytes, SHA-256 `952057a4121b0ae3dfff5f94039783780e6662f21ebb5388c21ed4cfc0aa542b`. Installed: 1545 bytes, SHA-256 `952057a4121b0ae3dfff5f94039783780e6662f21ebb5388c21ed4cfc0aa542b`.
+### .agents/skills/ri-work-kickoff/references/project-procedure.md
+
+Source `docs/skill-templates/ri-work-kickoff/references/project-procedure.md`: 880 bytes, SHA-256 `8a979adcd6ff13a3b6075a56622714c2b944d7570539906628c7f0b9eaf9fdef`. Installed: 880 bytes, SHA-256 `8a979adcd6ff13a3b6075a56622714c2b944d7570539906628c7f0b9eaf9fdef`.
+### .agents/skills/ri-codex-dispatcher-kickoff/SKILL.md
+
+Source `docs/skill-templates/ri-codex-dispatcher-kickoff/SKILL.md`: 1975 bytes, SHA-256 `aa682a4a0b3f164c3e9dfc88c5265fc5b8353a11b52713e15e07c5c84e29731d`. Installed: 1975 bytes, SHA-256 `aa682a4a0b3f164c3e9dfc88c5265fc5b8353a11b52713e15e07c5c84e29731d`.
+### .agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md
+
+Source `docs/skill-templates/ri-codex-dispatcher-kickoff/references/project-procedure.md`: 1642 bytes, SHA-256 `a18fc26972465dcfc02266a07256679a6d7fa1a6e8377399f68b87950618f03d`. Installed: 1642 bytes, SHA-256 `a18fc26972465dcfc02266a07256679a6d7fa1a6e8377399f68b87950618f03d`.
+### .agents/skills/ri-capsule-creator/SKILL.md
+
+Source `docs/skill-templates/ri-capsule-creator/SKILL.md`: 3918 bytes, SHA-256 `3fdcd8eda8e73fcdaeaa923ad2d0cb8b71c7fccda28eb856070c32af29d1938f`. Installed: 3918 bytes, SHA-256 `3fdcd8eda8e73fcdaeaa923ad2d0cb8b71c7fccda28eb856070c32af29d1938f`.
+### .agents/skills/ri-capsule-creator/references/project-procedure.md
+
+Source `docs/skill-templates/ri-capsule-creator/references/project-procedure.md`: 1336 bytes, SHA-256 `2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81`. Installed: 1336 bytes, SHA-256 `2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81`.
+### .agents/skills/ri-implementor/SKILL.md
+
+Source `docs/skill-templates/ri-implementor/SKILL.md`: 5533 bytes, SHA-256 `73b724fba4fd5056c6cae0ffcf3cdeed527fbb021909ce2108bf2fbeddd789a9`. Installed: 5533 bytes, SHA-256 `73b724fba4fd5056c6cae0ffcf3cdeed527fbb021909ce2108bf2fbeddd789a9`.
+### .agents/skills/ri-implementor/references/project-procedure.md
+
+Source `docs/skill-templates/ri-implementor/references/project-procedure.md`: 1336 bytes, SHA-256 `2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81`. Installed: 1336 bytes, SHA-256 `2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81`.
+### .agents/skills/ri-independent-reviewer/SKILL.md
+
+Source `docs/skill-templates/ri-independent-reviewer/SKILL.md`: 3085 bytes, SHA-256 `a7fe1442dd9f41119af2749fda4accfb5bba7a7a7cb2f3a97bbad1c98e7264db`. Installed: 3085 bytes, SHA-256 `a7fe1442dd9f41119af2749fda4accfb5bba7a7a7cb2f3a97bbad1c98e7264db`.
+### .agents/skills/ri-independent-reviewer/references/project-procedure.md
+
+Source `docs/skill-templates/ri-independent-reviewer/references/project-procedure.md`: 1078 bytes, SHA-256 `b91f478bdc5101740b597a7ba124fa7d706d1097943a606809e39496c8d00b91`. Installed: 1078 bytes, SHA-256 `b91f478bdc5101740b597a7ba124fa7d706d1097943a606809e39496c8d00b91`.
+### .agents/skills/ri-dispatcher/SKILL.md
+
+Source `docs/skill-templates/ri-dispatcher/SKILL.md`: 3981 bytes, SHA-256 `db4adfc653985572cba1927ba098e4bb7b27ddc0907cfb1546d5c2bad8dd174d`. Installed: 3981 bytes, SHA-256 `db4adfc653985572cba1927ba098e4bb7b27ddc0907cfb1546d5c2bad8dd174d`.
+### .agents/skills/ri-dispatcher/references/project-procedure.md
+
+Source `docs/skill-templates/ri-dispatcher/references/project-procedure.md`: 1336 bytes, SHA-256 `2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81`. Installed: 1336 bytes, SHA-256 `2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81`.
+
+Optional queue resource identities: [{"source": "docs/skill-templates/capsule-queue/SKILL.md", "blob": "2e01cf01bb0830e5addc4d46c1257f737793e695", "bytes": 8811, "sha256": "ed9e3a3ebfe7c4639f58b6e2595a782ca577d0ba07a1175b6dbabc29c61d3f39"}, {"source": "docs/skill-templates/capsule-queue/references/project-procedure.md", "blob": "47c37667eff63c02ac0b842ce60f3c6c8de8b5c2", "bytes": 1850, "sha256": "c443911ce761d3d40694a1d16cd7043517e1892946a7eb65b164b6662f6a4280"}, {"source": "docs/skill-templates/capsule-queue/scripts/run%5Fand%5Fqueue.py", "blob": "cf5655ad3f5a66fa46831a06701aba295819bbaf", "bytes": 13857, "sha256": "9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191"}]
+
+Queue redirect SHA-256 `aa859299a78ecf0c330a932c220b4110f7a99f9dc5dc219622fd2ba48288b75d`.

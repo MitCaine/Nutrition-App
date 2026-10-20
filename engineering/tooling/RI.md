@@ -4,11 +4,11 @@
 
 RI supplies locations and source facts. Nutrition owns domain meaning, edit scope, tests,
 review and approval. Start from the [workflow entrypoint](../../docs/local_project_map.md), then
-use this guide to navigate exact committed source. Normal capsule preparation uses the existing compatible route below under the shared
+use this guide to navigate exact committed source. Normal source preparation uses the compatible route below where applicable and useful under the shared
 [task-directed source-preparation contract](../workflow/shared/start-an-issue.md#task-directed-source-preparation).
 Direct source/diff/log review supplements that preparation and remains valid at other gates.
 RI cannot authorize edits, approve review or replace required runtime checks. Record coverage limits;
-an unresolved required-operation inability needs an explicit owner disposition before dispatch.
+an unresolved required-operation inability needs an explicit owner disposition before dependent work.
 
 ## Pinned installation and private access
 

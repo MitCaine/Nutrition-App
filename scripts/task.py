@@ -6271,23 +6271,13 @@ def _validate_direct_work_map(repo_root: Path) -> tuple[Path, str]:
 
 
 def _validate_normal_task_record(sections: list[tuple[str, str]]) -> list[str]:
+    """Mechanical readability only; engineering sufficiency belongs to review."""
     issues: list[str] = []
     headings = [heading for heading, _ in sections]
-    if headings != list(TASK_RECORD_NORMAL_HEADINGS):
-        for required in TASK_RECORD_NORMAL_HEADINGS:
-            count = headings.count(required)
-            if count == 0:
-                issues.append(f"missing heading `## {required}`")
-            elif count > 1:
-                issues.append(f"repeated heading `## {required}`")
-        unexpected = [heading for heading in headings if heading not in TASK_RECORD_NORMAL_HEADINGS]
-        for heading in unexpected:
-            issues.append(f"unexpected top-level heading `## {heading}`")
-        if not issues:
-            issues.append("the six headings must appear once in template order")
-
     for heading, body in sections:
-        if heading in TASK_RECORD_NORMAL_HEADINGS and not _task_record_content(body):
+        if headings.count(heading) > 1 and f"repeated heading `## {heading}`" not in issues:
+            issues.append(f"repeated heading `## {heading}`")
+        if not _task_record_content(body):
             issues.append(f"blank section `## {heading}`")
     return issues
 
@@ -6369,7 +6359,9 @@ def command_validate_record(args: argparse.Namespace) -> int:
     sections = _task_record_sections(text)
     if route == "normal":
         issues = _validate_normal_task_record(sections)
-        fields = list(TASK_RECORD_NORMAL_HEADINGS)
+        fields = [heading for heading, _ in sections]
+        if not _task_record_content(text):
+            issues.append("normal record must contain substantive Markdown")
     elif route == "maintenance":
         issues = _validate_maintenance_task_record(sections)
         fields = list(TASK_RECORD_MAINTENANCE_HEADINGS)
@@ -8406,7 +8398,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Read-only validation for a current task record before dispatch.",
         description=(
             "Read only the supplied ordinary task record. The default normal route "
-            "checks the current six-heading format; maintenance checks the brief "
+            "checks readable nonempty Markdown without prescribed headings; maintenance checks the brief "
             "handoff fields and recorded controller eligibility. An explicit direct "
             "Work controller selection also requires the selected project's exact "
             "local-map permission. This command does not authenticate semantic "

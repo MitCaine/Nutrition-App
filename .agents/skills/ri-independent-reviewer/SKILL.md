@@ -1,36 +1,22 @@
 ---
 name: ri-independent-reviewer
-description: Independently assess an assigned engineering plan or exact implementation candidate against original requirements; read-only, with checks only when expressly authorized.
+description: Independently assess an exact implementation candidate against original requirements; read-only, with checks only when expressly authorized.
 ---
 
 # Independent reviewer
 
-Read the [selected common contract](references/project-procedure.md), original issue
-and required decisions. Identify the assigned planning, intermediate-implementation
-or final-implementation review mode; one mode's verdict does not discharge another.
-Use the handoff's explicitly resolved review-mode model/effort under the selected
-setup defaults and authorized overrides; no implicit implementor-model substitution.
-Report a missing selection rather than choosing another model.
-For implementation, read the complete accepted capsule/maintenance handoff or accepted
-engineering specification and assigned portion, exact candidate,
-full proposed integration diff, applicable standards and actual evidence. A no-change
-review instead uses original criteria, existing task and exact remote source/evidence;
-no artificial implementation/capsule is implied. Do not repeat controller intake.
-The author/implementor cannot review its candidate. A prior verdict is not a new
-review; fresh context is default, with only controller-authorized independent fallback.
+Read the [selected common contract](references/project-procedure.md), original issue,
+settled decisions, concise task record, exact candidate, full proposed integration
+diff, applicable standards and actual evidence. Use the explicitly selected reviewer
+model/effort under the project's mapping and authorized overrides. A missing
+selection is not permission to choose another model. No earlier planning review or
+capsule is required by the current route. Historical pinned assignments retain
+those requirements only under their own selected instructions.
 
-For expressly selected experimental planning review, read the proposed engineering
-specification, original requirements/accepted decisions, actual relevant source and
-intended tests. Check engineering completeness, owning interfaces/callers, consequential
-decisions, dependencies, scope and independently discriminating proof. Return an
-exact-specification verdict with all gaps; do not grant implementation authority.
-The controller authored this work and cannot supply its own independent plan review.
-For intermediate implementation review assess the assigned portion against its exact
-base and accepted plan, preserving unresolved issue-level obligations. Final review
-assesses the full original-baseline integration diff and interactions, even when all
-portions separately passed. Planning and final implementation reviews ordinarily use
-distinct fresh instances. Resolve the selected controller's experimental-route section through the
-[procedure locator](references/project-procedure.md), only when adopted; do not add planning review to ordinary capsule/maintenance work.
+The author cannot review its candidate. Use a fresh independent context under the
+project's accepted launch policy; unavailable telemetry is reported honestly.
+A prior verdict is not a new review. No-change review uses original criteria,
+exact existing source and evidence without an artificial implementation commit.
 
 Assess original-requirement fidelity, full implementation, affected callers/contracts,
 tests and current docs/examples/links. RI source navigation supports direct inspection,
@@ -51,7 +37,7 @@ Return complete evidence-backed dispositions for criteria/standards, exact sourc
 all actionable findings and uncertainty. Missing proof already due cannot pass.
 For later installed obligations, assess implementation and planned proof now, naming
 owner and evidence still due; do not demand installation before approval to install.
-Controller owns finding disposition, separate approval, integration and closeout.
+The author owns finding disposition, separate approval, authorized integration and closeout.
 Identify who performed the substantive review, report requested/host-confirmed and
 unresolved settings under the common policy, and state inspection limits. Delegated
 inspection is not the requested model's personal review. For an expressly assigned

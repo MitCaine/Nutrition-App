@@ -1,171 +1,78 @@
 # Set up RI in a project
 
-Use the [controller workflow](capsule-controller-workflow.md) for RI-assisted
-capsule work, or the [consumer guide](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md) for ordinary navigation.
-RI does not require an execution framework or every optional skill to be installed.
+Use [the issue procedure](start-an-issue.md) for author-and-reviewer work or the
+[consumer guide](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/consumer-guide.md) for tools alone. No orchestration framework,
+second chat or full skill collection is needed.
 
 ## Minimal setup
 
-1. Select a compatible RI source/wheel and interpreter. Run the project's actual
-   compatibility probe, or a representative RI query/comparison using that runtime.
-   Retain a working compatible version rather than silently changing its schema.
-2. Keep one short map at project-root `docs/local_project_map.md`; link it from
-   the project README/AGENTS entrypoint. Record shared instruction
-   commit/byte identity, runtime/source and contract, role permissions, standards,
-   required tests, permitted Git/issue actions and completion route.
-3. Supply each worker its [selected role skill and common contract](worker-instructions.md#role-index), complete task
-   inputs and applicable project requirements under the [role-specific reading boundaries](worker-instructions.md#shared-worker-rules)
-   through the supported local handoff.
-   Bind the complete skill folder and shared-contract locations/identities to the
-   selected RI revision and verify access in the actual worker environment; workers
-   do not repeat controller orientation.
-   Install only useful [skills](skill-templates/README.md), comparing complete folders
-   and preserving intentional adaptations. Instruction copies are not Work registration.
-4. Confirm actual source access, relevant command availability and independent
-   review. Rehearse known sandbox-sensitive commands narrowly; RI does not require
-   a custom gateway, signed report or full adoption specimen chain.
-5. Use native completion for native agents. For external jobs use a supported
-   bounded wait, or the optional queue helper only when its destination works.
-   Select task-appropriate deadlines rather than inheriting a five-minute cap.
-
-Keep one working subagent at a time. Close completed agents where supported after
-retaining results. If capacity cannot be released and fresh creation fails, the
-workflow permits last-resort idle-agent reuse with reauthenticated context;
-review remains independent of the candidate's author/implementor.
-
-Task records must include the controller guide's [completion requirements](capsule-controller-workflow.md#required-task-completion),
-including affected documentation, criterion-specific evidence and verified closeout.
-Use the existing record; no extra mandatory artifact is needed.
-
-Once setup is adopted, direct new issue controllers to [Start an issue](start-an-issue.md)
-and `docs/local_project_map.md`. Do not repeat adoption or installation for each task.
+1. Select compatible RI source/wheel, interpreter and actually used commands. Run
+   a representative query/comparison or the project's compatibility probe. Runtime
+   pins and instruction pins are separate; do not silently change either.
+2. Link one project-root `docs/local_project_map.md` from README/AGENTS. Bind usable
+   instruction locations/revision/bytes, source/runtime and local command authority.
+3. Reconcile local validators and role summaries with the selected author/reviewer
+   route. Retain independently needed qualification, Git, domain, privacy, database
+   and platform controls; removing roles does not waive them.
+4. Verify actual source/command access narrowly and a supported independent-review
+   launch/return route. Do not rehearse the product suite as setup. Use the existing
+   checkpoint/evidence area, no new service, registry or signing gateway.
+5. Optionally install the kickoff/reviewer resources. Complete copied folders and
+   declared link relocations must resolve. File copies do not establish Work skill
+   registration; retain an honest unverified status and use document-based reading.
 
 ## Instruction ownership and handoffs
 
-RI owns shared controller/worker duties, the normal six-heading capsule and
-[opt-in experimental engineering route](start-an-issue.md#experimental-engineering-route), source discovery,
-correction, evidence and independent-review rules. A consumer map binds the selected
-revisions and usable runtime/tools, settings, permissions, storage and applicable
-local requirements. Keep genuine domain contracts and project qualification local;
-link to the selected shared rules rather than copying them into a second procedure.
+RI owns one [current issue procedure](start-an-issue.md) and the
+[reviewer/common contract](worker-instructions.md). The consumer owns commands,
+selected versions, permissions, required gates, storage and safe cleanup. Classify
+existing guidance as local domain/tool contract, shared reference, or historical
+compatibility. Remove duplicate selected procedures only after replacing incoming
+references; preserve active pins and historical evidence.
 
-At adoption, classify existing guidance: **keep local** for project/domain contracts;
-**reference RI** for shared behavior; **move shared** only when genuinely reusable;
-**retire obsolete** only after its replacement and incoming references are verified.
-Preserve frozen history and active selections. Measure complete mandatory reading
-per role, including required locators and linked sections, not the map's line count.
-Conditional detail is read when applicable; a navigation link is not an instruction
-to load every linked document. This setup reference is not additional worker intake.
-
-| Actor | Required inputs at its selected revision | Conditional local detail |
+| Actor | Required inputs | Conditional inputs |
 | --- | --- | --- |
-| Controller | Project map, complete controller procedure, live issue and required decisions/instructions | Domain, command and recovery sections needed for the selected task/route |
-| Capsule builder | Selected ri-capsule-creator skill/locator and Shared worker rules, original requirements/decisions and supplied source | Applicable domain contracts, callers/tests and proof prerequisites |
-| Implementor | Selected ri-implementor skill/locator and Shared worker rules, complete accepted capsule/maintenance handoff or engineering specification with selected assignment, supplied source pointers/standards | Relevant source/callers/tests/contracts and affected recovery sections; not issue-history reconstruction |
-| Independent reviewer | Selected ri-independent-reviewer skill/locator and Shared worker rules, original requirements and proposed plan/source/tests for planning review, or accepted task/candidate/full diff and real evidence for implementation review | Applicable domain standards, due-stage obligations and affected callers |
-| Dispatcher | Its kickoff locator when used, selected ri-dispatcher skill/locator and Shared worker rules and complete authorized handoff | Map selection and setup fields needed to authenticate its own source, route and authority; not controller intake |
+| Author | Current map, complete selected issue procedure, original issue/decisions, applicable instructions and exact base | Relevant source, callers, tests, contracts, actual runner/help and recovery records |
+| Independent reviewer | Selected reviewer skill/locator and Shared worker rules, original requirements/settled decisions, task record, exact candidate/full integration diff, standards and actual evidence | Affected callers/contracts and expressly authorized checks |
 
-The controller's handoff identifies the role/assignment, selected instructions and
-applicable local sections, accepted route and consequential settled decisions.
-Apply the [shared tool-ownership rule](worker-instructions.md#shared-worker-rules)
-to mechanically known inputs and bound results. Configure the actual commands
-and consumer wiring that supply them; a link to an unintegrated helper is not
-automation. Product intent, applicability and acceptance remain agent judgments.
-Receiver duties live in [Shared worker rules](worker-instructions.md#shared-worker-rules):
-identity alone is not comprehension. Use existing assignment notes, working reference or terminal
-handoff, not an extra acknowledgment/approval round.
-
-Examples using the same existing records and authenticated references:
-
-- **Normal:** “Implementor; read selected ri-implementor skill/locator and Shared worker rules,
-  complete accepted TASK and linked local standards. Use its bound source-query output and
-  authoritative runner request. Retain the settled compatibility choice and
-  original outcome IDs; report missing decisions before dependent edits.”
-- **Correction:** “Same implementation actor and selected instructions; address
-  retained finding F with the full accepted outcome set. Use the bound recovery
-  source and changed execution inputs; preserve eligible earlier evidence under
-  its original identities. Return the affected results through the existing route.”
-- **Replacement:** “Recover assignment A at its retained instruction/source identity;
-  authenticate the original job's state before takeover. Read the complete accepted
-  task and retained findings, preserve completed work and prior limits, then perform
-  only the authorized next action. Do not inherit another issue's approval.”
-
-Supply actual accessible references/identities in place of these examples; a role
-label or a tool link alone does not establish delivered inputs or understanding.
+Use [tool ownership](capsule-controller-workflow.md#keep-the-integration-small) to
+inventory actual imports/public invocations before removing an old dependency.
+Do not default-vendor tools or create a new package/config schema. The existing map
+selects package versus local adapter ownership from demonstrated callers. A tool
+named worker/capsule may still implement a useful independent mechanical contract.
+No normal builder, separate planner handoff, dispatcher or Luna actor is required.
+Existing exceptional assignments are reconciled, never silently taken over.
 
 ## Kickoff inputs and selected configuration
 
-Use the optional `ri-work-kickoff` or `ri-codex-dispatcher-kickoff` skill, or give
-the same inputs directly with the selected document locations. Skills locate the
-existing workflow; they add no stage and do not grant task authority.
-
-For Work, supply **Repository** and **Issue(s)**: one issue, an explicit list or
-an inclusive numerical range. Optional fields are **Capsule builder**,
-**Independent reviewer**, **Implementor** (model/effort), **Controller selection**
-(owner-confirmed existing selection), **Codex dispatcher**, task-specific
-**Authority** (owner-supplied grant or selection of an applicable recorded grant),
-**Constraints**, **Stopping conditions** and **Requested route**
-(normal, maintenance, or explicitly adopted experimental engineering), plus **Implementation execution** (`direct Work controller`
-when permitted by the map). Experimental selection follows the [engineering-route prerequisites](start-an-issue.md#experimental-engineering-route);
-it cannot bypass a capsule-only validator or required project controls. A maintenance request follows the controller
-[eligibility decision](start-an-issue.md#optional-maintenance-route), not an automatic
-waiver of project controls. Dependency/runtime or instruction changes alone do
-not require a capsule; use the linked eligibility rule. Resolve concrete chat IDs
-through the supported route; a display title is not an authenticated destination.
-For a dispatcher, only **Repository** is initially required. **Work controller**
-may be supplied or established by an authorized handoff; until then orient and
-wait without inventing a destination. Its implementor selection comes solely
-from that handoff, not a second dispatcher-side configuration.
+Use `ri-work-kickoff` when actually installed, or the same inputs with the selected
+documents. Required inputs are repository and issue/bounded objective. An explicit
+list or range may select an authorized queue. Optional owner inputs include existing
+controller/author selection, applicable authority, constraints and stopping conditions.
+A maintenance label may describe bounded upkeep, but it selects no extra role or
+capsule. The current default is the same author-and-reviewer route for ordinary work.
+The compatibility fields `Controller selection` and `Requested route: maintenance`
+remain intelligible; do not introduce a replacement configuration schema.
 
 ### Role model and effort defaults
 
-The project's selected configuration owns defaults. Adopt this initial
-configuration in the project map or its existing configuration record; these are
-setup values, not runtime observations or a competing daily-procedure table:
+Adopt the following mapping in the existing project map/configuration. These are
+selected defaults, not observed runtime telemetry:
 
-| Role | Environment | Initial model / effort | Selector label |
+| Role | Environment | Model / effort | Selector label |
 | --- | --- | --- | --- |
-| Controller | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
-| Capsule builder | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
-| Planning reviewer | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
-| Implementation reviewer (intermediate and final) | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
-| Implementor | Codex | `gpt-6-luna / max` | Luna 6 Max |
-| Codex dispatcher | Codex | Existing owner-selected chat model / effort | Preserve the selected relay chat |
+| Author (engineering, coding and coordination) | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
+| Fresh independent reviewer | Work | `gpt-6.1-sol / low` | Sol 6.1 Light |
 
-Both review modes use the independent-reviewer role; planning and implementation
-reviews use distinct fresh nonauthor instances under the selected route. Luna is
-not the reviewer default. Normal candidate/maintenance review and experimental
-intermediate/final review use the implementation-reviewer row. The dispatcher has
-no separately established fixed model pair: retain its owner-selected existing
-chat settings rather than infer Luna or switch the running chat.
-
-For each handoff, first resolve the role and review mode against this adopted
-mapping and the project's applicable authorized overrides. Record the resolved
-full model ID and effort in the existing handoff/launch settings and explicitly
-request that pair when launching a worker; do not leave them to host inheritance.
-The controller supplies that resolved pair to the dispatcher, which uses it unchanged
-for the authorized implementor. An omitted task override uses selected project
-defaults, not an arbitrary model choice. This is the handoff-construction rule,
-not an automatic host launcher or proof of effective runtime settings.
-
-Accept full IDs and explicit efforts, or these unambiguous labels. Explicit owner
-kickoff values select run-specific overrides within applicable permissions;
-omitted worker values use the selected project defaults. If a default is missing,
-resolve it rather than silently selecting upstream values. Kickoff cannot switch
-the controller or dispatcher's already-running model. Resolve configuration once
-per assignment and retain it in the existing checkpoint and handoffs.
-
-Explicit owner invocation of the Work/Codex kickoff skill confirms the named
-product selection for that chat, not its model or provider-effective telemetry.
-Automatic loading or incidental mention supplies no confirmation. Distinguish
-requested settings, owner-confirmed selection, host-confirmed settings and
-unavailable telemetry under the project's
-[accepted confirmation policy](start-an-issue.md#execution-routing-models-and-efforts).
-Do not invent omitted controller telemetry, waive required confirmation, infer a
-conflicting mode from tools/metadata or establish a model fallback. Each chat or
-worker is assessed under its accepted launch/confirmation policy; a controller's
-owner-confirmed selection does not measure a worker's runtime settings.
-Do not ask the owner to reconfirm unchanged accepted selections.
+Resolve explicit applicable owner overrides against the map. Request the full
+model/effort when launching the reviewer; do not silently inherit another model.
+Kickoff cannot switch an already-running chat's selection. Record requested,
+owner-confirmed and host-confirmed settings separately from unresolved telemetry.
+Owner invocation of a Work kickoff confirms the named product selection only, not
+model or measured effective runtime. Incidental loading supplies no confirmation.
+Use the map's accepted policy; do not infer mode from tool names/backing metadata,
+claim unobserved settings, or ask again about unchanged accepted selections.
+No mandatory creator, planning reviewer, dispatcher or Luna mapping remains.
 
 ### Access and task authority
 
@@ -185,6 +92,7 @@ select an applicable recorded grant by location/identity:
 > expressly within the issue scope, but not additional host/account/security
 > permissions, unrelated scope or resuming paused work.
 
+Here “controller approval” is the coordinating author's separate approval after independent review.
 Explicit owner invocation must supply or select the grant; merely loading a skill
 cannot manufacture it. Authenticate applicability and reuse the recorded grant
 without asking again for each routine step. Without a covering grant, hold the
@@ -194,36 +102,23 @@ bounded owner permission; publication authority is not disclosure authority.
 
 ### Accepted worker-launch routes
 
-Project configuration names accepted launch routes separately from measured
-runtime confirmation. Projects may adopt this policy:
-
-> For an owner-confirmed Work controller, native `collaboration.spawn_agent` is
-> an accepted route for Work builders and reviewers, with the configured model
-> and effort explicitly requested. Missing environment-selector fields or
-> effective telemetry remain unverified and do not block an otherwise accepted
-> launch. Escalate actual launch failure, contradictory accepted evidence or a
-> genuinely missing required capability.
-
-Policy acceptance does not claim measured Work execution or effective model/effort.
-Record what was requested, what is confirmed and what remains unverified. Do not
-infer a conflicting mode from tool names. A missing instruction resource is a
-reading prerequisite, not evidence that a launch route is unavailable. A real
-launch failure follows bounded failure/capacity recovery as applicable, without
-silent substitution or duplicate dispatch. Preserve fresh contexts and nonauthor
-review. This policy takes effect only when selected by the consumer project.
+A project may accept native `collaboration.spawn_agent` from an owner-confirmed
+Work author for independent review with the selected model/effort explicitly
+requested. Missing environment-selector fields/effective telemetry remain
+unverified and do not block an otherwise policy-accepted route. This is policy
+acceptance, not measured Work execution. Escalate actual launch failure,
+contradictory accepted evidence or a genuinely missing required capability.
+Missing instruction resources are reading gaps, not proof of unavailable launch.
+No silent substitution, duplicate dispatch or self-review is allowed.
+The policy takes effect only after explicit consumer adoption.
 
 ### Chat source orientation
 
-Apply [existing intake](start-an-issue.md#intake) to each chat's repository path,
-HEAD and selected instructions separately; one chat's source does not establish
-another's. Preserve parked branches. An unrelated checkout's failures do not
-establish that the selected task commands are blocked. Check readiness in the
-assigned task worktree/source without moving or overwriting a parked branch.
-A dispatcher authenticates
-only its assigned handoff/source within its reading scope, not original issue
-requirements. Reconcile existing assignments before dispatch: absence of an issue
-assignee or default checkpoint alone is not proof there is no active task. Use the
-project's authoritative assignment/recovery locations; no new tracking system.
+Authenticate each chat's repository path, HEAD and selected instructions separately.
+Preserve parked branches. A failure in an unrelated checkout does not establish
+that the task's commands are blocked. Reconcile existing assignments through the
+project's authoritative checkpoint/native job records before a launch; missing
+issue assignee/default checkpoint alone does not establish inactivity.
 
 ### Issue queues
 
@@ -231,7 +126,7 @@ Process ranges in numerical order; preserve explicit list order. Skip only issue
 already closed or explicitly deferred under owner/project authority, without
 reopening or closing them. Difficulty, age and transient failure are not deferral.
 Complete and verify closeout before advancing. Reorient the same or an owner-selected
-fresh controller under [daily intake](start-an-issue.md#intake); preserve issue
+fresh author under [daily intake](start-an-issue.md#intake); preserve issue
 ordering and boundaries. Keep coordination in existing assignment, closeout and
 advancement records; no scheduler is needed.
 If an eligible issue
@@ -243,84 +138,46 @@ permissions; apply actual owner grants and project policy.
 
 ### Brief invocation examples
 
-Use these only in the products actually selected by the owner. Installed skills
-must be available through that host's supported selector; otherwise use direct
-instructions with the same input contract.
-
 ```text
 @ri-work-kickoff
-Repository: MitCaine/poker-app
-Issue(s): #447–#458, skipping closed or explicitly deferred issues
-Controller selection: Work; gpt-6.1-sol / low, owner-confirmed
-Authority: I select the reusable task grant for these issues.
-Codex dispatcher: <concrete chat ID or supported reference>
+@GitHub
+Repository: <owner/repository>
+Issue(s): #<issue>
+Author selection: Work; gpt-6.1-sol / low, owner-confirmed
+Authority: I select the reusable task grant for this issue.
 ```
 
-```text
-$ri-codex-dispatcher-kickoff
-Repository: MitCaine/poker-app
-Work controller: [designated chat, if already available]
-```
-
-The implementor uses the project's adopted initial selection through the
-controller's resolved handoff. Additional fields are needed only when defaults
-or existing authority do not cover the assignment. Direct document-based kickoff
-remains supported: supply the same fields and actual product/controller selection
-statement, then read the selected procedure through `docs/local_project_map.md`.
-A direct statement is owner confirmation, not runtime telemetry.
+Supply only true/intended selections and grants. `@GitHub` is optional with another
+permitted route. Without installed skills, send the same inputs and selected
+procedure through the map. No Codex dispatcher or second-chat messaging grant is
+required. A separately authorized relay, if genuinely necessary, names its concrete
+immediate return destination and onward owner; skill loading creates no authority.
 
 ## Recovery and resume
 
-Record current phase, branch/source, task, criteria, tests, active job, results,
-pending blockers and next authorized action in the existing checkpoint. Preserve
-these and the selected instructions across compaction; authenticate live state
-before resuming. No parallel mandatory state store is needed.
-
-Routine coordination, factual clarification, diagnosis and permitted in-scope
-correction are included in task authority. Hold execution at a blocker and make
-one bounded read-only sweep before replanning. A terminal stop remains terminal;
-a diagnostic-only follow-up can explain it without resuming that execution.
-Ask only for an actually uncovered scope/permission/disclosure or reserved action.
+Use [the existing recovery rules](start-an-issue.md#wait-recover-and-resume) and
+checkpoint. Recover source, selected instructions, active assignment, results,
+pending obligations and next authorized action, not a duplicate attempt. Status
+answers do not end authorized work. Explicit stopped/paused attempts still require
+continuation authority; routine in-scope correction does not need repeated grants.
 
 ## Replace an existing RI integration
 
-Follow the controller guide's [replacement route](capsule-controller-workflow.md#replace-an-entangled-adoption).
-Preserve product work and historical evidence. Remove duplicate procedure and
-RI-only machinery, repair references and tests, and retain independently needed
-project controls. Use focused verification and one independent review, then
-owner-authorized integration. Retire obsolete prerequisite issues only after the
-replacement eliminates their need; do not declare their failed attempts successful.
-
-Changing the docs does not itself qualify a host or migrate a project's installed
-instructions. Record the adopted source/bytes and verify the actual replacement.
+Use the [adoption boundary](capsule-controller-workflow.md#replace-an-entangled-adoption).
+Inspect actual imports/CLI calls, remove obsolete selected orchestration links and
+retain useful independent tools and all project gates. Reconcile validators rather
+than bypassing them. An obsolete field may remain for historical readers without
+remaining a new-task requirement. Do not pretend shared docs alone prove consumer
+normal execution. Each app verifies its actual candidate/review/terminal accounting
+and installed route. Do not default-vendor or repin active attempts.
 
 ## Standard project map
 
-Use `docs/local_project_map.md` in every consumer project. Keep it short:
-
-- Selected RI execution instructions: source commit/bytes and usable location.
-- Compatible RI runtime/source and its invocation, plus selected role environments,
-  models/efforts and permitted overrides from the
-  [initial configuration](#kickoff-inputs-and-selected-configuration).
-- Accepted worker-launch routes, including any adopted
-  [native Work policy](#accepted-worker-launch-routes), plus confirmation for
-  required environment/model/effort settings and the
-  authorized disposition when confirmation is unavailable, as defined in the
-  [shared reporting rule](start-an-issue.md#execution-routing-models-and-efforts).
-- Shared capsule instructions: the capsule-format section of the selected RI
-  daily procedure, plus the project's task-file storage location and necessary
-  additional fields. If adopting the optional maintenance route, use that existing
-  task record for its brief handoff and resolve capsule-only local validators
-  explicitly. Record whether direct Work controller implementation is permitted;
-  reconcile any local enforcement before using that exception. Do not maintain
-  a competing local format.
-- Project standards and required test commands or their authoritative locations;
-  use focused selection-section links rather than unrelated historical reading.
-- Role permissions, including the branch-creation actor and any explicit builder
-  grant, candidate capture/publication and integration/issue actions.
-- Supported completion route and existing active-task/checkpoint location.
-
-Follow [instruction ownership and handoffs](#instruction-ownership-and-handoffs)
-when reconciling an existing map. Repair incoming links and leave old map locations
-as pointers where needed; do not keep two authoritative maps. Preserve frozen task
-identities and historical records; map presence supplies no task authority.
+Keep one short map identifying selected instruction revision/bytes/locations;
+separate compatible runtime/tool pins and invocations; author/reviewer settings,
+accepted launch/confirmation policy and disposition for missing confirmation;
+applicable standards/check commands and required qualification; publication,
+integration/issue/cleanup authority; existing task/checkpoint/durable evidence
+locations and supported completion route. Link shared rules instead of duplicating
+them. Keep dated runtime observations honest; a pointer or installed folder is not
+readiness. Historical records stay reachable and clearly unselected for new work.

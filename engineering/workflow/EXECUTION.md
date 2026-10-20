@@ -1,8 +1,8 @@
 # Execution permissions and recovery
 
-Use [local project map](../../docs/local_project_map.md). The controller uses its complete shared
-procedure; implementors and reviewers use Shared worker rules and their complete selected role skill/locator
-from the pinned [worker index](shared/worker-instructions.md#role-index). The implementor works in the bounded checkout;
+Use [local project map](../../docs/local_project_map.md). The single author uses the complete shared
+procedure; the fresh reviewer uses Shared worker rules and the selected reviewer skill/locator
+from the pinned [worker index](shared/worker-instructions.md#role-index). The author works in the bounded checkout;
 independent review uses a different read-only subagent. Ordinary source, Git diff and real logs are
 the handoff. `task execution` and its
 frozen local launcher are retired from current dispatch. No RI-only sandbox, serialized

@@ -1,5 +1,10 @@
 # Selected role resources
 
+For new work, resolve the adopted author-and-reviewer procedure through the project
+map. Old role references below are compatibility-only for pinned/explicitly retained
+assignments, not requirements to recruit those roles. Preserve active selections.
+
+
 Resolve the accepted RI revision and actual role skill folder, Shared worker rules
 location/identity, applicable local requirements and task inputs through the
 controller handoff and project-root `docs/local_project_map.md`. Authenticate those

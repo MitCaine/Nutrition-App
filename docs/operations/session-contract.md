@@ -8,8 +8,8 @@ state, identify mechanical boundary violations, inventory the Phase 5C4 control 
 PostgreSQL privilege manifests.
 
 For Markdown task intake, the controller authenticates the current remote main and live issue,
-reads the selected normal capsule or maintenance handoff, and reconciles them with authenticated
-external controller state through the [workflow entrypoint](../local_project_map.md). Before dispatch,
+reads the concise normal task record or selected historical maintenance handoff, and reconciles them with authenticated
+external controller state through the [workflow entrypoint](../local_project_map.md). Before implementation,
 the controller runs `./scripts/task validate-record --task-record PATH` for normal or
 `./scripts/task validate-record --task-record PATH --route maintenance` for a brief handoff.
 This read-only command validates record structure and
@@ -51,17 +51,18 @@ contract.”**
 ## Actor and timing
 
 This is the canonical Nutrition rule for local session/check responsibility. It
-binds project acceptance obligations to actors; the selected RI worker sections
-continue to own role inputs, read scopes, result delivery and independence.
+binds project acceptance obligations to actors. New work uses one author and a fresh
+independent reviewer under the selected common contract; the old dispatcher/builder rows below
+apply only to historical pinned attempts. The author assumes implementation and controller acceptance duties.
 A returned worker result is not a declaration of repository task completion.
 
 | Actor/stage | Assigned responsibility | Acceptance still due |
 | --- | --- | --- |
-| Dispatcher orientation/relay | Authenticate only supplied handoff/source and selected role inputs; return terminal results/questions. No session-end or pre-commit. | Controller authenticates results, selects required checks and owns acceptance. |
-| Builder inspection/planning handoff | Read original directed requirements/source; return the draft/gaps. Run only expressly assigned planning checks when authorized to write the task file. No session-end or repository acceptance claim. | Controller validates record/plan, preserves historical prerequisites actually selected and assigns implementation checks. |
+| Historical dispatcher orientation/relay | Authenticate only supplied handoff/source and selected role inputs; return terminal results/questions. No session-end or pre-commit. | Controller authenticates results, selects required checks and owns acceptance. |
+| Historical builder inspection/planning handoff | Read original directed requirements/source; return the draft/gaps. Run only expressly assigned planning checks when authorized to write the task file. No session-end or repository acceptance claim. | Controller validates record/plan, preserves historical prerequisites actually selected and assigns implementation checks. |
 | Inspection-only independent review | Inspect exact candidate/full diff and actual evidence; request missing proof from controller. No tests, inventory regeneration, session-end or pre-commit. | Controller supplies missing checks, records review, separately approves and integrates. |
-| Authorized implementor or direct controller author | Run source session report and all checks assigned by accepted task, using eligible tools and stable source; retain commands/results/failures/skips. Session-end only if expressly assigned with authority for its effects. | Controller runs full repository acceptance before candidate freeze and repeats required installed checks before closeout. |
-| Controller candidate acceptance/final closeout | Run session-end, whitespace/status and task-selected checks; inspect generated changes, require qualification/review/approval/protected integration, then installed obligations and verified closure/cleanup. | Nonzero or missing required proof blocks that gate; do not claim terminal completion. |
+| Single author (historical implementor when selected) | Run source session report and all checks assigned by accepted task, using eligible tools and stable source; retain commands/results/failures/skips. Session-end only if expressly assigned with authority for its effects. | Controller runs full repository acceptance before candidate freeze and repeats required installed checks before closeout. |
+| Author candidate acceptance/final closeout | Run session-end, whitespace/status and task-selected checks; inspect generated changes, require qualification/review/approval/protected integration, then installed obligations and verified closure/cleanup. | Nonzero or missing required proof blocks that gate; do not claim terminal completion. |
 
 `session-end.sh` invokes pre-commit, which can regenerate the tracked control
 inventory and then fail. It also needs the selected matching Python and pytest,

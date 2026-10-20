@@ -1,92 +1,32 @@
 # TASK-ID — Outcome
 
-Use the [shared six-heading format](../workflow/shared/start-an-issue.md#capsule-format)
-with the [local map](../../docs/local_project_map.md) for the normal route. A controller-confirmed
-eligible bounded change may use the same `engineering/tasks/TASK-ID.md` record for a brief
-maintenance handoff with `## Objective`, `## Exact base`, `## Allowed changes`, `## Required checks`,
-`## Return destination`, and `## Controller eligibility` sections. Record one full 40- or
-64-character hexadecimal commit ID, a concrete stable return locator, and the exact line
-`Decision: eligible` under Controller eligibility. Before dispatch, run the public
-`./scripts/task validate-record` command with the selected route; its field checks do not decide
-semantic eligibility. Store new records under `engineering/tasks/`;
-preserve historical formats and stopped attempts unchanged. An expressly selected experimental route uses the [engineering record](ENGINEERING_TEMPLATE.md) and the [selected engineering rule](../workflow/shared/start-an-issue.md#experimental-engineering-route), after its adoption prerequisites.
+Use the [local map](../../docs/local_project_map.md) and selected
+[daily procedure](../workflow/shared/start-an-issue.md#engineering-and-implementation).
+Keep the existing task record concise: original objective/outcomes, exact base and authorized
+scope, necessary engineering decisions/context and expected checks. These headings are examples,
+not a mandatory schema or planning handoff. The author also implements; a fresh independent
+reviewer evaluates original requirements, the full candidate diff and proof/assertion adequacy.
 
-## Objective
+## Objective and outcomes
 
-- Live issue and original required specifications/decisions:
-- Required outcome; unresolved requirements must not be invented:
+Link the live issue and settled owner decisions; identify independently observable outcomes.
 
-## Source and scope
+## Source, scope and decisions
 
-- Authenticated exact base, dedicated task branch and published planning identity:
-- Owner authorization and permitted Git/issue actions:
-- Controller, capsule builder, implementor and distinct independent reviewer:
-- Allowed/forbidden paths and affected current documentation:
-- Relevant standards/domain/security boundaries; unrelated work preserved:
-- Applicable [source preparation](../workflow/shared/start-an-issue.md#task-directed-source-preparation):
-  invocation/source/runtime/parser/coverage and retained raw/packet references; validated generated
-  pointers or bounded mechanical projection, limits and required dispositions:
-- AC-1 implementation steps: owning seams, related callers/interfaces/tests, settled decisions
-  and consequential order/dependencies; link to [AC-1 proof](#ac-1-proof):
+Exact base, allowed changes, relevant owners/callers and consequential design choices.
+Use applicable [source preparation](../workflow/shared/start-an-issue.md#task-directed-source-preparation).
+Preserve unrelated work, paused attempts and selected runtime identities.
 
-## Acceptance
+## Expected proof
 
-- [ ] AC-1: Original observable required result; [linked proof](#ac-1-proof). Preserve the original ID.
+Literal focused commands and intended environment; positive/negative cases that distinguish
+plausible defects; selected profile floors. Reconcile due outcomes with actual native results,
+source identities, durable success/failed logs and readable artifacts through existing tooling.
 
-## Checks
+## Review and closeout
 
-Record literal required commands, intended environment and selected qualification
-profiles; preserve actual failures/skips and exact source/results for each attempt.
-
-### AC-1 proof
-
-Use the [shared proof-entry rule](../workflow/shared/start-an-issue.md#capsule-format) and link
-this entry to AC-1's implementation steps; this adds no acceptance criterion.
-
-- Setup/preconditions:
-- Action or isolated fault reaching the actual owner/caller:
-- Independently expected observation and distinguishing plausible defect/control:
-- Due stage, literal command/environment and retained result references:
-
-### Check attempts
-
-Append one row for every attempt, including failures, reruns, skips and partial/ambiguous
-results. Never replace an earlier row or overwrite its log. Use unique attempt IDs and
-log paths; record the literal command and relevant environment/interpreter without secrets.
-Exact source means commit plus the retained complete diff digest for dirty work (including
-untracked in-scope files), or the clean candidate SHA. Keep large logs outside source in
-the selected evidence workspace; record portable location identities and SHA-256 here.
-Keep absolute private locations and diagnostic payloads in the external inventory.
-
-| Attempt / check | Exact source / diff identity | Command / environment | Status / exit code | Log location / SHA-256 | Eligibility / disposition |
-| --- | --- | --- | --- | --- | --- |
-
-Only the latest eligible complete success on the required source satisfies a check.
-Unknown exit code, partial/ambiguous delivery, skips, unavailable checks, missing logs or
-source mismatch cannot satisfy it. Resolve any later failed or ambiguous attempt explicitly
-before relying on a prior success; retain all attempts for review. This inventory supports
-the existing verification evidence field and does not replace qualification or review gates.
-
-## Prerequisites
-
-- Known dependencies, inspected environment, unresolved decisions and gaps:
-- Genuine post-installation obligations, their stage and satisfaction method:
-
-## Handoff and closeout
-
-Use the selected [role index](../workflow/shared/worker-instructions.md#role-index) and
-[ownership/handoff contract](../workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs).
-The controller supplies the selected role/assignment/route, applicable local sections and
-consequential settled decisions. Bind known source/input/evidence facts by accessible references
-to actual selected query, runner and checkpoint outputs; record unavailable facts as gaps.
-Use existing assignment notes/sketch/terminal handoff for receiver role/outcome understanding
-and conflicting/missing inputs, including correction/replacement; no new acknowledgment stage.
-
-Follow the selected [completion-record rule](../workflow/shared/start-an-issue.md#keep-completion-records-external)
-for tracked preparation timing and later operational evidence.
-
-Preserve append-only preparation decisions, corrections, stops and failed attempts here; never
-reset recorded authority or allowances. Preserve later operational history externally.
-Verify all original outcomes and installed obligations before authorized closure; verify
-actual closure and applicable local/remote merged-branch cleanup. Report partial closeout
-honestly. Reserved actions retain their existing owner permission requirements.
+Fresh independent exact-candidate review, separate author approval, existing trusted qualification,
+protected integration and installed checks remain due. Finalize tracked preparation before freeze;
+record later operational outcomes in the existing external checkpoint/evidence. Missing due proof
+blocks readiness. Verify actual authorized closure/ref cleanup; report partial closeout honestly.
+Historical formats/readers and stopped attempts retain their original contracts.

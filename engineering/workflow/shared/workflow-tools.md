@@ -7,6 +7,14 @@ project map or assigned handoff; an unavailable helper does not authorize a
 different instruction revision or additional reading. Ordinary file tools remain
 supported. No service or persistent index is required.
 
+The current [issue procedure](start-an-issue.md) does not require the historical
+orchestration ladder. Prepared-worker, dispatch and capsule/engineering selection
+APIs below remain optional compatibility contracts for actual consumer callers;
+using them does not require a creator, dispatcher or separate implementor. Names
+and packet versions are retained, not new role authority. See the
+[ownership inventory](capsule-controller-workflow.md#keep-the-integration-small)
+before removing a dependency. No runtime API or version changes in this migration.
+
 ## Consumer check runner
 
 Command execution and source projection belong to the consumer. Its map should
@@ -36,7 +44,7 @@ equivalence. Apply the selected [evidence rules](start-an-issue.md#evidence-elig
 
 ## Accepted dispatch decisions
 
-The optional [`dispatch_guard.py`](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/src/repository_intelligence/dispatch_guard.py)
+The optional [`dispatch_guard.py`](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/src/repository_intelligence/dispatch_guard.py)
 helper evaluates a consumer's authenticated projection of existing native launch,
 resumption and job-state records. It neither launches agents nor creates a job
 registry. The dispatcher/host adapter still owns authentic observation, freshness,
@@ -211,12 +219,12 @@ evidence location; the helper does not create a state store.
 
 ## Existing optional evidence helpers
 
-The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
+The [evidence preflight helper](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py)
 contains pure input-equivalence predicates; unknown relevant inputs are not
 cacheable. Its extended packet validation remains optional and is not required
-by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/scripts/check%5Fdocs%5Fand%5Fskills.py),
-the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/consumer-guide.md) and
-[review bundles](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/review-evidence.md) retain their existing separate scopes.
+by these tools. [Documentation/link checks](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/scripts/check%5Fdocs%5Fand%5Fskills.py),
+the [bounded source locator](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/consumer-guide.md) and
+[review bundles](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/review-evidence.md) retain their existing separate scopes.
 None authenticates task authority or proves runtime availability.
 
 ## Prepared worker execution linkage
@@ -231,7 +239,7 @@ only under existing task authority; no remote-free capture policy is imposed.
 ### Task-output lifecycle
 
 The optional Python interface in
-[`output_cleanup.py`](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/src/repository_intelligence/output_cleanup.py) serves the
+[`output_cleanup.py`](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/src/repository_intelligence/output_cleanup.py) serves the
 same consumer-owned worker/closeout seam. The governing
 [retention and disposal rule](start-an-issue.md#retain-evidence-and-dispose-of-owned-outputs)
 owns eligibility; this interface does not change the version-1 worker request or

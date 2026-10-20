@@ -1,10 +1,10 @@
 # Conditional capsule queue redirect
 
-Read the complete [pinned upstream queue skill](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/SKILL.md)
+Read the complete [pinned upstream queue skill](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/SKILL.md)
 only for an external job without reliable native completion. Its required resources are
-the [project procedure locator](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/references/project-procedure.md#waiting-and-recovery)
-and [queue helper](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/scripts/run%5Fand%5Fqueue.py).
-All three required upstream resources are selected from RI commit `c25603685e66cd057db12026f3701e33cb456b60`; their byte identities are recorded in [SOURCE](../../SOURCE.md).
+the [project procedure locator](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/references/project-procedure.md#waiting-and-recovery)
+and [queue helper](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/scripts/run%5Fand%5Fqueue.py).
+All three required upstream resources are selected from RI commit `6058b143610c1902faf1bf832227359c9fc4f5a4`; their byte identities are recorded in [SOURCE](../../SOURCE.md).
 
 The helper URL uses percent-encoded underscores so repository executable discovery
 does not mistake that external resource for a locally installed script.
@@ -13,7 +13,7 @@ or newly qualified here. Follow the [Nutrition map](../../../../../docs/local_pr
 and complete [daily waiting rules](../../start-an-issue.md#wait-recover-and-resume).
 Use a supported observer and verified delivery to the exact controller; CLI acceptance
 alone is not consumption or idle wake-up. A Work controller needs an owner-authorized,
-tested bridge. Work-to-Codex implementor results return to the assigned dispatcher for
+tested bridge. Historical Work-to-Codex implementor results return to the assigned dispatcher for
 relay and controller-consumption confirmation; sending alone is not delivery proof and
 proves neither consumption nor idle wake-up. Use blocking completion while an assignment
 is active unless its exact idle-wake route is verified. A terminal result already delivered

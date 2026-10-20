@@ -24,8 +24,7 @@ flowchart TD
 ```
 
 For feature work requiring these product and architecture artifacts, this sequence is a gate.
-Bounded maintenance/tooling issues use the selected [maintenance route](../../engineering/workflow/shared/start-an-issue.md#optional-maintenance-route)
-when eligible; they do not require an unrelated Roadmap, Grill or PRD. Owner authority and
+Bounded maintenance/tooling issues use the selected [normal issue procedure](../../engineering/workflow/shared/start-an-issue.md#engineering-and-implementation); they do not require an unrelated Roadmap, Grill or PRD. Owner authority and
 applicable accepted requirements still govern every issue.
 
 ## Artifact responsibilities
@@ -117,8 +116,8 @@ Closing a child issue updates the Epic checklist and progress summary on the nex
 ### Current accepted task and controller route
 
 Use the [local map](../local_project_map.md) and selected daily procedure. The accepted Markdown
-record lives at `engineering/tasks/TASK-ID.md`: a normal-route capsule or an eligible maintenance
-handoff. It records scope and checks, while authenticated owner authority remains separate.
+record lives at `engineering/tasks/TASK-ID.md`: a concise normal assignment for one author
+and a fresh independent reviewer. It records necessary decisions, scope and expected proof, while authenticated owner authority remains separate.
 `./scripts/task` owns authorization, exact-candidate qualification, verification, independent review
 and protected integration. Installed verification precedes issue closure and safe owned-ref cleanup.
 Select profiles from authorized scope and actual changed paths under the

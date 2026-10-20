@@ -49,7 +49,7 @@ controller acceptance. Implementors run their assigned checks and preserve resul
 Authority depends on the question being decided:
 
 - Authenticated current owner decisions and external controller state establish product intent, permissions, accepted risk, and integration authorization. Existing repository behavior cannot grant permission or defeat an owner-authorized intended correction.
-- The accepted Markdown task record in `engineering/tasks/` (normal capsule or maintenance handoff, as selected) records authorized scope and acceptance criteria; it does not create owner authorization. Historical TOML capsule contracts retain their own recovery authority and are not current intake.
+- The accepted Markdown task record in `engineering/tasks/` (concise normal record or selected historical handoff) records authorized scope and acceptance criteria; it does not create owner authorization. Historical TOML capsule contracts retain their own recovery authority and are not current intake.
 - Current migrations, database constraints, repository scripts, and executable tests establish and validate current behavior. Preserve those observations as evidence; they do not alone define product policy or grant permission.
 - Current engineering guides and runbooks govern procedures within that authority. Historical and archived material is evidence, not current instruction.
 
@@ -161,18 +161,17 @@ For dependency-only pull requests:
 
 ## Task workflow
 
-Controllers start at [the local execution map](docs/local_project_map.md) and read its complete
+Authors start at [the local execution map](docs/local_project_map.md) and its complete
 byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md).
-Workers use the selected [worker Role index](engineering/workflow/shared/worker-instructions.md#role-index)
-and their selected complete role skill/locator, assigned map sections, task/source and applicable local standards.
-The shared [ownership and handoff contract](engineering/workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs)
-owns generic role inputs, including initial builders without a future capsule;
-its linked Shared worker rules own receiver comprehension and correction/replacement duties.
-Setup/adoption is conditional. Select the [maintenance rule](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route)
-and [local map's per-worker launch settings and confirmation policy](docs/local_project_map.md#nutrition-permissions-and-routing).
-The map owns Nutrition's direct-maintenance permission, public record command, source/runtime bindings, checkpoint recovery
-and exact-App/protected integration boundaries. No RI SDK transport, mandatory declaration report,
-frozen launcher or timed model gateway applies.
+New normal work uses one source-grounded engineering/coding author and a fresh independent reviewer.
+Reviewer inputs follow the [common contract and role index](engineering/workflow/shared/worker-instructions.md#role-index).
+Use a concise existing task record with necessary decisions, scope and expected proof; no mandatory
+capsule ladder, planning handoff, dispatcher, separate implementor or pilot waiver.
+The map owns requested settings, accepted launch policy, source/runtime bindings, public record
+validation, recovery and exact-App/protected integration boundaries. Historical routes remain
+available for their original pinned attempts. Setup/adoption is conditional on changed bindings.
+
+
 
 Preserve existing active capsule contracts, state/history, branches, evidence, pending decisions,
 C/R/T recovery and consumed allowances. The original #246 and #256 capsule attempts remain stopped

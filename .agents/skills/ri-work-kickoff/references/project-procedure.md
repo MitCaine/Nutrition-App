@@ -1,22 +1,14 @@
 # Selected kickoff resources
 
-Resolve the consumer project-root `docs/local_project_map.md` and its selected RI
-instruction identity; authenticate supplied repository/checkout and existing
-assignment without selecting latest upstream main. The adopted setup guidance
-owns `Kickoff inputs and selected configuration` and `Issue queues`; the adopted
-controller procedure owns execution, and the selected role skills own role duties.
-Resolve their usable locations and byte identities through the map/handoff.
-Missing selected resources are an adoption gap, not permission to substitute.
+Resolve project-root `docs/local_project_map.md`, repository/base, selected RI
+instruction identity and existing assignment. Read the complete selected issue
+procedure and directed original inputs. The setup owns configuration/authority;
+the issue procedure owns author execution and the common/reviewer contract owns
+independent review. Do not automatically select newest upstream or repin active work.
 
-A dispatcher reads only map selection information and the selected Shared worker
-rules and ri-dispatcher skill, plus kickoff-input rules relevant to its role.
-It does not load controller intake or original issue/decision history. Work
-controllers read their complete selected procedure and directed issue inputs.
-Copying this locator does not install the selected resources or register a Work
-skill. Follow the selected confirmation/authority policy; invocation alone grants
-no Git, settings, disclosure or worker-creation authority.
-
-For bounded reads, use the map/handoff-selected section reader under its
-workflow-tools contract when available. Select only role-permitted inputs and
-check identity/coverage; resolve incomplete output through the governing role rule.
-Ordinary reads remain supported.
+Copying this locator does not install resources or register a Work skill. Missing
+selected resources are an adoption gap, not permission to substitute. Owner
+invocation confirms the selected product only under the accepted confirmation
+policy; it grants no publication, integration, disclosure or extra permissions.
+Ordinary document-based reading remains supported. Conditional tool references
+are not a requirement to load every linked guide.

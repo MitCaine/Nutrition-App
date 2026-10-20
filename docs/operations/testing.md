@@ -135,7 +135,7 @@ for an iOS Simulator.
 ## Main qualification profiles
 
 Current Markdown accepted task records live at `engineering/tasks/TASK-ID.md`, using the selected
-normal capsule or maintenance handoff. The trusted controller authenticates owner authorization,
+concise normal task record (historical maintenance handoffs remain supported). The trusted controller authenticates owner authorization,
 then selects profiles with `./scripts/task prepare ISSUE --profile NAME` before `authorize` and
 `qualify`. Complete authorized scope and changed paths determine the required floors under
 [test selection](#test-selection-by-change); record validation alone supplies no authority.

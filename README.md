@@ -315,22 +315,14 @@ mixing between the two runtimes.
 
 ## Engineering workflow
 
-Contributors should start with [Contributing](CONTRIBUTING.md), the [Engineering Workflow](engineering/README.md), and the [local project map](docs/local_project_map.md). New tasks normally follow the standard capsule route. For bounded upkeep such as an identified dependency update or inspected RI adoption with necessary local alignment, an owner can request direct Work controller maintenance with the adopted kickoff fields:
+Contributors start with [Contributing](CONTRIBUTING.md), [Engineering Workflow](engineering/README.md)
+and the [local project map](docs/local_project_map.md). Normal work uses one source-grounded author
+for engineering and coding, then a fresh independent reviewer. Retain necessary decisions and
+expected proof in the existing concise task record; no separate planning handoff is required.
+Settings, authority and Nutrition's protected acceptance remain in the map.
 
-```text
-@ri-work-kickoff
-@GitHub
-Repository: MitCaine/Nutrition-App
-Issue(s): #<maintenance issue>
-Authority: I select the reusable task grant for this issue.
-Requested route: maintenance
-Implementation execution: direct Work controller
-Controller selection: Work; gpt-6.1-sol / low, owner-confirmed
-```
 
-Use the [selected ownership and role-input contract](engineering/workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs)
-and [maintenance rule](engineering/workflow/shared/start-an-issue.md#optional-maintenance-route)
-with Nutrition's [permissions, settings and protected acceptance](docs/local_project_map.md#nutrition-permissions-and-routing).
+
 GitHub access is separate from owner task authority. Epics/issues describe engineering work;
 release versions describe application states.
 

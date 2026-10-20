@@ -43,16 +43,14 @@ to initialize a default checkpoint or dispatch again.
 
 ## Repository-owned task workflow
 
-Controllers use the sole [local project map](../docs/local_project_map.md) and its complete
-pinned [daily issue procedure](workflow/shared/start-an-issue.md). Worker input selection follows
-the [role index](workflow/shared/worker-instructions.md#role-index) and shared
-[ownership/handoff contract](workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs).
-Use the [task template](tasks/TEMPLATE.md) for ordinary Markdown tasks and the [engineering template](tasks/ENGINEERING_TEMPLATE.md) only for an explicitly selected experiment after its prerequisites. The shared
-[capsule format](workflow/shared/start-an-issue.md#capsule-format),
-[maintenance rule](workflow/shared/start-an-issue.md#optional-maintenance-route) and
-[phase sequence](workflow/shared/start-an-issue.md#complete-the-phases) own those procedures;
-the map supplies Nutrition's literal record command, route permission and acceptance controls.
-The [adoption guide](workflow/shared/capsule-controller-workflow.md) applies only to setup/replacement.
+Authors use the sole [local project map](../docs/local_project_map.md) and complete pinned
+[daily issue procedure](workflow/shared/start-an-issue.md). A fresh independent reviewer receives
+original requirements, the concise task, full candidate diff and actual evidence under the
+[common contract](workflow/shared/worker-instructions.md#role-index).
+The [task template](tasks/TEMPLATE.md) is optional structure, not a mandatory capsule or planning handoff.
+Historical engineering and maintenance formats remain available to their selected attempts.
+
+
 
 [AUTHORITY](workflow/AUTHORITY.md) owns project acceptance; [RI tooling](tooling/RI.md)
 retains the compatible source-navigation runtime. The original #246/#256 capsule attempts remain

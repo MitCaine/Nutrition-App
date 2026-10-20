@@ -1,257 +1,79 @@
-# Lightweight controller workflow with RI
+# Adoption and tool ownership
 
-The ordinary capsule route remains supported. An explicitly adopted
-[experimental engineering route](start-an-issue.md#experimental-engineering-route)
-uses controller engineering and separate planning review before bounded assignments;
-its governing rule owns that exception. It changes neither active attempt selections
-nor project integration authority. Consumer pilots establish results separately.
-
-
-**Read the complete directed orientation material before acting.** Read the
-selected execution instructions, local map, complete issue and required linked
-specifications/decisions before task decisions, edits or dispatch. Resolve
-contradictions and identify missing inputs before dependent work. Summaries do
-not substitute for unread requirements; this does not require a whole-repository
-read. Supply role-specific inputs under the [worker reading boundaries](worker-instructions.md#shared-worker-rules),
-not the same original sources to every role.
-
-This is the default RI-assisted workflow for projects adopting or explicitly
-replacing an RI workflow. RI supplies source navigation/comparison; it does not
-require a special capsule runner, SDK transport, evidence exporter or approval
-service. Existing projects adopt this replacement under owner authority rather
-than silently bypassing their current controls.
-
-[Start an issue](start-an-issue.md) owns daily execution; this guide owns adoption
-and replacement. Use the adopted map and active task, not archived procedures or
-previous plans. Resolve conflicting routing before dispatch. This broader guide
-is not required reading for every established-project issue.
+The filename is retained for incoming links. [Start an issue](start-an-issue.md)
+is the sole current daily workflow: one Work Sol Light author engineers and codes,
+then a fresh independent Work Sol Light reviewer assesses the exact candidate.
+This document supplies adoption context, not a second procedure. The previous
+[role-ladder guide](https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/capsule-controller-workflow.md)
+is historical, not selected for new work.
 
 ## Keep the integration small
 
-Keep one short project map at project-root `docs/local_project_map.md`.
-Link it from the project README/AGENTS entrypoint. Record the selected RI
-runtime/source and supported contract, shared instruction identity, repository
-standards, normal test commands, permitted Git/issue actions, and completion
-route. Pin the instruction bytes or their source commit; retain the map across
-compaction. Use the selected [ownership and handoff contract](new-project-setup.md#instruction-ownership-and-handoffs)
-to keep domain/operational requirements local and shared behavior at its RI owner.
+Inventory actual imports and public invocations in each consumer before changing
+ownership. Keep one authoritative definition for each selected command/input;
+tools derive mechanical identities and dependency references, agents judge meaning.
 
-Choose a compatible RI runtime. A newer producer is a proposal until the
-project's reader accepts its contract. Observe compatibility once at setup and
-again when relevant runtime/reader inputs change, not on every conversation.
-Use ordinary source files, Git diffs and test logs to validate a handoff and prove
-outcomes. For applicable supported source during normal capsule preparation,
-follow the daily [task-directed source-preparation contract](start-an-issue.md#task-directed-source-preparation)
-and carry its relevant generated pointers, source identity and coverage into the
-capsule. Direct inspection supplements that bounded map and remains valid at
-implementation and review; reviewing every declaration as a separate report
-entry is not required. Record missing coverage and resolve any required-operation
-inability before dispatch; a coverage gap is not an automatic cancellation of
-otherwise authorized work.
+| Mechanism | Current owner/contract | Migration boundary |
+| --- | --- | --- |
+| Source navigation and comparison | RI locator/inventory, language adapters and source identity | Useful independent tools; coverage is not a call graph or acceptance verdict. |
+| Declared instruction copies/relocations | RI adoption and section_reader | Optional copy/reading tools; do not select an instruction revision or authorize a role. |
+| Runner dependency/input generation | Consumer runner owns definition; RI request generation may consume it | One authoritative inventory, not a handwritten second list. Consumer wiring proves automatic use. |
+| Native outcomes/obligations and artifact references | Consumer producer with optional RI worker_execution/obligation_reconciliation bindings | Retain callable compatibility and source/native-result negative controls; no mandatory worker role implied. |
+| Dispatch decisions and output retention | Optional RI dispatch_guard/output_cleanup plus consumer authentic observations | No new launcher, permissions, deletion authority or registry. Independent reviewer launches may still use a guard. |
+| Original requirements, engineering, proof adequacy and approval | Author and nonauthor reviewer under project authority | Tools cannot establish semantic correctness or replace independent review. |
+| Git/domain/privacy/database/platform qualification | Consumer project | Do not delete an independent gate because it was previously called by a capsule runner. |
+
+The actual RI modules import each other at these tool seams; consumer adapters may
+still import prepared execution/request generation without selecting old roles.
+Inspect each app independently. Do not infer Nutrition's dependencies from Poker,
+or default-copy runtime code into both apps. Existing package or local adapter
+selection remains consumer-owned; no new package/config schema is introduced.
+[Bounded tool contracts](workflow-tools.md) retain their public versions and APIs.
 
 ## Sequence
 
-```text
-Controller: authenticate objective, checkout, authority and usable tools
-    |
-Capsule builder: supplied/explicitly authorized branch + bounded Markdown task
-    | return branch/base, task path, scope, criteria, checks and gaps
-Controller: inspect task and relevant source; resolve actual gaps
-    |
-Implementor: permitted edits + relevant tests
-    | return changes, candidate/ref if authorized, results and gaps
-Controller: authenticate candidate/scope/gates; prepare independent review
-    |
-Independent reviewer: read candidate, task, standards and real test evidence
-    | concise evidence-backed verdict and actionable findings
-    +-- defect --> bounded implementor correction --> affected checks/review
-    |
-Controller: authorized integration --> verify result --> close issue
-    --> retain necessary evidence --> delete merged task branch when safe
-```
-
-Follow the [daily published-branch sequence](start-an-issue.md#execute-serially):
-the controller creates the GitHub task branch; on the normal route the assigned
-actor publishes the capsule,
-and the assigned actor publishes implementation on that same branch before
-independent review. Bind handoffs to verified remote commits. Task publication
-is not main acceptance; no subagent pushes to main. Resolve conflicting project
-controls before dispatch rather than silently keeping the task local.
-
-The optional [maintenance route](start-an-issue.md#optional-maintenance-route)
-replaces builder/planning publication with a controller-approved brief handoff
-in the existing task record. Its governing eligibility includes understood
-dependency updates and inspected RI adoption with bounded local alignment;
-change category alone does not require capsule planning. Explicitly reconcile
-local capsule-only validators before adopting it. Initial implementation starts from that accepted handoff or
-validated normal-route planning state. A correction starts
-from the authenticated recovery source/parent and retained finding, not from an
-artificial requirement that the branch still heads the original planning commit.
-Keep the original objective and scope; preserve any project-required lineage and
-remaining allowance. Check the actual recovery inputs before dispatch.
-
-If inspection establishes that the requested behavior already exists, return
-**no changes needed** with criterion-specific source/test evidence. The controller
-checks that evidence and obtains applicable independent review before the
-project's authorized issue closeout. Do not manufacture an edit, candidate commit
-or merge solely to fit the diagram. Retain the reviewed source identity; if a
-criterion remains unresolved, the task is not complete.
-
-Run one subagent assignment at a time. Use fresh contexts by default. After
-retaining the terminal handoff, close completed agents where supported. If fresh
-creation is blocked and capacity cannot be released, reuse an idle context as a
-last resort with a complete reauthenticated handoff. A candidate's author or
-implementor cannot review it. If no independent reviewer is available, report
-that specific blocker rather than self-approving.
-
-For provider model capacity failures, follow the [daily recovery rule](start-an-issue.md#wait-recover-and-resume):
-preserve work, establish job state and use only authorized model/effort fallbacks.
-Keep optional fallback choices in the map to avoid repeated owner decisions;
-model availability does not justify a capsule replan or duplicate dispatch.
-
-The capsule records the objective/issue, base/branch, permitted edit scope,
-checkable acceptance criteria, required test commands and known prerequisites.
-Use the [shared RI Markdown capsule format](start-an-issue.md#capsule-format).
-Projects supply values and necessary extra fields, not a replacement format.
-RI adds no mandatory JSON
-schema, signed packet, planning-history layout or finite launch budget.
-Independent scope challenge is optional unless a separately adopted project
-requirement needs it; do not add a second review just for changing ordinary files.
+Follow [the current procedure](start-an-issue.md#complete-the-phases), not an extra
+planning or launch stage. Keep concise design/context/check expectations in existing
+records. Source discovery informs engineering, implementation and review directly.
 
 ## Required task completion
 
-Each task must cover these requirements in its capsule or maintenance handoff; no
-additional report or gate file is needed:
-
-- Resolve objective/specification gaps before implementation. Do not invent
-  product parameters or expand the objective to make a task executable.
-- Update affected current documentation, examples, local maps and incoming links
-  when behavior, commands, versions or workflow change. Remove stale or
-  contradictory wording within that affected surface. Identify those paths in
-  scope; preserve clearly marked historical records. Record a supported
-  not-applicable conclusion when no documentation is affected. This does not
-  require a repository-wide documentation rewrite for every task.
-- Give every acceptance criterion a concrete test or inspectable source/result;
-  report failures and skips honestly. A passing aggregate test count does not
-  prove an omitted required case. Explain any required proof left unexecuted.
-- At each handoff, return the source/branch identity, completed work, actual
-  results, unresolved findings and next permitted action. Supply each role with
-  its selected [role skill](worker-instructions.md#role-index), task inputs and relevant project
-  requirements; workers do not repeat controller orientation. Controller
-  checks returned scope and evidence before dispatching the next role; it does
-  not implement or self-review the assigned source changes on the normal route.
-  The selected maintenance exception permits direct controller implementation,
-  never self-review.
-- Review the affected documentation alongside code and tests. Approval and
-  relevant test evidence must cover the candidate actually integrated. If that
-  candidate changes, reconcile the diff and obtain affected checks/review before
-  integration; do not transfer a verdict silently to new bytes.
-- Close only after verifying authorized integration (or the reviewed no-change
-  outcome) and all original criteria,
-  including any explicitly deferred installation/closeout obligations. Retain a
-  concise result and necessary evidence in the existing project record. Remove
-  only the verified merged task branch when safe; preserve unrelated work and
-  unmerged recovery evidence. If any required outcome remains pending, leave
-  the issue open and state it. Follow the [daily closeout step](start-an-issue.md#execute-serially)
-  to reconcile current task-state references; historical records remain unchanged.
-  Prefer task-neutral maps with a pointer to the active checkpoint.
-
-Record each post-installation obligation's stage and satisfaction method in the
-task record. Review its implementation and check plan before integration; perform
-installed checks afterward and before closure. Do not demand proof that depends
-on prior approval, or defer prerequisites already due. Installed failure leaves
-the issue open for bounded recovery.
-
-Before dispatch, confirm the role's required access/runtime and command environment.
-Capsule builder intake needs the objective/base, not its future capsule/candidate. Rehearse
-known sandbox-sensitive commands narrowly; no mandatory adoption specimen chain.
-Setup proof does not replace actual candidate checks or honest results/skips.
-
-Review covers the full change, original criteria and applicable standards. A
-normal supported independent subagent reading source/diffs/logs is sufficient
-for RI; RI does not require a custom app-server gateway, report-file schema,
-retrieval transcript or OS isolation harness. Preserve independently required
-project confidentiality and permission boundaries. Use the project's supported
-review route if one is required for reasons independent of RI.
+The [current completion rule](start-an-issue.md#complete-the-phases) owns review,
+separate approval, authorized integration, installed verification and closeout.
+Retain native/raw failure evidence durably. Do not turn counts or metadata into
+semantic proof or transfer another task's approval.
 
 ## Waiting and recovery
 
-Follow [the daily waiting and recovery rules](start-an-issue.md#wait-recover-and-resume).
-Native subagents use an event-based blocking wait; idle wake-up requires separate
-verification. Queue is conditional on a supported observer and verified delivery.
-Do not inspect unfinished work or fill waiting time with monitoring. Diagnose
-suspected missed delivery from available completion/delivery/continuation events,
-not from a human bump alone. A failure callback starts bounded diagnosis, not an
-automatic cascade of prerequisite capsules. Check actual callers and the
-controlling requirement before declaring a repair necessary.
-
-Set any required finite deadline according to the actual task size and host
-limits. Do not impose an arbitrary 300-second model-review cap. Validate the
-timeout before dispatch, allowing for instruction/source
-reading and producing the verdict. Preserve genuine historical timeout receipts;
-they are not current configuration. If a task deadline expires or delivery fails,
-reconcile completion and cleanup before an authorized recovery rather than repeatedly launching the
-same full review under a known inadequate limit. Host-enforced hard limits must
-be reported and handled through a supported route, not bypassed.
-
-Use the daily [bounded diagnosis](start-an-issue.md#diagnose-blockers-and-recover),
-[evidence eligibility/correction](start-an-issue.md#evidence-eligibility-and-corrections)
-and [checkpoint recovery](start-an-issue.md#checkpoint-and-resume) rules.
-These own routine clarification authority, failed-command versus explicit-stop
-handling, full integration baseline, transitive-input equivalence and changed-source
-review. Preserve project allowances and host denials; these rules grant no bypass.
-The controller's [pre-review authentication](start-an-issue.md#complete-the-phases)
-is distinct from the normal plan check and the independent review of correctness
-and proof adequacy. RI requires no broad native/backend run solely for changed
-packaging or documentation.
+Use [wait/recovery rules](start-an-issue.md#wait-recover-and-resume). Quiet blocking
+waits, authenticated result consumption and no duplicate assignments still apply.
 
 ## Validate a changed workflow binding
 
-Use these bounded cases when a changed route is adopted or exercised by an
-already-authorized task. They are validation examples, not another per-issue gate
-or an executable RI state machine. The governing rules remain in the daily
-[maintenance](start-an-issue.md#optional-maintenance-route),
-[intake](start-an-issue.md#intake),
-[recovery](start-an-issue.md#checkpoint-and-resume) and
-[no-change](start-an-issue.md#planning-only-and-no-change-outcomes) sections.
-
-| Case / distinguishing input | Expected disposition and retained observation |
-| --- | --- |
-| Map permits direct maintenance; scope and decisions fit a brief | Controller implements with no builder, dispatcher or implementor; a fresh nonauthor reviews the exact candidate. Retain map permission, source, actors and verdict. |
-| Delegated brief specifies a compatibility version and installed caller check | Worker uses those decisions and reports the caller obligation honestly; a deliberate omission of the version stops dependent work and returns the gap, rather than retrieving issue history. |
-| Focused check fails within authorized scope | Preserve that failure and make a bounded correction; affected checks and review follow, without automatic normal planning. |
-| Same controller begins issue B after A closeout | Reorient and establish B's authority/source/checkpoint; A's approval and evidence do not become B's. Applicable standing grants may be reused. |
-| Old active attempt is recovered after map adoption | Recover its original selected instructions and assignment, with no silent repin or duplicate dispatch. |
-| Candidate changes after a prior verdict | Reconcile affected evidence and obtain the required review of the actual candidate; do not transfer an unrelated verdict. |
-| Consumer permits already-satisfied no-change review | Fresh review disposes every original criterion against the existing remote source; no branch, capsule, commit or integration operation is performed solely for review. |
-| No-change review finds an unmet criterion | Retain the finding and use the ordinary task branch before implementation; no false completed disposition. |
-| No-change target source changes | Reconcile exact source and affected checks/review before closeout. |
-| Consumer requires a branch for review | Preserve its requirement; the shared exception does not override it. |
-| Issue-close response is unknown | Read authoritative issue state before retry; preserve the original result and avoid duplicate closeout actions. |
-
-Retain selected instruction/source identities, actual inputs and dispositions in
-the existing task/evidence location. Label static walkthroughs and synthetic
-replays as such; they do not prove host execution. The consumer owns actual launch,
-command and installed binding proof. Record requested and host-confirmed settings
-separately and terminal consumption through the selected return route. Idle wake
-is not implied or required unless that optional capability is selected.
+Authenticate upstream inputs/copies/declared relocations and actual imports/commands.
+Run affected documentation, link, identity and tool checks. Review changed normal
+route behavior and appropriate refusal/recovery cases; do not rerun every historical
+product scenario merely because shared instructions changed. Shared synthetic or
+source inspection evidence is not a live consumer run. Each consumer verifies its
+own actual normal route and installed obligations after explicit adoption.
 
 ## Replace an entangled adoption
 
-An owner-authorized replacement may proceed as bounded ordinary maintenance;
-it need not repair the obsolete adoption mechanism before retiring it. Preserve
-paused product work and historical evidence. Inspect actual dependencies and
-classify each local RI artifact as keep, remove or replace in the existing record.
+Retire selected creator/dispatcher/implementor/planning-review resources and conflicting
+local summaries only after repairing incoming references and local validators.
+Keep historical instructions recoverable and active attempts pinned; useful public
+helpers remain compatible even with historical names. Consumer permission changes
+need actual owner authority; RI publication supplies none. No capsule replacement
+ceremony, universal launcher, mandatory pseudocode or extra reporting framework.
 
-Keep independently needed product tests, permissions, standards and acceptance.
-Remove duplicate procedure and machinery used solely for the retired RI route.
-Repair incoming references and tests of the changed interfaces. Archive historical
-receipts without requiring them as inputs to new daily tasks. Do not delete
-unrelated local work or discard source/evidence needed for retention.
+## Evidence and limits
 
-Implement on a reversible branch, run meaningful focused checks and documentation
-checks, obtain one independent review through the simplest supported route, then
-use the owner-authorized integration commands. Verify current entrypoints select
-only this route and a compatible runtime. Retire obsolete prerequisite issues as
-superseded after integration eliminates their need; do not call their failed
-implementations successful. Keep product issues paused until separately resumed.
+Poker #557 demonstrated one-author normal work with independent review and 170
+candidate/installed tests. #558 was direct maintenance/bootstrap, not a second
+normal benchmark. Its build-intake derives references; review caught a cleanup
+retry defect that was corrected and re-reviewed. #556's import/schema issue is
+already fixed. These are consumer records, not fresh executions by this change.
+Paired #112/#90 observations confounded coordination, model and clocks, with token
+usage unavailable; they do not prove universal superiority or token savings.
+Nutrition has no equivalent pilot proof to inherit. See the [migration issue](https://github.com/MitCaine/repository-intelligence/issues/145)
+for retained scope and separate consumer obligations.

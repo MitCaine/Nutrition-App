@@ -14,14 +14,12 @@ the target `docs/local_project_map.md`, read its selected controller procedure
 and directed inputs, and authenticate existing task state before new work. Use
 the adopted revision, not automatically upstream main.
 
-Resolve the issue assignment, role selections, dispatcher route and task authority
-and any requested maintenance or experimental engineering route/implementation execution under the selected
-setup's kickoff-input
-rules, including selected task authority and accepted worker-launch policy;
-the controller confirms eligibility. Loading the skill supplies no grant. Record
-them in the existing
-checkpoint. Controller selection describes the owner's existing choice; it cannot
-switch this chat's model. Configure workers under the project's accepted policy.
+Resolve the issue/objective, author selection, independent-review route and task
+authority under the selected setup. The same author engineers and implements;
+no capsule creator, separate implementor or dispatcher is required. Loading this
+skill supplies no grant and cannot switch the running chat's model. Record
+resolved inputs in the existing task/checkpoint, not a new orientation artifact.
+Configure the fresh reviewer under the project's accepted policy.
 
 Reorient new or existing controllers under the selected daily intake rule; reconcile
 unfinished assignments before new work. Carry out the selected workflow and queue rules. Preserve selected instructions/configuration through

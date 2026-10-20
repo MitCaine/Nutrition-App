@@ -5,6 +5,12 @@ description: Orient an owner-designated Codex implementation dispatcher for one 
 
 # Codex dispatcher kickoff
 
+**Historical compatibility only.** Unselected for new author-and-reviewer work.
+Use this resource only for an existing pinned contract or an explicit retained
+compatibility assignment. It does not create a new required stage. Current work
+uses the project's adopted issue procedure and fresh independent review.
+
+
 On explicit owner invocation, record owner-selected Codex for this dispatcher
 separately from effective runtime telemetry. Automatic loading or incidental
 reference does not supply confirmation.

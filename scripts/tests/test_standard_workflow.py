@@ -150,7 +150,7 @@ def test_retired_model_evidence_cli_cannot_dispatch():
 def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
-    revision = "c25603685e66cd057db12026f3701e33cb456b60"
+    revision = "6058b143610c1902faf1bf832227359c9fc4f5a4"
     assert lock["instruction_revision"] == revision
     assert lock["revision"] == "8db4d56323db31f27af151c542967b4ef13a79af"
     from urllib.parse import unquote
@@ -179,143 +179,43 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     assert "00117a3b216b089e1e3a0a693c83efab9dcf12f0" in local_map
 
 
-def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intake():
-    import re
+def test_pinned_worker_document_selects_author_reviewer_and_retains_history():
     worker = (ROOT / "engineering/workflow/shared/worker-instructions.md").read_text()
-    headings = re.findall(r"^## (.+)$", worker, re.MULTILINE)
-    assert headings == ["Role index", "Shared worker rules", "Capsule builder", "Implementor",
-                        "Independent reviewer", "Codex dispatcher"]
-    assert "one authoritative role skill" in worker
-    for role in ("ri-capsule-creator", "ri-implementor", "ri-independent-reviewer", "ri-dispatcher"):
+    current, historical = worker.split("## Historical roles", 1)
+    assert "one Work author" in current and "fresh independent" in current
+    assert "ri-independent-reviewer/SKILL.md" in current
+    for role in ("ri-capsule-creator", "ri-implementor", "ri-dispatcher"):
+        assert role not in current
+        assert role in historical
         skill = (ROOT / f".agents/skills/{role}/SKILL.md").read_text()
-        locator = (ROOT / f".agents/skills/{role}/references/project-procedure.md").read_text()
-        assert "Shared worker" in locator and "complete assigned SKILL.md" in locator
-        assert "references/project-procedure.md" in skill
-    review = (ROOT / ".agents/skills/ri-independent-reviewer/SKILL.md").read_text()
-    assert "planning" in review and "full original-baseline integration diff" in review
-    implementor = (ROOT / ".agents/skills/ri-implementor/SKILL.md").read_text()
-    assert "same original obligation" in implementor.lower()
-    assert "Do not retrieve original issue/decision" in implementor
+        assert "historical" in skill.lower() and "unselected" in skill.lower()
+    reviewer = (ROOT / ".agents/skills/ri-independent-reviewer/SKILL.md").read_text()
+    assert "original" in reviewer and "actually assert its claimed outcome" in reviewer and "full" in reviewer
 
 
-def test_direct_work_route_instructions_keep_scope_and_review_controller_owned():
-    import re
 
+def test_normal_author_route_has_no_maintenance_or_planning_waiver():
     procedure = (ROOT / "engineering/workflow/shared/start-an-issue.md").read_text()
-    maintenance = procedure.split("## Optional maintenance route\n", 1)[1].split(
-        "## Capsule format\n", 1
-    )[0]
-    map_text = (ROOT / "docs/local_project_map.md").read_text()
-    normalized_map = " ".join(map_text.split())
-    work_skill = (ROOT / ".agents/skills/ri-work-kickoff/SKILL.md").read_text()
-    readme = (ROOT / "README.md").read_text()
-    authority = (ROOT / "engineering/workflow/AUTHORITY.md").read_text()
-
-    scenarios = (
-        "bounded objective, scope, required decisions and verification",
-        "an identified dependency update without unrelated updates",
-        "adoption of an inspected RI revision",
-        "bounded local workflow/tooling alignment",
-        "unresolved design decisions, substantial migration work or unexpected wider impact",
-        "pause that part for a controller decision",
-        "A failed check alone does not force capsule planning",
-        "The author cannot review its own implementation",
-        "waives no project-required qualification or acceptance controls",
-    )
-    maintenance_normalized = " ".join(maintenance.split())
-    readme_normalized = " ".join(readme.split())
-    for scenario in scenarios:
-        assert scenario in maintenance_normalized or scenario in readme_normalized, scenario
-    assert "start-an-issue.md#optional-maintenance-route" in normalized_map
-    assert "collaboration.spawn_agent" in normalized_map
-    assert "native Work policy" in normalized_map
-    assert "GitHub connector access is separate from task authority" in normalized_map
-    assert "Direct Work controller maintenance: permitted" in map_text
-
-    for direct_rule in (
-        "skips the builder, Codex dispatcher and separate implementor",
-        "Use the controller's existing selected model/effort, not the implementor default",
-        "Record this execution selection in the same task record",
-    ):
-        assert direct_rule in " ".join(maintenance.split())
-    assert "selected implementation actor address in-scope findings" in " ".join(procedure.split())
-    _assert_canonical_guidance(
-        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/start-an-issue.md",
-        "optional-maintenance-route", ("a fresh independent reviewer", "The author cannot review"),
-    )
-    assert "selected shared handoff message boundary governs all controller/dispatcher exchanges" in normalized_map.lower()
-    assert "qualification, review, integration, closeout and queue progress stay in controller records" in normalized_map
-    assert "requested route: maintenance" in normalized_map.lower()
-    assert "implementation execution: direct work controller" in normalized_map.lower()
-    assert "actual direct author" in authority
-    assert "reviewer independence" in authority
+    current = procedure.split("## Historical route compatibility", 1)[0]
+    assert "No mandatory capsule" in current
+    assert "fresh independent" in " ".join(current.split()).lower() and "author cannot" in current.lower()
+    assert "separate approval" in current and "authorized integration" in current
+    assert "Missing already-due" in current
+    # Historical CLI selections retain their exact permission controls, not a normal-task waiver.
+    assert task.DIRECT_WORK_MAP_PERMISSION == "Direct Work controller maintenance: permitted"
     assert "Decision: eligible" in _direct_work_maintenance_record()
-    assert "Actual direct author: selected Work controller chat fixture-author-a64c22" in _direct_work_maintenance_record()
-
-    route_example = re.search(r"```text\n(.*?)\n```", readme, re.DOTALL)
-    assert route_example is not None
-    assert "Requested route: maintenance" in route_example.group(1)
-    assert "Implementation execution: direct Work controller" in route_example.group(1)
-    assert "Codex dispatcher:" not in route_example.group(1)
-    assert "implementation execution" in work_skill.lower()
 
 
-def test_current_handoffs_route_controller_and_assigned_worker_sections():
-    current = {
-        "AGENTS.md": ("Shared worker rules", "future capsule"),
-        "docs/local_project_map.md": ("worker role index", "assigned dispatcher"),
-        "engineering/tasks/TEMPLATE.md": ("Shared worker rules", "Initial builder"),
-        "engineering/workflow/TASK_CAPSULE.md": ("Shared worker rules", "future capsule"),
-        "engineering/workflow/EXECUTION.md": ("Shared worker rules", "complete selected role"),
-        "engineering/workflow/AUTHORITY.md": ("Shared worker rules", "complete selected role"),
-        "engineering/workflow/README.md": ("Shared worker rules", "Initial builders"),
-        "engineering/README.md": ("Shared worker rules", "Initial builders"),
-        "engineering/workflow/shared/skill-templates/README.md": (
-            "daily publication sequence", "Shared worker"
-        ),
-    }
-    old_pin = "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd"
-    for name, required in current.items():
+
+def test_current_entrypoints_reach_one_daily_authority_and_reviewer_contract():
+    for name in ("AGENTS.md", "docs/local_project_map.md", "engineering/README.md",
+                 "engineering/workflow/README.md"):
         text = (ROOT / name).read_text()
-        normalized = " ".join(text.split())
-        normalized_lower = normalized.lower()
-        assert old_pin not in text, name
-        if name == "engineering/workflow/shared/skill-templates/README.md":
-            # Exact pinned shared bytes are verified separately; do not rewrite them.
-            for phrase in required:
-                assert phrase.lower() in normalized_lower
-        else:
-            _assert_canonical_guidance(ROOT, name, "engineering/workflow/shared/worker-instructions.md",
-                                       "role-index", ("Read each complete role skill and its locator",))
-    for name in ("WORKFLOW.md", "ROUTING.md", "EVIDENCE.md", "FAILURE_TAXONOMY.md"):
-        _assert_canonical_guidance(ROOT, "engineering/workflow/" + name,
-                                   "engineering/workflow/shared/worker-instructions.md",
-                                   "role-index", ("Read each complete role skill and its locator",))
-    map_text = (ROOT / "docs/local_project_map.md").read_text()
-    normalized_map = " ".join(map_text.split())
-    for role in ("controller and capsule builder", "planning reviewer",
-                 "implementation reviewer (intermediate/final)"):
-        assert f"| {role} | work | `gpt-6.1-sol` / `low` |" in normalized_map.lower()
-    assert "| implementor | codex | `gpt-6-luna` / `max` |" in normalized_map.lower()
-    assert "| dispatcher | codex | existing owner-selected chat settings |" in normalized_map.lower()
-    normalized_map_lower = normalized_map.lower()
-    assert "requested settings, launch evidence, host-confirmed settings and measured telemetry" in normalized_map_lower
-    assert "when effective telemetry is unavailable, record it as unverified" in normalized_map_lower
-    assert "existing external checkpoint" in normalized_map_lower
-    assert "selected shared handoff message boundary governs all controller/dispatcher exchanges" in normalized_map_lower
-    assert "qualification, review, integration, closeout and queue progress stay in controller records" in normalized_map_lower
-    assert "workflow tools contract" in normalized_map_lower
-    assert "collaboration.spawn_agent" in normalized_map
-    assert "policy acceptance does not establish measured execution" in normalized_map.lower()
-    assert "worker-instructions.md#role-index" in normalized_map
-    assert "../.agents/skills/ri-dispatcher/SKILL.md" in normalized_map
-    assert "start-an-issue.md#execute-serially" in normalized_map
-    assert "start-an-issue.md#wait-recover-and-resume" in normalized_map
-    assert "start-an-issue.md#evidence-eligibility-and-corrections" in normalized_map
-    assert "gpt-5.6-luna" not in map_text
-    capsule = (ROOT / "engineering/tasks/GH-290.md").read_text()
-    assert "task-specific environment override for GH-290 only" in " ".join(capsule.split())
-    assert "GH-290" not in map_text
+        assert "start-an-issue.md" in text and "worker-instructions.md" in text
+    worker = (ROOT / "engineering/workflow/shared/worker-instructions.md").read_text()
+    assert "reviewer skill" in worker and "Shared worker rules" in worker
+    assert (ROOT / ".agents/skills/ri-independent-reviewer/references/project-procedure.md").is_file()
+
 
 
 
@@ -771,10 +671,10 @@ def test_public_normal_validator_does_not_count_headings_only_inside_fences(tmp_
     )
 
     result = _run_public_record_validator(record, "normal")
-    assert result.returncode == 1
+    assert result.returncode == 0
     output = json.loads(result.stdout)
-    assert output["result"] == "FAIL"
-    assert "missing heading `## Prerequisites`" in output["error"]
+    assert output["result"] == "PASS"
+    assert "Prerequisites" not in output["validated_fields"]
 
 
 def test_public_validate_record_accepts_complete_maintenance_handoff(tmp_path):
@@ -1246,15 +1146,13 @@ def test_public_maintenance_validator_rejects_invalid_base_eligibility_and_desti
         assert expected in output["error"]
 
 
-def test_brief_maintenance_record_cannot_fall_through_to_normal(tmp_path):
-    record = tmp_path / "maintenance-request.md"
-    record.write_text(_maintenance_task_record(), encoding="utf-8")
+def test_legacy_maintenance_shape_is_readable_as_normal_without_maintenance_authority(tmp_path):
+    record = tmp_path / "brief.md"
+    record.write_text(_maintenance_task_record())
     result = _run_public_record_validator(record)
-    assert result.returncode == 1
-    output = json.loads(result.stdout)
-    assert output["result"] == "FAIL"
-    assert "route=normal" in output["error"]
-    assert "missing heading `## Source and scope`" in output["error"]
+    assert result.returncode == 0, result.stdout
+    assert json.loads(result.stdout)["route"] == "normal"
+    assert "validated_selection_fields" not in json.loads(result.stdout)
 
 
 def test_validate_record_handler_is_read_only_and_review_gate_stays_candidate_bound(tmp_path, capsys):
@@ -1278,29 +1176,18 @@ def test_validate_record_handler_is_read_only_and_review_gate_stays_candidate_bo
         )
 
 
-def test_daily_entrypoints_and_six_heading_task_format():
+def test_concise_normal_record_and_historical_six_heading_records_survive():
     import re
-    for name in ("AGENTS.md", "docs/local_project_map.md", "engineering/README.md",
-                 "engineering/workflow/README.md",
-                 "engineering/workflow/shared/skill-templates/README.md"):
-        text = (ROOT / name).read_text()
-        if name == "engineering/workflow/shared/skill-templates/README.md":
-            assert re.search(r"\[Start an issue\]\([^)]*start-an-issue\.md\)", text)
-        else:
-            assert re.search(r"\[[^\]]*daily[^\]]*\]\([^)]*start-an-issue\.md\)", text)
-    expected = ["Objective", "Source and scope", "Acceptance", "Checks", "Prerequisites",
-                "Handoff and closeout"]
-    for name in ("TEMPLATE.md", "GH-261.md", "GH-290.md"):
-        text = (ROOT / "engineering/tasks" / name).read_text()
-        assert re.findall(r"^## (.+)$", text, re.MULTILINE) == expected
-        checks = text.split("## Checks\n", 1)[1].split("## Prerequisites", 1)[0]
-        assert "### Check attempts" in checks
-        for field in ("Exact source / diff identity", "Command / environment", "Status / exit code",
-                      "Log location / SHA-256", "Eligibility / disposition"):
-            assert field in checks
-        for rule in ("including", "failure", "skip", "rerun", "untracked", "latest eligible",
-                     "Unknown exit", "source mismatch", "logs"):
-            assert rule in checks
+    template = (ROOT / "engineering/tasks/TEMPLATE.md").read_text()
+    assert "not a mandatory schema" in template
+    for name in ("GH-261.md", "GH-290.md"):
+        historical = (ROOT / "engineering/tasks" / name).read_text()
+        assert re.findall(r"^## (.+)$", historical, re.MULTILINE) == list(task.TASK_RECORD_NORMAL_HEADINGS)
+    result = _run_public_record_validator(ROOT / "engineering/tasks/GH-432.md")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["route"] == "normal"
+    assert "Prerequisites" not in json.loads(result.stdout)["validated_fields"]
+
 
 
 def test_all_affected_local_directed_links_and_anchors_resolve():
@@ -1345,7 +1232,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/capsule-queue/")
+              "6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -1353,7 +1240,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     import hashlib
     lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
     current = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text().split(
-        "## Current selection: c25603685e66cd057db12026f3701e33cb456b60", 1)[1]
+        "## Current selection: 6058b143610c1902faf1bf832227359c9fc4f5a4", 1)[1]
     expected = {"docs/skill-templates/capsule-queue/" + leaf
                 for leaf in ("SKILL.md", "references/project-procedure.md", "scripts/run_and_queue.py")}
     assert {row["source"] for row in lock["optional_queue_resources"]} == expected
@@ -1373,7 +1260,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
-    revision = "c25603685e66cd057db12026f3701e33cb456b60"
+    revision = "6058b143610c1902faf1bf832227359c9fc4f5a4"
     lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
     declared = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text().split(
         f"## Current selection: {revision}", 1)[1]
@@ -1387,115 +1274,22 @@ def test_selected_optional_upstream_relocations_are_pinned_and_declared():
     assert f"/{revision}/docs/consumer-guide.md" in setup
 
 
-def test_controller_permissions_waiting_and_external_closeout_contract():
-    import re
+def test_map_keeps_nutrition_controls_and_shared_evidence_recovery_owners():
     text = (ROOT / "docs/local_project_map.md").read_text()
-    normalized = " ".join(text.split())
-    headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
-    assert headings == ["Selected instructions", "Runtime", "Nutrition permissions and routing",
-                        "Standards and checks", "Storage and recovery", "Integration and closeout", "Consolidated engineering selection"]
-    for authority in (
-        "engineering/workflow/shared/start-an-issue.md#execute-serially",
-        "engineering/workflow/shared/start-an-issue.md#work-to-codex-implementation-handoff",
-        "engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs",
-        "engineering/workflow/shared/start-an-issue.md#execution-routing-models-and-efforts",
-        "engineering/workflow/shared/start-an-issue.md#publish-the-task-branch-and-handoffs",
-        "engineering/workflow/shared/start-an-issue.md#capsule-format",
-        "engineering/workflow/shared/start-an-issue.md#complete-the-phases",
-        "engineering/workflow/shared/start-an-issue.md#additional-assignments-and-orientation",
-        "engineering/workflow/shared/start-an-issue.md#wait-recover-and-resume",
-        "engineering/workflow/shared/start-an-issue.md#handle-model-capacity",
-        "engineering/workflow/shared/start-an-issue.md#diagnose-blockers-and-recover",
-        "engineering/workflow/shared/start-an-issue.md#checkpoint-and-resume",
-        "engineering/workflow/shared/start-an-issue.md#keep-completion-records-external",
-        "engineering/workflow/shared/worker-instructions.md#shared-worker-rules",
-        "engineering/workflow/shared/worker-instructions.md#capsule-builder",
-        "engineering/workflow/shared/worker-instructions.md#implementor",
-        "engineering/workflow/shared/worker-instructions.md#independent-reviewer",
-        "engineering/workflow/shared/worker-instructions.md#codex-dispatcher",
-        "engineering/workflow/shared/capsule-controller-workflow.md#replace-an-entangled-adoption",
-        "engineering/workflow/AUTHORITY.md#current-interfaces",
-        "engineering/workflow/AUTHORITY.md#state-concurrency-and-recovery",
-        "operations/testing.md#main-qualification-profiles",
-        "operations/session-contract.md#session-end",
-        "engineering/workflow/shared/SOURCE.md",
-        "engineering/tooling/RI.md#pinned-installation-and-private-access",
-        "engineering/tooling/RI.md#navigate-an-exact-source-selection",
-        "engineering/tooling/RI.md#comparison-and-review",
-        "engineering/workflow/TASK_CAPSULE.md#historical-capsule-contracts",
-        "engineering/workflow/STATES.md#terminal-recording",
-        "engineering/capsules/HISTORY.md",
-    ):
-        if authority in normalized:
-            continue
-        # Shared rules remain reachable through the selected whole controller guide/role index.
-        # The consumer map need not duplicate every generic anchor. Validate the real owner.
-        path, anchor = authority.split("#", 1)
-        assert path in ("engineering/workflow/shared/start-an-issue.md",
-                        "engineering/workflow/shared/worker-instructions.md")
-        assert path in normalized
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("selected_workflow_links", ROOT / "scripts/validate-docs.py")
-        validator = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(validator)
-        assert anchor in validator._scan_document(ROOT / path)[1]
-    for nutrition_control in (
-        "The controller alone owns Git",
-        "macOS arm64 with Python 3.14",
-        "controller-owned external manifest",
-        "`--runtime`",
-        "nested macOS network-denied sandbox",
-        "do not substitute another historical or upstream revision",
-        "When effective telemetry is unavailable, record it as unverified",
-        "Dispatch options establish a request, not a worker launch or effective settings",
-        "candidate text, a task file or a passing check cannot create that external task authorization",
-            "retain the already owner-confirmed selected Work controller chat without asking again for that selection",
-            "it establishes selected Work configuration, not external Nutrition task authority or provider-effective telemetry",
-        "No fallback is selected here",
-            "route identity and delivery state retained in the existing operational record",
-            "selected shared handoff message boundary governs all controller/dispatcher exchanges",
-            "qualification, review, integration, closeout and queue progress stay in controller records",
-        "Main qualification",
-        "App `4708441`",
-        "rename-aware changed-path inventory",
-        "Ordinary CI is a separate regression signal",
-        "A changed C requires affected checks and independent review",
-        "~/.nutrition-app/task-controller/issue-N.json",
-        "NUTRITION_TASK_STATE_DIR",
-        "stopped under their original authority",
-        "The completed fresh #246 attempt is distinct",
-        "Current status belongs to the live",
-    ):
-        assert nutrition_control.lower() in normalized.lower()
-    for rule in ("exact-candidate-SHA", "issues/246", "issues/256",
-                 "not blanket Git, issue or settings permission"):
-        assert rule in normalized
-    _assert_canonical_guidance(
-        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/start-an-issue.md",
-        "complete-the-phases", ("Close only when all outcomes pass", "Verify actual issue closure", "safely delete",
-                                "Verify actual issue closure", "cleanup", "partial closeout"),
-    )
-    assert "record partial closeout when an obligation remains unresolved" in normalized.lower()
-    assert "gpt-6.1-sol` / `low" in normalized
-    assert "gpt-6-luna` / `max" in normalized
-    assert "NUTRITION_RI_RUNTIME" not in normalized
-    for name in ("docs/local_project_map.md", "engineering/README.md", "engineering/tasks/TEMPLATE.md"):
-        _assert_canonical_guidance(ROOT, name, "engineering/workflow/shared/start-an-issue.md",
-                                   "keep-completion-records-external",
-                                   ("Finalize tracked preparation records before", "exact-candidate qualification and review",
-                                    "label preparation snapshots historical", "live issue and external controller checkpoint",
-                                    "Record subsequent check attempts", "Do not create another candidate merely"))
-    task_text = (ROOT / "engineering/tasks/GH-261.md").read_text()
-    assert "Historical preparation snapshot" in task_text
-    assert "controller-state/issue-261.json" in task_text
-    assert "/Users/" not in task_text and "/private/tmp/" not in task_text
-    assert "../evidence/" not in task_text
-    engineering = " ".join((ROOT / "engineering/README.md").read_text().split()).lower()
-    assert ("for fresh lightweight `standard` tasks, obtain ordinary ci through a pull request "
-            "from the published task branch to `main`") in engineering
-    assert "../docs/operations/testing.md#main-qualification-profiles" in engineering
-    assert "this ordinary-ci requirement is separate from the controller-owned guarded integration" in engineering
-    assert "a pull request is optional when the controller's guarded integration is used" not in engineering
+    for name in ("scripts/task", "scripts/run-review.sh", "task_output_cleanup.py",
+                 "operations/testing.md#main-qualification-profiles",
+                 "operations/session-contract.md#session-end", "App `4708441`",
+                 "state-concurrency-and-recovery", "installed", "#wait-recover-and-resume"):
+        assert name in text
+    current = text.split("## Nutrition permissions and routing", 1)[1].split("### Historical route compatibility", 1)[0]
+    assert "gpt-6.1-sol" in current and "collaboration.spawn_agent" in current
+    assert "gpt-6-luna" not in current
+    assert "author cannot review its own work" in current
+    for pin in ("20a5039e7731eaa1303443b782caa81a383a0af1",
+                "8db4d56323db31f27af151c542967b4ef13a79af",
+                "00117a3b216b089e1e3a0a693c83efab9dcf12f0"):
+        assert pin in text
+
 
 
 def test_historical_issue_wording_tracks_attempts_not_live_issue_state():
@@ -1581,7 +1375,7 @@ def test_task_authority_session_intake_and_toolchain_rules_are_explicit():
     for phrase in (
         "current remote main",
         "live issue",
-        "selected normal capsule or maintenance handoff",
+        "concise normal task record",
         "authenticated external controller state",
         "historical toml capsules and history only when the current attempt or a directed recovery dependency uses them",
         "repository history-integrity validation remains required",
@@ -1605,45 +1399,21 @@ def test_task_authority_session_intake_and_toolchain_rules_are_explicit():
         assert phrase in session_start
 
 
-def test_project_map_records_per_worker_launch_disposition():
+def test_project_map_records_review_launch_disposition_without_invented_telemetry():
     text = (ROOT / "docs/local_project_map.md").read_text()
-    routing = " ".join(
-        text.split("## Nutrition permissions and routing\n", 1)[1]
-        .split("\n## ", 1)[0]
-        .split()
-    ).lower()
-    for phrase in (
-        "owner-selected requested settings",
-        "dispatch options establish a request, not a worker launch or effective settings",
-        "requested settings, launch evidence, host-confirmed settings and measured telemetry",
-        "when effective telemetry is unavailable, record it as unverified",
-        "do not infer mode, model or effort from tools",
-        "unavailable capability required by the authenticated task goes back to the controller",
-    ):
-        assert phrase in routing
-
-    agents = (ROOT / "AGENTS.md").read_text().lower()
-    assert "local map's per-worker launch settings and confirmation policy" in agents
-    assert "docs/local_project_map.md#nutrition-permissions-and-routing" in agents
+    for phrase in ("owner-confirmed", "host-confirmed", "effective telemetry", "Actual rejection/mismatch",
+                   "no substitute model", "Never infer environment", "accepted-worker-launch-routes"):
+        assert phrase in text
 
 
-def test_project_map_records_role_correct_nutrition_dispatch():
+
+def test_project_map_normal_mapping_has_only_author_and_independent_reviewer():
     text = (ROOT / "docs/local_project_map.md").read_text()
-    routing = " ".join(text.split("## Nutrition permissions and routing\n", 1)[1].split("\n## ", 1)[0].split())
-    routing_lower = routing.lower()
-    _assert_canonical_guidance(
-        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/start-an-issue.md",
-        "complete-the-phases", ("Independent reviewer", "full change", "implementation correctness", "test adequacy"),
-    )
-    _assert_canonical_guidance(
-        ROOT, "AGENTS.md", "engineering/workflow/shared/start-an-issue.md",
-        "optional-maintenance-route", ("controller confirms eligibility", "fresh independent reviewer", "The author cannot review"),
-    )
-    assert "selected shared handoff message boundary governs all controller/dispatcher exchanges" in routing_lower
-    assert "qualification, review, integration, closeout and queue progress stay in controller records" in routing_lower
-    assert "direct work controller maintenance: permitted" in routing_lower
-    assert "collaboration.spawn_agent" in routing_lower
-    assert "native work policy" in routing_lower
+    mapping = text.split("| Actor |", 1)[1].split("Explicit owner overrides", 1)[0]
+    assert mapping.count("`gpt-6.1-sol`") == 2
+    assert "Single engineering and coding author" in mapping and "Fresh independent reviewer" in mapping
+    assert "Luna" not in mapping and "Dispatcher" not in mapping and "Planning reviewer" not in mapping
+
 
 
 def test_current_task_docs_preserve_historical_qualification_without_selecting_it():
@@ -1681,9 +1451,9 @@ def test_preparation_guidance_uses_selected_owner_and_existing_record_carries_ou
     owner = "engineering/workflow/shared/start-an-issue.md"
     for guide in ("docs/local_project_map.md", "engineering/tooling/RI.md", "engineering/tasks/TEMPLATE.md"):
         _assert_canonical_guidance(ROOT, guide, owner, "task-directed-source-preparation",
-                                  ("consumer-selected compatible Tree-sitter route",
-                                   "Missing execution or a source mismatch",
-                                   "explicit controller-visible owner disposition"))
+                                  ("compatible Tree-sitter source-navigation route",
+                                   "where applicable and useful",
+                                   "selected operation"))
     packet = tmp_path / "packet.json"
     packet.write_text(json.dumps({"revision": "a" * 40, "mapping_status": "navigation_only",
                                   "raw_evidence": {"path": "raw.json", "sha256": "b" * 64},
@@ -1711,37 +1481,62 @@ def test_preparation_guidance_uses_selected_owner_and_existing_record_carries_ou
     assert json.loads(result.stdout)["route"] == "normal"
 
 
-def test_adopted_role_defaults_and_mechanical_corrections_have_canonical_owners():
-    _assert_canonical_guidance(
-        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/new-project-setup.md",
-        "role-model-and-effort-defaults", (
-            "Planning reviewer", "Implementation reviewer (intermediate and final)",
-            "gpt-6.1-sol / low", "gpt-6-luna / max", "distinct fresh nonauthor instances",
-            "Existing owner-selected chat model / effort", "explicitly request that pair",
-            "An omitted task override uses selected project defaults",
-        ))
-    _assert_canonical_guidance(
-        ROOT, "docs/local_project_map.md", "engineering/workflow/shared/start-an-issue.md",
-        "controller-authored-mechanical-corrections", (
-            "authorized edit scope and project/owner permissions cover",
-            "AUTHENTICATED ACCEPTED selection, never merely the revision observed in execution",
-            "Preserve test intent and original expected behavior",
-            "acceptance meaning, compatibility behavior, security or evidence acceptance does not qualify",
-            "never edit concurrently with an active worker or bypass a frozen candidate",
-            "fresh nonauthor review must cover the actual corrected candidate",
-        ))
+def test_corrections_and_model_mapping_have_one_current_owner():
+    setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
+    mapping = setup.split("### Role model and effort defaults", 1)[1].split("### Access and task authority", 1)[0]
+    assert mapping.count("`gpt-6.1-sol / low`") == 2
+    assert "explicit applicable owner overrides" in mapping
+    daily = (ROOT / "engineering/workflow/shared/start-an-issue.md").read_text()
+    phases = daily.split("### Complete the phases", 1)[1].split("### Command readiness", 1)[0]
+    assert "same author corrects in-scope defects" in phases
+    assert "full integration scope" in " ".join(phases.split()) and "independent PASS" in phases
+
 
 
 def test_pinned_external_destinations_are_complete_urls_without_nested_relocation():
     import re
     from urllib.parse import unquote
     lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
-    text = (ROOT / "engineering/workflow/shared/skill-templates/README.md").read_text()
-    match = re.search(r"\[closeout checks\]\(([^)]+)\)", text)
-    expected = ("https://github.com/MitCaine/repository-intelligence/blob/"
-                "c25603685e66cd057db12026f3701e33cb456b60/docs/skill-templates/"
-                "capsule-preflight/references/evidence-contract.md#closeout-and-installed-workflow-probes")
-    assert match is not None and match.group(1) == expected
     for item in lock["resources"]:
         for target in re.findall(r"\]\((https?://[^)]+)\)", (ROOT / item["destination"]).read_text()):
             assert unquote(target).count("https://") + unquote(target).count("http://") == 1, target
+            if target.startswith("https://github.com/MitCaine/repository-intelligence/blob/"):
+                assert (lock["instruction_revision"] in target or target in {
+                    "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/start-an-issue.md",
+                    "https://github.com/MitCaine/repository-intelligence/blob/c25603685e66cd057db12026f3701e33cb456b60/docs/capsule-controller-workflow.md"
+                })
+
+
+
+@pytest.mark.parametrize("body", ["", "  ", "<!-- hidden only -->", "```bash\n<!-- hidden -->\n```", "\x00"])
+def test_normal_record_rejects_empty_hidden_and_nul_payloads(tmp_path, body):
+    record = tmp_path / "empty.md"
+    record.write_text(body)
+    result = _run_public_record_validator(record)
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["result"] == "FAIL"
+
+
+@pytest.mark.parametrize("body", [
+    "Correct the documented command; exact base and outcomes remain in the owner record.",
+    "修正文档命令并验证现有行为。",
+    "# Bounded issue\n\n## Design choice\n\nUse the existing adapter.\n\n## Expected proof\n\nRun focused native checks.",
+])
+def test_normal_record_accepts_prose_and_custom_headings_without_capsule_shape(tmp_path, body):
+    record = tmp_path / "concise.md"
+    record.write_text(body)
+    before = record.read_bytes()
+    result = _run_public_record_validator(record)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["route"] == "normal"
+    assert record.read_bytes() == before
+
+
+def test_normal_record_refuses_symlinked_source(tmp_path):
+    record = tmp_path / "source.md"
+    record.write_text("An actual bounded task.")
+    link = tmp_path / "link.md"
+    link.symlink_to(record)
+    result = _run_public_record_validator(link)
+    assert result.returncode == 1
+    assert "ordinary readable file" in json.loads(result.stdout)["error"]

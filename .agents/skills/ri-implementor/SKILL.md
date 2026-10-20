@@ -5,6 +5,12 @@ description: Implement an accepted capsule, engineering assignment or maintenanc
 
 # Implementor
 
+**Historical compatibility only.** Unselected for new author-and-reviewer work.
+Use this resource only for an existing pinned contract or an explicit retained
+compatibility assignment. It does not create a new required stage. Current work
+uses the project's adopted issue procedure and fresh independent review.
+
+
 Read the [selected common contract](references/project-procedure.md), then the whole
 accepted capsule, controller-approved maintenance handoff, or accepted engineering
 specification with its selected bounded assignment, supplied source/runtime

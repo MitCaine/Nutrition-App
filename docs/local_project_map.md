@@ -2,30 +2,25 @@
 
 ## Selected instructions
 
-This is the sole project-root local execution map. The selected and adopted RI instruction set for
-future task intake is pinned at `c25603685e66cd057db12026f3701e33cb456b60`: controllers use the complete
-[daily issue procedure](../engineering/workflow/shared/start-an-issue.md) and
-[setup guidance](../engineering/workflow/shared/new-project-setup.md); workers use the selected
-[worker role index](../engineering/workflow/shared/worker-instructions.md#role-index) and assigned
-section. The [Shared worker rules](../engineering/workflow/shared/worker-instructions.md#shared-worker-rules)
-and complete selected role skills/locators govern worker inputs, scope and return duties. Preserve each active attempt's
-selected instruction inputs through acceptance. A future-intake pin does not repin an active or
-historical attempt.
+The selected instruction set for future task intake is pinned at `6058b143610c1902faf1bf832227359c9fc4f5a4`.
+Use the complete [daily issue procedure](../engineering/workflow/shared/start-an-issue.md)
+and [SOURCE record](../engineering/workflow/shared/SOURCE.md). One author performs source-grounded
+engineering and coding in a concise existing task record, followed by one fresh independent
+reviewer. No capsule creator, dispatcher, separate implementor or planning-review stage is selected.
+[Common and reviewer inputs](../engineering/workflow/shared/worker-instructions.md#role-index)
+own review duties. Setup is conditional on a changed binding. Historical resources remain
+reachable for pinned attempts; new instruction selection never repins active work.
 
-The adopted [SOURCE record](../engineering/workflow/shared/SOURCE.md) is authoritative for upstream
-bytes, local transformations/relocations, kickoff-folder identities and compatible runtime. The selected
-[workflow tools contract](../engineering/workflow/shared/workflow-tools.md) documents optional helpers and
-consumer-owned command evidence. Pins
-identify selected inputs; they do not grant permission or create a receipt or approval mechanism.
-The [adoption/replacement guide](../engineering/workflow/shared/capsule-controller-workflow.md#replace-an-entangled-adoption)
-applies only to owner-authorized setup or replacement, not ordinary issue intake.
+The [workflow tools contract](../engineering/workflow/shared/workflow-tools.md) describes
+independent helpers. Installed instruction hashes/declared link relocations derive from
+`engineering/tooling/ri-helper-lock.json`; instruction and executable runtime revisions are separate.
 
 ## Runtime
 
 ### Selected navigation producer
 
 RI supplies source navigation and comparison support; it grants no edit, qualification,
-review or approval authority. Normal capsule preparation follows the selected
+review or approval authority. Normal source preparation follows the selected
 [task-directed source-preparation rule](../engineering/workflow/shared/start-an-issue.md#task-directed-source-preparation). The compatible producer is separately pinned in
 [the RI runtime guide](../engineering/tooling/RI.md#pinned-installation-and-private-access)
 and [runtime lock](../engineering/tooling/ri-lock.json): revision
@@ -49,10 +44,10 @@ evidence only under the project's accepted equivalence policy when the source, t
 and environment remain eligible. RI locations are navigation hints; inspect the actual candidate
 diff and source for acceptance.
 
-Use the existing `./scripts/ri query` route for applicable normal capsule preparation under that
+Use the existing `./scripts/ri query` route where applicable and useful under that
 rule, retaining its source-bound packet and raw-output references in the task. Elsewhere it remains
 optional when useful; use the guide's exact-source selection and evidence rules for arguments and
-output. Required-operation inability needs the selected owner disposition before dependent dispatch;
+output. A task-required operation that is unavailable needs owner disposition before dependent work;
 direct inspection supplements required operation evidence. Documentation-only maintenance needs no parse.
 
 
@@ -60,11 +55,11 @@ direct inspection supplements required operation evidence. Documentation-only ma
 
 Optional helper source revision: `8db4d56323db31f27af151c542967b4ef13a79af`
 
-The authenticated RI checkout `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/8db4d56323db31f27af151c542967b4ef13a79af-gh422-clean` is the controller-selected clean same-revision checkout at the accepted revision above. The separately provisioned helper environment is `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-helper-environments/8db4d56323db31f27af151c542967b4ef13a79af-nutrition-runtime`; use its `bin/python`, never RI's development venv. The reproducible setup/verification command is `python3 scripts/setup-ri-helpers.py --source SOURCE --environment ENVIRONMENT --mode provision|verify` from the Nutrition root. The tracked `engineering/tooling/ri-helper-lock.json` binds exact source and resource identities; its `instruction_revision` selects the separately adopted c256 instruction resources while `revision` retains the unchanged8db executable helper binding; upstream `pyproject.toml` owns dependency definitions. Provisioning is explicit controller work, never an automatic wrapper fallback or runtime upgrade. Keep historical e0/949 source bindings and old requests untouched.
+The authenticated RI checkout `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-source-bindings/8db4d56323db31f27af151c542967b4ef13a79af-gh422-clean` is the controller-selected clean same-revision checkout at the accepted revision above. The separately provisioned helper environment is `/Users/mipoo/.codex/.chatgpt-projects/g-p-6a4ec47ceae88191bed1aad746811fd5/ri-helper-environments/8db4d56323db31f27af151c542967b4ef13a79af-nutrition-runtime`; use its `bin/python`, never RI's development venv. The reproducible setup/verification command is `python3 scripts/setup-ri-helpers.py --source SOURCE --environment ENVIRONMENT --mode provision|verify` from the Nutrition root. The tracked `engineering/tooling/ri-helper-lock.json` binds exact source and resource identities; its `instruction_revision` selects the separately adopted 6058b14 instruction resources while `revision` retains the unchanged8db executable helper binding; upstream `pyproject.toml` owns dependency definitions. Provisioning is explicit controller work, never an automatic wrapper fallback or runtime upgrade. Keep historical e0/949 source bindings and old requests untouched.
 
 Selected helper subprocesses authenticate exact source closure, interpreter and installed dependency identities before use. Public generation/preparation/execution/intake is supported only when its actual installed binding and acceptance proof are recorded, not by copying instructions. The completed consolidated pilot is retained in GH-422 and its external closeout evidence; later assignments still require their own authenticated execution binding and acceptance proof. The navigation producer/runtime and native guard below keep their independent selections.
 
-Use the selected `section_reader`, `adoption`, `worker_execution` and `obligation_reconciliation` interfaces only through their authenticated source/environment bindings and the [workflow-tools contract](../engineering/workflow/shared/workflow-tools.md). New accepted capsule/engineering derivation requires the declared Markdown parser stack. No manual dependency inventory, substituted parser, current-development environment or silent operation fallback is selected.
+Use the selected `section_reader`, `adoption`, `worker_execution` and `obligation_reconciliation` interfaces only through their authenticated source/environment bindings and the [workflow-tools contract](../engineering/workflow/shared/workflow-tools.md). Retained capsule/engineering derivation requires the declared Markdown parser stack. No manual dependency inventory, substituted parser, current-development environment or silent operation fallback is selected.
 
 The additive accepted owning-definition path uses the same Nutrition wrapper: create the detached
 workspace from the controller seed, then run `generate --request SEED --definition DEFINITION
@@ -114,112 +109,42 @@ Source/module identity is checked before use; drift refuses, without installatio
 
 ## Nutrition permissions and routing
 
-The owner sets product intent, accepted risk and integration permission. The controller
-authenticates the live external Nutrition task authorization and the current task/checkpoint
-before dependent work; candidate text, a task file or a passing check cannot create that external
-task authorization. The controller alone owns Git and task-stage decisions. Preserve unrelated
-edits and historical attempt state. A task
-branch or other action requires its current explicit grant; this map is not blanket Git, issue
-or settings permission.
+The owner sets intent, accepted risk and task/publication/integration permission. Authenticate
+live issue authority, source and the actual checkpoint/assignment before dependent work. Preserve
+unrelated edits, parked branches, paused queues and active instruction pins. Connector access,
+a task file or passing check grants no additional Git, host/account/security or disclosure authority.
+Use applicable recorded grants; request only uncovered actions.
+
+| Actor | Requested environment | Requested model / effort |
+| --- | --- | --- |
+| Single engineering and coding author | Work | `gpt-6.1-sol` / `low` |
+| Fresh independent reviewer | Work | `gpt-6.1-sol` / `low` |
+
+Explicit owner overrides apply. Reuse accepted unchanged settings. Record owner-confirmed,
+requested, host-confirmed and effective telemetry separately in existing external state; unknown
+telemetry proves neither compliance nor mismatch. Never infer environment from tool names.
+Nutrition accepts native `collaboration.spawn_agent` for fresh independent review with the selected
+model/effort explicitly requested under the [native launch policy](../engineering/workflow/shared/new-project-setup.md#accepted-worker-launch-routes).
+This is route acceptance, not measured execution. Actual rejection/mismatch returns to the author;
+no substitute model or fabricated role is permitted. The author cannot review its own work.
+
+Use the shared [serial phase sequence](../engineering/workflow/shared/start-an-issue.md#complete-the-phases),
+[waiting/recovery](../engineering/workflow/shared/start-an-issue.md#wait-recover-and-resume),
+and [evidence eligibility](../engineering/workflow/shared/start-an-issue.md#evidence-eligibility-and-corrections).
+The author reads this map, the complete daily procedure, original issue and necessary local owners.
+The reviewer receives the original requirements, concise task, exact full integration diff,
+actual evidence, common contract and complete selected reviewer skill/locator. Product changes
+also use [onboarding](project/onboarding.md#before-any-implementation), domain invariants and
+task-relevant database/privacy/iOS standards. A link is not a requirement to read unrelated guides.
+
+### Historical route compatibility
 
 Direct Work controller maintenance: permitted
 
-GitHub connector access is separate from task authority. Use `@GitHub` when supported or another
-permitted GitHub route. An owner may explicitly select the [reusable task grant](../engineering/workflow/shared/new-project-setup.md#access-and-task-authority)
-for named issues; authenticate its applicability and retain the selection in the existing external
-checkpoint. Loading a skill or this map supplies no grant. Existing Nutrition owner-bound task
-authorization and protected procedures still govern publication, qualification, review and integration;
-no additional host/account/security permissions or cross-chat disclosure are implied.
-
-Use the selected [daily procedure](../engineering/workflow/shared/start-an-issue.md) and
-[worker role index](../engineering/workflow/shared/worker-instructions.md#role-index)
-for execution and role duties.
-The selected shared handoff message boundary governs all controller/dispatcher exchanges;
-qualification, review, integration, closeout and queue progress stay in controller records.
-
-Select eligibility and the brief handoff under the
-[canonical maintenance rule](../engineering/workflow/shared/start-an-issue.md#optional-maintenance-route).
-Direct Work controller maintenance is available only
-while the exact permission line above remains present once in this section and current external
-authority and live checkpoint are authenticated. A direct selection records `Requested route:
-maintenance` and `Implementation execution: direct Work controller` in that task record, plus the
-actual author in the existing handoff or operational record. Execution duties and independent review follow that same canonical maintenance rule.
-The adopted [mechanical-correction rule](../engineering/workflow/shared/start-an-issue.md#controller-authored-mechanical-corrections)
-applies only within covered controller edit authority and reconciled editor ownership; it does not replace separately permitted direct maintenance.
-This map gives no additional task, host, Git, issue or settings authority.
-
-The project-scoped Codex kickoff folders are `.agents/skills/ri-work-kickoff/` and
-`.agents/skills/ri-codex-dispatcher-kickoff/`. Their presence does not prove fresh Codex discovery or
-register a Work skill. Verify each host through its supported selector/import route; use direct
-document-based kickoff when Work registration is unavailable or unverified. Each folder's selected
-project-procedure locator links the optional [workflow tools contract](../engineering/workflow/shared/workflow-tools.md);
-the linked modules remain optional source tools and are not host skills.
-
-The selected role settings are owner-authorized requests resolved through the adopted
-[role and review-mode mapping](../engineering/workflow/shared/new-project-setup.md#role-model-and-effort-defaults):
-
-| Role | Environment | Model / effort |
-| --- | --- | --- |
-| Controller and capsule builder | Work | `gpt-6.1-sol` / `low` |
-| Planning reviewer | Work | `gpt-6.1-sol` / `low` |
-| Implementation reviewer (intermediate/final) | Work | `gpt-6.1-sol` / `low` |
-| Implementor | Codex | `gpt-6-luna` / `max` |
-| Dispatcher | Codex | Existing owner-selected chat settings |
-
-The table records owner-selected requested settings. Direct Work controller implementation continues
-with the existing controller settings; it neither creates an implementor launch nor transfers
-implementor settings to the controller. Dispatch options establish a request, not a worker launch or
-effective settings. Retain the already owner-confirmed selected Work controller chat without asking
-again for that selection. It establishes selected Work configuration, not external Nutrition task
-authority or provider-effective telemetry. Preserve the
-distinction between requested settings, launch evidence, host-confirmed settings and measured
-telemetry in the existing external checkpoint. When effective telemetry is unavailable, record it as
-unverified. Do not
-infer mode, model or effort from tools, selector, app name, backing metadata or another worker's
-confirmation.
-
-Nutrition selects the [native Work policy](../engineering/workflow/shared/new-project-setup.md#accepted-worker-launch-routes)
-for builders and reviewers: `collaboration.spawn_agent` is accepted when requested with the
-configured model and effort. Policy acceptance does not establish measured execution. Actual launch
-failure, confirmed mismatch or substitution, or an unavailable capability required by the
-authenticated task goes back to the controller; no fallback is selected here. An owner-authorized
-cross-host assignment uses its authenticated messaging and result-recovery route, with route identity
-and delivery state retained in the existing operational record. Work-to-Codex implementor results
-return through the assigned dispatcher to the Work controller. Do not publish private conversation
-identifiers.
-
-The selected [serial assignments](../engineering/workflow/shared/start-an-issue.md#execute-serially),
-[waiting/recovery](../engineering/workflow/shared/start-an-issue.md#wait-recover-and-resume) and
-[evidence rules](../engineering/workflow/shared/start-an-issue.md#evidence-eligibility-and-corrections)
-own shared execution. The [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index),
-and its selected [dispatcher skill](../.agents/skills/ri-dispatcher/SKILL.md) own role duties. Nutrition keeps owner authority, actor/model requests, permissions, profile
-floors, secret controls and protected approval/integration boundaries here and at local owners.
-
-### Role-specific local inputs
-
-The selected [ownership and handoff contract](../engineering/workflow/shared/new-project-setup.md#instruction-ownership-and-handoffs)
-owns the complete generic role-input set and receiver duties. This table selects local inputs;
-it does not require workers to read controller setup or every navigation link. All roles retain
-host-supplied AGENTS; apply its domain sections when relevant. Read selected sections in full,
-following directed required links; a heading anchor does not itself bound a tool read.
-
-| Role | Local map sections supplied with its task | Additional local owners when applicable |
-| --- | --- | --- |
-| Controller | Complete map; complete selected daily procedure and live issue/required decisions | Standards and commands needed for the task; setup only for a changed binding/adoption; actual checkpoint/assignment for recovery |
-| Capsule builder | Selected instructions, [Selected navigation producer](#selected-navigation-producer) for applicable navigation, Nutrition permissions and routing, Standards and checks, Storage and recovery | AGENTS/domain contracts, source/callers/tests and task-selected proof prerequisites; shared capsule format/source-preparation rules |
-| Implementor | Selected instructions, Nutrition permissions and routing; task-selected runtime/tool and command sections | Accepted complete task/source/standards; local session Actor and timing; product implementation onboarding below when applicable |
-| Independent reviewer | Selected instructions, Nutrition permissions and routing, Standards and checks; task-selected runtime/tool sections | Original requirements/task/full diff/evidence; local session Actor and timing; relevant domain and acceptance owners |
-| Dispatcher | Selected instructions, Nutrition permissions and routing; Storage and recovery's actual supplied assignment binding | Its kickoff locator/Shared and Dispatcher, complete authorized handoff; command/runtime sections only when used to authenticate its own route, no product/controller intake |
-
-Local product orientation remains in [onboarding](project/onboarding.md#before-any-implementation)
-for product implementation; schema/migrations and nutrient semantics remain in AGENTS,
-[project invariants](project/invariants.md), [development](project/development-guide.md) and the
-[RI domain map](../engineering/tooling/RI.md#nutrition-authority-map). Local database replacement
-safety remains in [backup operations](features/ocr-search-and-offline.md#local-backup-and-restore); native/iOS and protected
-qualification stay in the testing guide below. These are task-dependent owners, not default
-instructions to load every document for tooling-only work. Normal/correction/replacement handoffs
-use actual accessible selected outputs plus settled decisions; no automatic inventory exporter is
-selected and no generic manual inventory or new handoff schema is required.
+This line is retained only for explicit historical maintenance validation. Normal new work needs
+no maintenance eligibility declaration, pilot waiver, separate planning handoff or role launcher.
+Historical engineering assignments and native dispatch transitions retain their original bindings;
+these are recovery interfaces, not extra steps in the new normal route.
 
 ## Standards and checks
 
@@ -245,27 +170,21 @@ contains the request shape and explains child inputs, source observations, logs/
 eligibility. Treat a run result as command evidence only; controller acceptance, independent review,
 approval and integration remain separate.
 
-Before implementation dispatch or direct implementation, the controller runs the
-read-only public record check:
-`./scripts/task validate-record --task-record engineering/tasks/TASK-ID.md --route normal`
-for the six-heading capsule, or explicitly `--route maintenance` for a brief maintenance handoff.
-For direct Work controller maintenance, include the selected repository root with the existing
-global option, for example `./scripts/task --repo-root "$PWD" validate-record --task-record
-engineering/tasks/TASK-ID.md --route maintenance`. A direct selection must contain the two literal
-selection fields above and the selected project's map must contain the exact affirmative permission
-line in this section. Normal and delegated-maintenance checks retain their shape-only behavior. The
-command reports record and map fields separately; the controller still authenticates live authority,
-semantic eligibility, actual author, reviewer independence and active assignments. A passing record
-does not authorize execution. The controller then uses the actual `./scripts/task` interfaces:
-`prepare ISSUE` with the explicit task ID, base, paths and profiles; `authorize ISSUE`;
-`qualify ISSUE --candidate-root PATH`;
-`verify ISSUE` with candidate SHA, actor, decision and evidence; `review ISSUE` with candidate
-SHA, actor, decision and summary; and
-`rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2` after a
-standard `REVIEWED_CHANGES_REQUESTED`; and
-`integrate ISSUE --candidate-root PATH --human-owner-authorized`. The executable controller owns their exact argument validation and
-must reauthenticate live owner authority at dependent gates. Correction and interrupted-operation
-recovery follow [Nutrition state, concurrency and recovery](../engineering/workflow/AUTHORITY.md#state-concurrency-and-recovery).
+Before implementation run the read-only `./scripts/task validate-record --task-record
+engineering/tasks/TASK-ID.md --route normal`. It checks readable nonempty, unambiguous Markdown;
+it does not prescribe six headings or establish engineering adequacy/authority. Keep original
+outcomes, exact base/scope, necessary design/context and expected proof in the existing concise record.
+Historical `--route maintenance` and `--route engineering` retain their original validation.
+
+The author uses existing `./scripts/task prepare ISSUE` with explicit task ID/base/paths/profiles,
+`authorize ISSUE`, `qualify ISSUE --candidate-root PATH`, candidate-bound `verify ISSUE` and
+`review ISSUE`, and authorized `integrate ISSUE --candidate-root PATH --human-owner-authorized`.
+The executable controller still owns argument validation, live owner-bound authorization, locking,
+profile floors and all protected decisions. In-scope rejected-candidate correction uses
+`rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2` under
+[Nutrition recovery authority](../engineering/workflow/AUTHORITY.md#state-concurrency-and-recovery).
+
+
 
 Qualification uses the dedicated App `4708441`'s successful exact-candidate-SHA `Main qualification`
 check. Select the required profiles from the complete rename-aware changed-path
@@ -283,8 +202,8 @@ evidence workspace.
 ## Storage and recovery
 
 New task records live at `engineering/tasks/TASK-ID.md`; use the
-[shared format](../engineering/workflow/shared/start-an-issue.md#capsule-format) and
-[local template](../engineering/tasks/TEMPLATE.md#check-attempts), or the selected maintenance handoff.
+[concise record guidance](../engineering/workflow/shared/start-an-issue.md#engineering-and-implementation) and
+[local template](../engineering/tasks/TEMPLATE.md), or the selected maintenance handoff.
 The public validator's record/map checks do not authenticate owner authority or acceptance.
 Historical TOML contracts and C/R/T lineage remain at [TASK_CAPSULE](../engineering/workflow/TASK_CAPSULE.md#historical-capsule-contracts),
 [STATES](../engineering/workflow/STATES.md#terminal-recording) and [HISTORY](../engineering/capsules/HISTORY.md).
@@ -352,10 +271,8 @@ compare-and-swap route remains mandatory. Apply the selected
 and local [session-end contract](operations/session-contract.md#session-end) before closure/owned cleanup.
 Record partial closeout when an obligation remains unresolved; never rewrite preserved attempts.
 
-## Consolidated engineering selection
+## Historical engineering selection
 
-The experimental engineering route is owner-selected for GH-422 only after its maintenance bootstrap is independently reviewed. Other normal capsule and maintenance routes remain supported. The selected authoritative worker folders are `.agents/skills/ri-capsule-creator/`, `ri-implementor/`, `ri-independent-reviewer/` and `ri-dispatcher/`; read the complete assigned skill and locator plus Shared worker rules. Exact document delivery is supported; installed files do not assert host discovery.
-
-Independent planning and final implementation reviews use distinct fresh nonauthor Work `gpt-6.1-sol` / `low` instances, preserving requested versus host/effective telemetry. Sol light means the selected Sol identifier at low effort; Luna is the implementor selection, not a reviewer fallback. Existing attempts retain their original selection and completed reviews are not restarted. Actual launch rejection returns to the controller under the existing policy.
-
-Use the selected [experimental rule](../engineering/workflow/shared/start-an-issue.md#experimental-engineering-route), project record validation/preparation and actual SAME execution/intake binding. Planning approval cannot grant scope, Git authority or waive profiles. Do not expand the issue-scoped controller into concurrent candidate orchestration. Final combined review and protected qualification remain against the original integration baseline; installed verification precedes closure.
+GH-422 retains its original engineering specification, assignments, instruction/runtime pins and
+review evidence. It is not the new normal route. The retired creator, dispatcher, implementor and
+planning-review resources remain reachable through [historical roles](../engineering/workflow/shared/worker-instructions.md#historical-roles).

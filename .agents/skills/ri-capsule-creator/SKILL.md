@@ -5,6 +5,12 @@ description: Create a decision-complete capsule from original requirements and t
 
 # Capsule creator
 
+**Historical compatibility only.** Unselected for new author-and-reviewer work.
+Use this resource only for an existing pinned contract or an explicit retained
+compatibility assignment. It does not create a new required stage. Current work
+uses the project's adopted issue procedure and fresh independent review.
+
+
 Read the [selected common contract](references/project-procedure.md), original issue,
 required decisions/specifications, supplied source/runtime evidence and applicable
 project constraints. An initial creator does not require a future capsule. The

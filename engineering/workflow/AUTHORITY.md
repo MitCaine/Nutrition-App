@@ -8,9 +8,9 @@ fabricate that authenticated comment or a passed check.
 
 ## Current interfaces
 
-- `./scripts/task validate-record --task-record PATH` is a read-only public format check for current normal task records; `./scripts/task validate-record --task-record PATH --route maintenance` selects a brief handoff. Normal requires the six-heading format; maintenance requires the five handoff inputs and a recorded `Decision: eligible`. An explicit direct Work controller maintenance selection also requires exactly one literal `Requested route: maintenance` field, one literal `Implementation execution: direct Work controller` field, and exactly one visible `Direct Work controller maintenance: permitted` line in the selected project's `docs/local_project_map.md` under `## Nutrition permissions and routing`; use the existing `--repo-root` option to select that project. Direct selection with the normal route is refused. Normal and delegated-maintenance validation retain their shape-only behavior. The command reports record selections and map permission separately, but it does not authenticate the live controller decision, owner authority, semantic eligibility, actual direct author, reviewer independence, active assignments, qualification, or acceptance. A passing record is not permission to execute. This interface is not added to historical qualification or recovery gates.
+- `./scripts/task validate-record --task-record PATH` is a read-only public format check for current normal task records; `./scripts/task validate-record --task-record PATH --route maintenance` selects a brief handoff. Normal checks nonempty unambiguous Markdown without prescribed headings; maintenance requires the five handoff inputs and a recorded `Decision: eligible`. An explicit direct Work controller maintenance selection also requires exactly one literal `Requested route: maintenance` field, one literal `Implementation execution: direct Work controller` field, and exactly one visible `Direct Work controller maintenance: permitted` line in the selected project's `docs/local_project_map.md` under `## Nutrition permissions and routing`; use the existing `--repo-root` option to select that project. Direct selection with the normal route is refused. Normal and delegated-maintenance validation retain their shape-only behavior. The command reports record selections and map permission separately, but it does not authenticate the live controller decision, owner authority, semantic eligibility, actual direct author, reviewer independence, active assignments, qualification, or acceptance. A passing record is not permission to execute. This interface is not added to historical qualification or recovery gates.
 - `scripts/task.py` prepares and authenticates the owner-bound `standard` workflow selection.
-  This is the normal source/diff/subagent review route, not a compatibility exception.
+  This is the normal single-author/source/diff/independent-review route, not a compatibility exception.
 - `scripts/lib/task_authorization.py` retains authorization versions, path semantics, current
   identity checks, profile floors and exact candidate scope validation.
 - Trusted qualification workflows, `trusted_qualification.py` and `qualification_profiles.py`
@@ -129,10 +129,10 @@ or rewrite failed history to force a gate. [STATES](STATES.md) describes retaine
 
 ## Host and transport
 
-[local project map](../../docs/local_project_map.md) is the local route. The controller receives the complete
-pinned daily procedure; each serial worker receives Shared worker rules and its complete selected role skill/locator from the pinned
-[worker index](shared/worker-instructions.md#role-index), with the task and standards. Ordinary read-only
-independent source/diff review is sufficient for RI.
+[local project map](../../docs/local_project_map.md) is the local route. One author reads the
+complete selected daily procedure; the fresh independent reviewer receives the original requirements,
+exact full candidate diff, actual evidence and selected reviewer/common instructions. Ordinary
+read-only source/diff review is sufficient; review cannot replace project acceptance.
 Actual host permissions, confidentiality, secret scanning and protected Git/issue authority
 remain enforced. No private source or diagnostic export is implied.
 
