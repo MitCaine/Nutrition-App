@@ -1,22 +1,14 @@
 # Task records and preserved capsules
 
-For current work use the bounded [Markdown template](../tasks/TEMPLATE.md), stored under
-`engineering/tasks/`, with objective/issue, exact base/branch, owner authority, allowed and
-forbidden scope, checkable criteria, actual commands, results and gaps. Deliver it with
-[local project map](../../docs/local_project_map.md), the controller's complete shared procedure,
-and each worker's complete Shared worker rules plus selected role skill/locator from the
-pinned [`worker-instructions.md`](shared/worker-instructions.md#role-index), with applicable AGENTS
-inputs. Initial builders receive original objective/base/requirements without a future capsule.
-Normal-route implementors and reviewers receive the accepted capsule; implementors and reviewers on
-controller-approved maintenance receive the complete recorded maintenance handoff in the existing
-task record. Links navigate; read through the next
-level-two heading or end of file.
-No RI JSON schema, qualification of a capsule-only planning overlay or frozen launcher
-is required for these new records. A controller-confirmed eligible mechanical change may use
-the same task record for the optional maintenance handoff; the public `task validate-record`
-interface checks its required fields but does not replace external authorization or determine
-semantic eligibility. Historical TOML capsule schemas, records, and recovery transitions remain
-unchanged.
+For current work follow the [daily issue procedure](shared/start-an-issue.md#engineering-and-implementation)
+and [local project map](../../docs/local_project_map.md). One author performs source-grounded
+engineering and coding; a fresh independent reviewer uses the [reviewer/common contract](shared/worker-instructions.md#role-index).
+Keep necessary decisions, scope and expected proof in the existing concise
+[Markdown task record](../tasks/TEMPLATE.md), stored under `engineering/tasks/`.
+The public normal-record validator checks readability, not task authority or engineering adequacy.
+Current work requires no separate builder, planning handoff, dispatcher or capsule-role ladder.
+Historical maintenance/engineering and TOML contracts remain available only under their selected
+original authority; the preserved contracts below do not become new-task prerequisites.
 
 ## Historical capsule contracts
 

@@ -209,7 +209,7 @@ def test_normal_author_route_has_no_maintenance_or_planning_waiver():
 
 def test_current_entrypoints_reach_one_daily_authority_and_reviewer_contract():
     for name in ("AGENTS.md", "docs/local_project_map.md", "engineering/README.md",
-                 "engineering/workflow/README.md"):
+                 "engineering/workflow/README.md", "engineering/workflow/TASK_CAPSULE.md"):
         text = (ROOT / name).read_text()
         assert "start-an-issue.md" in text and "worker-instructions.md" in text
     worker = (ROOT / "engineering/workflow/shared/worker-instructions.md").read_text()
