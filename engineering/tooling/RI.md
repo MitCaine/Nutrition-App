@@ -139,11 +139,12 @@ in the chosen external evidence directory; there is no saved navigation index. A
 output directory is not overwritten, and output cannot be inside the installed runtime.
 
 For normal preparation, carry selected matches or a bounded mechanical projection and existing
-`packet.json`, `raw.json`, `selection.json` and `source-manifest.json` references in the capsule
-Source and scope. Retain the literal invocation/working directory and source/runtime identities
+`packet.json`, `raw.json`, `selection.json` and `source-manifest.json` references in the existing
+concise task/evidence record under the [shared source-preparation rule](../workflow/shared/start-an-issue.md#task-directed-source-preparation).
+Retain the literal invocation/working directory and source/runtime identities
 with those outputs in the existing task evidence. The packet already carries source hashes,
 parser metadata, ranges, mapping/selection coverage and the raw-output digest; no new exporter
-or schema is needed. The controller checks actual use and engineering/proof relevance under the
+or schema is needed. The author checks actual use and engineering/proof relevance under the
 shared contract; Markdown shape validation alone cannot accept that evidence.
 
 Use the navigation result's revision and digests when citing source context. Requery after
