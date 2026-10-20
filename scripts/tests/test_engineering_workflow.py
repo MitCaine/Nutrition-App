@@ -670,15 +670,17 @@ def test_public_inspector_refuses_changed_assignment_and_preserves_checkpoint(
     assert not (fixture['state_dir'] / assignment['attempt']).exists()
 
 
-def test_engineering_record_is_explicit_and_not_capsule_alias(tmp_path, capsys):
+def test_historical_engineering_selection_remains_explicit_with_flexible_normal_record(tmp_path, capsys):
     path = tmp_path / 'engineering.md'
     path.write_text(record())
     args = argparse.Namespace(task_record=path, route='engineering', repo_root=ROOT)
     assert task.command_validate_record(args) == 0
     assert '"route":"engineering"' in capsys.readouterr().out
     args.route = 'normal'
-    with pytest.raises(task.TaskControllerError, match='TASK_RECORD_INVALID'):
-        task.command_validate_record(args)
+    before = path.read_bytes()
+    assert task.command_validate_record(args) == 0
+    assert '"route":"normal"' in capsys.readouterr().out
+    assert path.read_bytes() == before
 
 
 @pytest.mark.parametrize('section', ['Original requirements', 'Engineering decisions', 'Source boundaries',
