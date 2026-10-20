@@ -1,8 +1,8 @@
-# Current skills and historical compatibility helpers
+# Workflow resources and historical helper references
 
 The [issue procedure](../start-an-issue.md) is authoritative for the one Work author
 who engineers and implements. The [common contract](../worker-instructions.md) and
-fresh reviewer skill govern independent review. Setup owns
+fresh reviewer contract govern independent review. Setup owns
 [configuration and authority](../new-project-setup.md#kickoff-inputs-and-selected-configuration).
 Skills locate or supply those selected duties; they create no permissions or extra
 stages. No builder/dispatcher/Luna ladder or separate planning-review assignment is
@@ -12,8 +12,8 @@ selected for new work.
 
 | Resource | Select when |
 | --- | --- |
-| [ri-work-kickoff](../../../../.agents/skills/ri-work-kickoff/SKILL.md) | Orient a new or existing author through the project's adopted map and issue procedure. |
-| [ri-independent-reviewer](../../../../.agents/skills/ri-independent-reviewer/SKILL.md) | Fresh exact-candidate review against originals/full diff/actual evidence; execute checks only when expressly authorized. |
+| [Daily issue procedure](../start-an-issue.md) | Orient a new or existing author through the project's adopted map and issue procedure. |
+| [Independent review contract](../../independent-review.md) | Fresh exact-candidate review against originals/full diff/actual evidence; execute checks only when expressly authorized. |
 | [ri-evidence-handoff](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-evidence-handoff/SKILL.md) | Useful exact-source navigation/comparison evidence is needed; no extra handoff stage implied. |
 | [capsule-independent-review](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-independent-review/SKILL.md) | Optional inspection-only helper, only when compatible with the selected review route; never executes tests. |
 | [capsule-queue](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/SKILL.md) | Optional external-job completion helper without native delivery and with a verified destination; unnecessary for ordinary native review completion. |
@@ -27,10 +27,10 @@ completion; do not install every helper or create another watcher/framework.
 These remain reachable for pinned attempts or explicitly retained compatibility
 contracts, **unselected for new normal work**:
 
-- [ri-capsule-creator](../../../../.agents/skills/ri-capsule-creator/SKILL.md)
-- [ri-implementor](../../../../.agents/skills/ri-implementor/SKILL.md)
-- [ri-dispatcher](../../../../.agents/skills/ri-dispatcher/SKILL.md)
-- [ri-codex-dispatcher-kickoff](../../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md)
+- [ri-capsule-creator](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-capsule-creator/SKILL.md)
+- [ri-implementor](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-implementor/SKILL.md)
+- [ri-dispatcher](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-dispatcher/SKILL.md)
+- [ri-codex-dispatcher-kickoff](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-codex-dispatcher-kickoff/SKILL.md)
 - [capsule-preflight](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-preflight/SKILL.md)
 - [capsule-scope-review](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-scope-review/SKILL.md)
 
@@ -39,15 +39,12 @@ satisfy them. Exact historical revisions remain available in Git. A consumer wit
 old validators/imports must reconcile actual callers before retiring local wiring;
 shared publication alone does not change its selected route or active pins.
 
-## Copy and verify resources
+## Repository skill removal
 
-Select only useful complete folders, including referenced resources. Preserve local
-adaptations and verify declared link relocations, byte/source identities and actual
-access through the project map. For Codex, use its supported project `.agents/skills/`
-or personal installation route; Work has a separate supported import/registration
-lifecycle. Copying folders is not proof of Work discovery or runtime selection.
-Do not silently overwrite selected instructions during an active attempt.
-Document-based reading of the exact resources remains supported.
+Nutrition installs no RI skill packages. Read the current map, issue procedure,
+common rules and reviewer contract as ordinary workflow documents. Upstream helper
+links are conditional references, not installation requests. Retained historical
+source, existing attempt pins and executable runtime bindings remain unchanged.
 
 ## Mechanical validation boundary
 
@@ -60,17 +57,9 @@ quoted strings use JSON-compatible escapes. This subset is not a general YAML
 parser or validation of arbitrary installed skills. Linked helpers must exist.
 Installation trials still check actual copied resources and skill behavior.
 
-## Kickoff availability and adoption
+## Direct document access
 
-Use the host's supported installation/skill selection interface and verify each
-name is discoverable before claiming availability. See the
-[official skill-loading guidance](https://learn.chatgpt.com/docs/build-skills).
-Codex folder installation and copied-layout checks do not prove Work registration
-or live invocation. Work installation needs its own supported import/registration;
-if no such interface is available, report that remaining step and use direct
-document-based kickoff. Do not build a new plugin or service merely to bridge it.
-Keep the installed source commit/path and declared local relocations in the existing
-maintenance record. After RI publication, consumers explicitly adopt the selected
-controller/worker/setup resources, update identities and configuration defaults,
-resolve the kickoff locators through their map, and check their supported host
-availability. Do not repin an active attempt or change runtime merely for kickoff.
+Read the selected project map and daily procedure directly. No skill discovery,
+Work registration or copying folders is a prerequisite. Preserve the selected
+instruction identity and active attempt pins; tool availability remains a separate
+verified execution binding.

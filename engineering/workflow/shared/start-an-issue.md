@@ -16,7 +16,7 @@ publication, integration and closeout. The author cannot supply independent revi
 Use the [selected configuration](new-project-setup.md#role-model-and-effort-defaults)
 and explicit applicable owner overrides. Neither tools nor a role name grant authority.
 
-A new or existing chat may start through `ri-work-kickoff`. Fresh author chats are
+A new or existing chat starts through this procedure and the project map; no installed RI skill is required. Fresh author chats are
 optional when preferred by the owner or needed for unreliable context. Before each
 new issue, authenticate repository path, HEAD/base, current map and selected
 instructions separately; preserve parked branches and unrelated edits. Reconcile

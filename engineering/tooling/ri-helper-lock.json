@@ -38,8 +38,8 @@
       "destination": "engineering/workflow/shared/start-an-issue.md",
       "source_bytes": 27675,
       "source_sha256": "c5147c3f2aa9799f7b9c50558fb131b0f1144718cf0f8df7dbbc05bf5cfd0c0f",
-      "destination_bytes": 27881,
-      "destination_sha256": "1a0187c6a5c99b466ac28a330ccfaae08c105a259567d4d472204e3fc2392278",
+      "destination_bytes": 27930,
+      "destination_sha256": "85d97812762eae69c68a0a00887edb74577276f280ba205c4aa38c5eee6f65c2",
       "relocations": [
         {
           "from": "consumer-guide.md#navigate-before-expanding-scope",
@@ -48,6 +48,10 @@
         {
           "from": "skill-templates/capsule-queue/SKILL.md",
           "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/SKILL.md"
+        },
+        {
+          "from": "A new or existing chat may start through `ri-work-kickoff`.",
+          "to": "A new or existing chat starts through this procedure and the project map; no installed RI skill is required."
         }
       ]
     },
@@ -56,12 +60,28 @@
       "destination": "engineering/workflow/shared/new-project-setup.md",
       "source_bytes": 10857,
       "source_sha256": "712b83496f32df456bc23c7ac691dc2d895dd1d8e0915316d54ce6da041028ea",
-      "destination_bytes": 10960,
-      "destination_sha256": "799805b591585a25e7a83244573a78ff2067e424850740606619791d04ab60c9",
+      "destination_bytes": 10942,
+      "destination_sha256": "ba3cf54bf2e2e5be1f3ef2c3065c165bd4ece626307b8c470233fdc3571f7260",
       "relocations": [
         {
           "from": "consumer-guide.md",
           "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/consumer-guide.md"
+        },
+        {
+          "from": "Selected reviewer skill/locator",
+          "to": "Selected reviewer contract/resource locator"
+        },
+        {
+          "from": "Use `ri-work-kickoff` when actually installed, or the same inputs with the selected\ndocuments.",
+          "to": "Use the selected project map and issue procedure directly; repository-installed RI\nskills are not selected."
+        },
+        {
+          "from": "@ri-work-kickoff\n",
+          "to": ""
+        },
+        {
+          "from": "Without installed skills, send the same inputs and selected",
+          "to": "Send the same inputs and selected"
         }
       ]
     },
@@ -70,8 +90,8 @@
       "destination": "engineering/workflow/shared/worker-instructions.md",
       "source_bytes": 3748,
       "source_sha256": "62cd53a10638e0f02f0aaa3c093a7322986cf8d7ba001a721133ee6fc6d4bc08",
-      "destination_bytes": 3891,
-      "destination_sha256": "40089645a213f6cbe1fafbc846fe2e7c7fb35f48efb202352b520de689a846b1",
+      "destination_bytes": 4152,
+      "destination_sha256": "d90245843db3ad4d14ef2bff7870e7fce9e820021cff9766646a8da0a6f93534",
       "relocations": [
         {
           "from": "skill-templates/ri-independent-reviewer/SKILL.md",
@@ -92,6 +112,30 @@
         {
           "from": "skill-templates/ri-dispatcher/SKILL.md",
           "to": "../../../.agents/skills/ri-dispatcher/SKILL.md"
+        },
+        {
+          "from": "../../../.agents/skills/ri-capsule-creator/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-capsule-creator/SKILL.md"
+        },
+        {
+          "from": "../../../.agents/skills/ri-dispatcher/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-dispatcher/SKILL.md"
+        },
+        {
+          "from": "../../../.agents/skills/ri-implementor/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-implementor/SKILL.md"
+        },
+        {
+          "from": "../../../.agents/skills/ri-independent-reviewer/SKILL.md",
+          "to": "../independent-review.md"
+        },
+        {
+          "from": "reviewer skill",
+          "to": "reviewer contract"
+        },
+        {
+          "from": "its\nlocator",
+          "to": "its\n[resource locator](../reviewer-resources.md)"
         }
       ]
     },
@@ -143,8 +187,8 @@
       "destination": "engineering/workflow/shared/skill-templates/README.md",
       "source_bytes": 4756,
       "source_sha256": "fb5aa4196151989598693927d7d173bed63c9a4f0c5a5ddb277e52c224fa109c",
-      "destination_bytes": 5513,
-      "destination_sha256": "0df7b16f3587ecdf9a2c94311223c148835054baef3b1f7fac5d097b6176274a",
+      "destination_bytes": 4903,
+      "destination_sha256": "9c0531c40026ff992be393d5d85a7b4008056a05185de77cf1935c018990a697",
       "relocations": [
         {
           "from": "ri-work-kickoff/SKILL.md",
@@ -189,116 +233,100 @@
         {
           "from": "capsule-scope-review/SKILL.md",
           "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-scope-review/SKILL.md"
+        },
+        {
+          "from": "../../../../.agents/skills/ri-capsule-creator/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-capsule-creator/SKILL.md"
+        },
+        {
+          "from": "../../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-codex-dispatcher-kickoff/SKILL.md"
+        },
+        {
+          "from": "../../../../.agents/skills/ri-dispatcher/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-dispatcher/SKILL.md"
+        },
+        {
+          "from": "../../../../.agents/skills/ri-implementor/SKILL.md",
+          "to": "https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-implementor/SKILL.md"
+        },
+        {
+          "from": "../../../../.agents/skills/ri-work-kickoff/SKILL.md",
+          "to": "../start-an-issue.md"
+        },
+        {
+          "from": "../../../../.agents/skills/ri-independent-reviewer/SKILL.md",
+          "to": "../../independent-review.md"
+        },
+        {
+          "from": "# Current skills and historical compatibility helpers",
+          "to": "# Workflow resources and historical helper references"
+        },
+        {
+          "from": "fresh reviewer skill govern independent review.",
+          "to": "fresh reviewer contract govern independent review."
+        },
+        {
+          "from": "[ri-work-kickoff](../start-an-issue.md)",
+          "to": "[Daily issue procedure](../start-an-issue.md)"
+        },
+        {
+          "from": "[ri-independent-reviewer](../../independent-review.md)",
+          "to": "[Independent review contract](../../independent-review.md)"
+        },
+        {
+          "from": "## Copy and verify resources\n\nSelect only useful complete folders, including referenced resources. Preserve local\nadaptations and verify declared link relocations, byte/source identities and actual\naccess through the project map. For Codex, use its supported project `.agents/skills/`\nor personal installation route; Work has a separate supported import/registration\nlifecycle. Copying folders is not proof of Work discovery or runtime selection.\nDo not silently overwrite selected instructions during an active attempt.\nDocument-based reading of the exact resources remains supported.\n\n",
+          "to": "## Repository skill removal\n\nNutrition installs no RI skill packages. Read the current map, issue procedure,\ncommon rules and reviewer contract as ordinary workflow documents. Upstream helper\nlinks are conditional references, not installation requests. Retained historical\nsource, existing attempt pins and executable runtime bindings remain unchanged.\n\n"
+        },
+        {
+          "from": "## Kickoff availability and adoption\n\nUse the host's supported installation/skill selection interface and verify each\nname is discoverable before claiming availability. See the\n[official skill-loading guidance](https://learn.chatgpt.com/docs/build-skills).\nCodex folder installation and copied-layout checks do not prove Work registration\nor live invocation. Work installation needs its own supported import/registration;\nif no such interface is available, report that remaining step and use direct\ndocument-based kickoff. Do not build a new plugin or service merely to bridge it.\nKeep the installed source commit/path and declared local relocations in the existing\nmaintenance record. After RI publication, consumers explicitly adopt the selected\ncontroller/worker/setup resources, update identities and configuration defaults,\nresolve the kickoff locators through their map, and check their supported host\navailability. Do not repin an active attempt or change runtime merely for kickoff.\n",
+          "to": "## Direct document access\n\nRead the selected project map and daily procedure directly. No skill discovery,\nWork registration or copying folders is a prerequisite. Preserve the selected\ninstruction identity and active attempt pins; tool availability remains a separate\nverified execution binding.\n"
         }
       ]
     },
     {
-      "source": "docs/skill-templates/ri-work-kickoff/SKILL.md",
-      "destination": ".agents/skills/ri-work-kickoff/SKILL.md",
-      "source_bytes": 1545,
-      "source_sha256": "952057a4121b0ae3dfff5f94039783780e6662f21ebb5388c21ed4cfc0aa542b",
-      "destination_bytes": 1545,
-      "destination_sha256": "952057a4121b0ae3dfff5f94039783780e6662f21ebb5388c21ed4cfc0aa542b",
-      "relocations": []
-    },
-    {
-      "source": "docs/skill-templates/ri-work-kickoff/references/project-procedure.md",
-      "destination": ".agents/skills/ri-work-kickoff/references/project-procedure.md",
-      "source_bytes": 880,
-      "source_sha256": "8a979adcd6ff13a3b6075a56622714c2b944d7570539906628c7f0b9eaf9fdef",
-      "destination_bytes": 880,
-      "destination_sha256": "8a979adcd6ff13a3b6075a56622714c2b944d7570539906628c7f0b9eaf9fdef",
-      "relocations": []
-    },
-    {
-      "source": "docs/skill-templates/ri-codex-dispatcher-kickoff/SKILL.md",
-      "destination": ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md",
-      "source_bytes": 1975,
-      "source_sha256": "aa682a4a0b3f164c3e9dfc88c5265fc5b8353a11b52713e15e07c5c84e29731d",
-      "destination_bytes": 1975,
-      "destination_sha256": "aa682a4a0b3f164c3e9dfc88c5265fc5b8353a11b52713e15e07c5c84e29731d",
-      "relocations": []
-    },
-    {
-      "source": "docs/skill-templates/ri-codex-dispatcher-kickoff/references/project-procedure.md",
-      "destination": ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md",
-      "source_bytes": 1642,
-      "source_sha256": "a18fc26972465dcfc02266a07256679a6d7fa1a6e8377399f68b87950618f03d",
-      "destination_bytes": 1642,
-      "destination_sha256": "a18fc26972465dcfc02266a07256679a6d7fa1a6e8377399f68b87950618f03d",
-      "relocations": []
-    },
-    {
-      "source": "docs/skill-templates/ri-capsule-creator/SKILL.md",
-      "destination": ".agents/skills/ri-capsule-creator/SKILL.md",
-      "source_bytes": 3918,
-      "source_sha256": "3fdcd8eda8e73fcdaeaa923ad2d0cb8b71c7fccda28eb856070c32af29d1938f",
-      "destination_bytes": 3918,
-      "destination_sha256": "3fdcd8eda8e73fcdaeaa923ad2d0cb8b71c7fccda28eb856070c32af29d1938f",
-      "relocations": []
-    },
-    {
-      "source": "docs/skill-templates/ri-capsule-creator/references/project-procedure.md",
-      "destination": ".agents/skills/ri-capsule-creator/references/project-procedure.md",
-      "source_bytes": 1336,
-      "source_sha256": "2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81",
-      "destination_bytes": 1336,
-      "destination_sha256": "2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81",
-      "relocations": []
-    },
-    {
-      "source": "docs/skill-templates/ri-implementor/SKILL.md",
-      "destination": ".agents/skills/ri-implementor/SKILL.md",
-      "source_bytes": 5533,
-      "source_sha256": "73b724fba4fd5056c6cae0ffcf3cdeed527fbb021909ce2108bf2fbeddd789a9",
-      "destination_bytes": 5533,
-      "destination_sha256": "73b724fba4fd5056c6cae0ffcf3cdeed527fbb021909ce2108bf2fbeddd789a9",
-      "relocations": []
-    },
-    {
-      "source": "docs/skill-templates/ri-implementor/references/project-procedure.md",
-      "destination": ".agents/skills/ri-implementor/references/project-procedure.md",
-      "source_bytes": 1336,
-      "source_sha256": "2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81",
-      "destination_bytes": 1336,
-      "destination_sha256": "2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81",
-      "relocations": []
-    },
-    {
       "source": "docs/skill-templates/ri-independent-reviewer/SKILL.md",
-      "destination": ".agents/skills/ri-independent-reviewer/SKILL.md",
+      "destination": "engineering/workflow/independent-review.md",
       "source_bytes": 3085,
       "source_sha256": "a7fe1442dd9f41119af2749fda4accfb5bba7a7a7cb2f3a97bbad1c98e7264db",
-      "destination_bytes": 3085,
-      "destination_sha256": "a7fe1442dd9f41119af2749fda4accfb5bba7a7a7cb2f3a97bbad1c98e7264db",
-      "relocations": []
+      "destination_bytes": 2882,
+      "destination_sha256": "11fc373f275c0b1c0ae9073c1051e0e4fd1c94a2f47a5e026a2c5fe5cf051b7d",
+      "relocations": [
+        {
+          "from": "---\nname: ri-independent-reviewer\ndescription: Independently assess an exact implementation candidate against original requirements; read-only, with checks only when expressly authorized.\n---\n\n",
+          "to": ""
+        },
+        {
+          "from": "references/project-procedure.md",
+          "to": "reviewer-resources.md"
+        }
+      ]
     },
     {
       "source": "docs/skill-templates/ri-independent-reviewer/references/project-procedure.md",
-      "destination": ".agents/skills/ri-independent-reviewer/references/project-procedure.md",
+      "destination": "engineering/workflow/reviewer-resources.md",
       "source_bytes": 1078,
       "source_sha256": "b91f478bdc5101740b597a7ba124fa7d706d1097943a606809e39496c8d00b91",
-      "destination_bytes": 1078,
-      "destination_sha256": "b91f478bdc5101740b597a7ba124fa7d706d1097943a606809e39496c8d00b91",
-      "relocations": []
-    },
-    {
-      "source": "docs/skill-templates/ri-dispatcher/SKILL.md",
-      "destination": ".agents/skills/ri-dispatcher/SKILL.md",
-      "source_bytes": 3981,
-      "source_sha256": "db4adfc653985572cba1927ba098e4bb7b27ddc0907cfb1546d5c2bad8dd174d",
-      "destination_bytes": 3981,
-      "destination_sha256": "db4adfc653985572cba1927ba098e4bb7b27ddc0907cfb1546d5c2bad8dd174d",
-      "relocations": []
-    },
-    {
-      "source": "docs/skill-templates/ri-dispatcher/references/project-procedure.md",
-      "destination": ".agents/skills/ri-dispatcher/references/project-procedure.md",
-      "source_bytes": 1336,
-      "source_sha256": "2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81",
-      "destination_bytes": 1336,
-      "destination_sha256": "2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81",
-      "relocations": []
+      "destination_bytes": 1109,
+      "destination_sha256": "890b59a780f2e5ef4bac30e37a0e7eb34fc611d8f71a22777d659d29d07393a4",
+      "relocations": [
+        {
+          "from": "actual role skill folder",
+          "to": "actual reviewer contract location"
+        },
+        {
+          "from": "the complete assigned SKILL.md",
+          "to": "the complete assigned independent-review.md"
+        },
+        {
+          "from": "Role skills own role\nduties",
+          "to": "The reviewer contract owns review\nduties"
+        },
+        {
+          "from": "Copying this folder alone does not install the common contract or register a Work\nskill.",
+          "to": "These are ordinary workflow documents; no repository skill installation is selected."
+        }
+      ]
     }
   ],
   "optional_queue_resources": [

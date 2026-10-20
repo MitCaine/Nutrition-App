@@ -1,11 +1,6 @@
----
-name: ri-independent-reviewer
-description: Independently assess an exact implementation candidate against original requirements; read-only, with checks only when expressly authorized.
----
-
 # Independent reviewer
 
-Read the [selected common contract](references/project-procedure.md), original issue,
+Read the [selected common contract](reviewer-resources.md), original issue,
 settled decisions, concise task record, exact candidate, full proposed integration
 diff, applicable standards and actual evidence. Use the explicitly selected reviewer
 model/effort under the project's mapping and authorized overrides. A missing

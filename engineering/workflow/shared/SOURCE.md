@@ -722,7 +722,7 @@ Optional queue sources remain pinned links, not installed executable skills:
 Consumer queue redirect `engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md`: 2029 bytes, SHA-256 `918d7d8f3c05c50882b1590e7ef480691a75eb3cd370a1abcfd7f1aadbdb6fae`.
 
 
-## Current selection: 6058b143610c1902faf1bf832227359c9fc4f5a4
+## Previous repository skill installation: 6058b143610c1902faf1bf832227359c9fc4f5a4
 GH-432 selects the one-author daily procedure and fresh independent reviewer for new work. Prior sections are historical preparation; active attempts retain their selected bytes. Runtime/helper source pins and installed dependencies are unchanged. The generated resource records in `engineering/tooling/ri-helper-lock.json` own the complete mechanical inventory; the entries below render that same definition.
 ### engineering/workflow/shared/start-an-issue.md
 
@@ -803,6 +803,629 @@ Source `docs/skill-templates/ri-dispatcher/SKILL.md`: 3981 bytes, SHA-256 `db4ad
 ### .agents/skills/ri-dispatcher/references/project-procedure.md
 
 Source `docs/skill-templates/ri-dispatcher/references/project-procedure.md`: 1336 bytes, SHA-256 `2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81`. Installed: 1336 bytes, SHA-256 `2e8843c1d2b95bab5b01ceb083d627c83a88f96dd4ff12bcc0dfe1f37d2aaf81`.
+
+Optional queue resource identities: [{"source": "docs/skill-templates/capsule-queue/SKILL.md", "blob": "2e01cf01bb0830e5addc4d46c1257f737793e695", "bytes": 8811, "sha256": "ed9e3a3ebfe7c4639f58b6e2595a782ca577d0ba07a1175b6dbabc29c61d3f39"}, {"source": "docs/skill-templates/capsule-queue/references/project-procedure.md", "blob": "47c37667eff63c02ac0b842ce60f3c6c8de8b5c2", "bytes": 1850, "sha256": "c443911ce761d3d40694a1d16cd7043517e1892946a7eb65b164b6662f6a4280"}, {"source": "docs/skill-templates/capsule-queue/scripts/run%5Fand%5Fqueue.py", "blob": "cf5655ad3f5a66fa46831a06701aba295819bbaf", "bytes": 13857, "sha256": "9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191"}]
+
+Queue redirect SHA-256 `aa859299a78ecf0c330a932c220b4110f7a99f9dc5dc219622fd2ba48288b75d`.
+
+## Current selection: 6058b143610c1902faf1bf832227359c9fc4f5a4
+
+No repository-installed RI skills. Ordinary workflow documents retain reviewer duties; executable pins and historical attempts remain unchanged.
+
+### engineering/workflow/shared/start-an-issue.md
+
+Source `docs/start-an-issue.md`: 27675 bytes, SHA-256 `c5147c3f2aa9799f7b9c50558fb131b0f1144718cf0f8df7dbbc05bf5cfd0c0f`. Current document: 27930 bytes, SHA-256 `85d97812762eae69c68a0a00887edb74577276f280ba205c4aa38c5eee6f65c2`.
+
+Declared from:
+````text
+consumer-guide.md#navigate-before-expanding-scope
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/consumer-guide.md#navigate-before-expanding-scope
+````
+
+Declared from:
+````text
+skill-templates/capsule-queue/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/SKILL.md
+````
+
+Declared from:
+````text
+A new or existing chat may start through `ri-work-kickoff`.
+````
+
+Declared to:
+````text
+A new or existing chat starts through this procedure and the project map; no installed RI skill is required.
+````
+### engineering/workflow/shared/new-project-setup.md
+
+Source `docs/new-project-setup.md`: 10857 bytes, SHA-256 `712b83496f32df456bc23c7ac691dc2d895dd1d8e0915316d54ce6da041028ea`. Current document: 10942 bytes, SHA-256 `ba3cf54bf2e2e5be1f3ef2c3065c165bd4ece626307b8c470233fdc3571f7260`.
+
+Declared from:
+````text
+consumer-guide.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/consumer-guide.md
+````
+
+Declared from:
+````text
+Selected reviewer skill/locator
+````
+
+Declared to:
+````text
+Selected reviewer contract/resource locator
+````
+
+Declared from:
+````text
+Use `ri-work-kickoff` when actually installed, or the same inputs with the selected
+documents.
+````
+
+Declared to:
+````text
+Use the selected project map and issue procedure directly; repository-installed RI
+skills are not selected.
+````
+
+Declared from:
+````text
+@ri-work-kickoff
+
+````
+
+Declared to:
+````text
+
+````
+
+Declared from:
+````text
+Without installed skills, send the same inputs and selected
+````
+
+Declared to:
+````text
+Send the same inputs and selected
+````
+### engineering/workflow/shared/worker-instructions.md
+
+Source `docs/worker-instructions.md`: 3748 bytes, SHA-256 `62cd53a10638e0f02f0aaa3c093a7322986cf8d7ba001a721133ee6fc6d4bc08`. Current document: 4152 bytes, SHA-256 `d90245843db3ad4d14ef2bff7870e7fce9e820021cff9766646a8da0a6f93534`.
+
+Declared from:
+````text
+skill-templates/ri-independent-reviewer/SKILL.md
+````
+
+Declared to:
+````text
+../../../.agents/skills/ri-independent-reviewer/SKILL.md
+````
+
+Declared from:
+````text
+skill-templates/capsule-independent-review/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-independent-review/SKILL.md
+````
+
+Declared from:
+````text
+skill-templates/ri-capsule-creator/SKILL.md
+````
+
+Declared to:
+````text
+../../../.agents/skills/ri-capsule-creator/SKILL.md
+````
+
+Declared from:
+````text
+skill-templates/ri-implementor/SKILL.md
+````
+
+Declared to:
+````text
+../../../.agents/skills/ri-implementor/SKILL.md
+````
+
+Declared from:
+````text
+skill-templates/ri-dispatcher/SKILL.md
+````
+
+Declared to:
+````text
+../../../.agents/skills/ri-dispatcher/SKILL.md
+````
+
+Declared from:
+````text
+../../../.agents/skills/ri-capsule-creator/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-capsule-creator/SKILL.md
+````
+
+Declared from:
+````text
+../../../.agents/skills/ri-dispatcher/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-dispatcher/SKILL.md
+````
+
+Declared from:
+````text
+../../../.agents/skills/ri-implementor/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-implementor/SKILL.md
+````
+
+Declared from:
+````text
+../../../.agents/skills/ri-independent-reviewer/SKILL.md
+````
+
+Declared to:
+````text
+../independent-review.md
+````
+
+Declared from:
+````text
+reviewer skill
+````
+
+Declared to:
+````text
+reviewer contract
+````
+
+Declared from:
+````text
+its
+locator
+````
+
+Declared to:
+````text
+its
+[resource locator](../reviewer-resources.md)
+````
+### engineering/workflow/shared/workflow-tools.md
+
+Source `docs/workflow-tools.md`: 45591 bytes, SHA-256 `5e10ae0e9a620628e0fc2e339396208abd2737273104878d71721d8a4a9ea392`. Current document: 46193 bytes, SHA-256 `d9c8c7e1eaafcba37c946f01af6c43a9830777ea54486e1dee2a98e4a59d9d82`.
+
+Declared from:
+````text
+../src/repository%5Fintelligence/dispatch%5Fguard.py
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/src/repository%5Fintelligence/dispatch%5Fguard.py
+````
+
+Declared from:
+````text
+skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-preflight/scripts/evidence%5Fpreflight.py
+````
+
+Declared from:
+````text
+../scripts/check%5Fdocs%5Fand%5Fskills.py
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/scripts/check%5Fdocs%5Fand%5Fskills.py
+````
+
+Declared from:
+````text
+consumer-guide.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/consumer-guide.md
+````
+
+Declared from:
+````text
+review-evidence.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/review-evidence.md
+````
+
+Declared from:
+````text
+../src/repository%5Fintelligence/output%5Fcleanup.py
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/src/repository%5Fintelligence/output%5Fcleanup.py
+````
+### engineering/workflow/shared/capsule-controller-workflow.md
+
+Source `docs/capsule-controller-workflow.md`: 5433 bytes, SHA-256 `fb6200f2fea55c9cf308b5bf809ee9c6e3a99876693049af1b339041cbde1a6f`. Current document: 5433 bytes, SHA-256 `fb6200f2fea55c9cf308b5bf809ee9c6e3a99876693049af1b339041cbde1a6f`.
+### engineering/workflow/shared/skill-templates/README.md
+
+Source `docs/skill-templates/README.md`: 4756 bytes, SHA-256 `fb5aa4196151989598693927d7d173bed63c9a4f0c5a5ddb277e52c224fa109c`. Current document: 4903 bytes, SHA-256 `9c0531c40026ff992be393d5d85a7b4008056a05185de77cf1935c018990a697`.
+
+Declared from:
+````text
+ri-work-kickoff/SKILL.md
+````
+
+Declared to:
+````text
+../../../../.agents/skills/ri-work-kickoff/SKILL.md
+````
+
+Declared from:
+````text
+ri-independent-reviewer/SKILL.md
+````
+
+Declared to:
+````text
+../../../../.agents/skills/ri-independent-reviewer/SKILL.md
+````
+
+Declared from:
+````text
+ri-evidence-handoff/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-evidence-handoff/SKILL.md
+````
+
+Declared from:
+````text
+capsule-independent-review/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-independent-review/SKILL.md
+````
+
+Declared from:
+````text
+capsule-queue/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-queue/SKILL.md
+````
+
+Declared from:
+````text
+ri-capsule-creator/SKILL.md
+````
+
+Declared to:
+````text
+../../../../.agents/skills/ri-capsule-creator/SKILL.md
+````
+
+Declared from:
+````text
+ri-implementor/SKILL.md
+````
+
+Declared to:
+````text
+../../../../.agents/skills/ri-implementor/SKILL.md
+````
+
+Declared from:
+````text
+ri-dispatcher/SKILL.md
+````
+
+Declared to:
+````text
+../../../../.agents/skills/ri-dispatcher/SKILL.md
+````
+
+Declared from:
+````text
+ri-codex-dispatcher-kickoff/SKILL.md
+````
+
+Declared to:
+````text
+../../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md
+````
+
+Declared from:
+````text
+capsule-preflight/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-preflight/SKILL.md
+````
+
+Declared from:
+````text
+capsule-scope-review/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-scope-review/SKILL.md
+````
+
+Declared from:
+````text
+../../../../.agents/skills/ri-capsule-creator/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-capsule-creator/SKILL.md
+````
+
+Declared from:
+````text
+../../../../.agents/skills/ri-codex-dispatcher-kickoff/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-codex-dispatcher-kickoff/SKILL.md
+````
+
+Declared from:
+````text
+../../../../.agents/skills/ri-dispatcher/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-dispatcher/SKILL.md
+````
+
+Declared from:
+````text
+../../../../.agents/skills/ri-implementor/SKILL.md
+````
+
+Declared to:
+````text
+https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-implementor/SKILL.md
+````
+
+Declared from:
+````text
+../../../../.agents/skills/ri-work-kickoff/SKILL.md
+````
+
+Declared to:
+````text
+../start-an-issue.md
+````
+
+Declared from:
+````text
+../../../../.agents/skills/ri-independent-reviewer/SKILL.md
+````
+
+Declared to:
+````text
+../../independent-review.md
+````
+
+Declared from:
+````text
+# Current skills and historical compatibility helpers
+````
+
+Declared to:
+````text
+# Workflow resources and historical helper references
+````
+
+Declared from:
+````text
+fresh reviewer skill govern independent review.
+````
+
+Declared to:
+````text
+fresh reviewer contract govern independent review.
+````
+
+Declared from:
+````text
+[ri-work-kickoff](../start-an-issue.md)
+````
+
+Declared to:
+````text
+[Daily issue procedure](../start-an-issue.md)
+````
+
+Declared from:
+````text
+[ri-independent-reviewer](../../independent-review.md)
+````
+
+Declared to:
+````text
+[Independent review contract](../../independent-review.md)
+````
+
+Declared from:
+````text
+## Copy and verify resources
+
+Select only useful complete folders, including referenced resources. Preserve local
+adaptations and verify declared link relocations, byte/source identities and actual
+access through the project map. For Codex, use its supported project `.agents/skills/`
+or personal installation route; Work has a separate supported import/registration
+lifecycle. Copying folders is not proof of Work discovery or runtime selection.
+Do not silently overwrite selected instructions during an active attempt.
+Document-based reading of the exact resources remains supported.
+
+
+````
+
+Declared to:
+````text
+## Repository skill removal
+
+Nutrition installs no RI skill packages. Read the current map, issue procedure,
+common rules and reviewer contract as ordinary workflow documents. Upstream helper
+links are conditional references, not installation requests. Retained historical
+source, existing attempt pins and executable runtime bindings remain unchanged.
+
+
+````
+
+Declared from:
+````text
+## Kickoff availability and adoption
+
+Use the host's supported installation/skill selection interface and verify each
+name is discoverable before claiming availability. See the
+[official skill-loading guidance](https://learn.chatgpt.com/docs/build-skills).
+Codex folder installation and copied-layout checks do not prove Work registration
+or live invocation. Work installation needs its own supported import/registration;
+if no such interface is available, report that remaining step and use direct
+document-based kickoff. Do not build a new plugin or service merely to bridge it.
+Keep the installed source commit/path and declared local relocations in the existing
+maintenance record. After RI publication, consumers explicitly adopt the selected
+controller/worker/setup resources, update identities and configuration defaults,
+resolve the kickoff locators through their map, and check their supported host
+availability. Do not repin an active attempt or change runtime merely for kickoff.
+
+````
+
+Declared to:
+````text
+## Direct document access
+
+Read the selected project map and daily procedure directly. No skill discovery,
+Work registration or copying folders is a prerequisite. Preserve the selected
+instruction identity and active attempt pins; tool availability remains a separate
+verified execution binding.
+
+````
+### engineering/workflow/independent-review.md
+
+Source `docs/skill-templates/ri-independent-reviewer/SKILL.md`: 3085 bytes, SHA-256 `a7fe1442dd9f41119af2749fda4accfb5bba7a7a7cb2f3a97bbad1c98e7264db`. Current document: 2882 bytes, SHA-256 `11fc373f275c0b1c0ae9073c1051e0e4fd1c94a2f47a5e026a2c5fe5cf051b7d`.
+
+Declared from:
+````text
+---
+name: ri-independent-reviewer
+description: Independently assess an exact implementation candidate against original requirements; read-only, with checks only when expressly authorized.
+---
+
+
+````
+
+Declared to:
+````text
+
+````
+
+Declared from:
+````text
+references/project-procedure.md
+````
+
+Declared to:
+````text
+reviewer-resources.md
+````
+### engineering/workflow/reviewer-resources.md
+
+Source `docs/skill-templates/ri-independent-reviewer/references/project-procedure.md`: 1078 bytes, SHA-256 `b91f478bdc5101740b597a7ba124fa7d706d1097943a606809e39496c8d00b91`. Current document: 1109 bytes, SHA-256 `890b59a780f2e5ef4bac30e37a0e7eb34fc611d8f71a22777d659d29d07393a4`.
+
+Declared from:
+````text
+actual role skill folder
+````
+
+Declared to:
+````text
+actual reviewer contract location
+````
+
+Declared from:
+````text
+the complete assigned SKILL.md
+````
+
+Declared to:
+````text
+the complete assigned independent-review.md
+````
+
+Declared from:
+````text
+Role skills own role
+duties
+````
+
+Declared to:
+````text
+The reviewer contract owns review
+duties
+````
+
+Declared from:
+````text
+Copying this folder alone does not install the common contract or register a Work
+skill.
+````
+
+Declared to:
+````text
+These are ordinary workflow documents; no repository skill installation is selected.
+````
 
 Optional queue resource identities: [{"source": "docs/skill-templates/capsule-queue/SKILL.md", "blob": "2e01cf01bb0830e5addc4d46c1257f737793e695", "bytes": 8811, "sha256": "ed9e3a3ebfe7c4639f58b6e2595a782ca577d0ba07a1175b6dbabc29c61d3f39"}, {"source": "docs/skill-templates/capsule-queue/references/project-procedure.md", "blob": "47c37667eff63c02ac0b842ce60f3c6c8de8b5c2", "bytes": 1850, "sha256": "c443911ce761d3d40694a1d16cd7043517e1892946a7eb65b164b6662f6a4280"}, {"source": "docs/skill-templates/capsule-queue/scripts/run%5Fand%5Fqueue.py", "blob": "cf5655ad3f5a66fa46831a06701aba295819bbaf", "bytes": 13857, "sha256": "9d8157c191048016f7ca5fe8d17b97d5c7307751f7953714015b0e08561c2191"}]
 

@@ -17,8 +17,6 @@ MARKDOWN_FILES = [
     ROOT / "README.md",
     ROOT / "CONTRIBUTING.md",
     *sorted((ROOT / ".github").rglob("*.md")),
-    *sorted((ROOT / ".agents" / "skills" / "ri-work-kickoff").rglob("*.md")),
-    *sorted((ROOT / ".agents" / "skills" / "ri-codex-dispatcher-kickoff").rglob("*.md")),
     *sorted((ROOT / "engineering").rglob("*.md")),
     ROOT / "scripts" / "README.md",
     *sorted((ROOT / "docs").rglob("*.md")),

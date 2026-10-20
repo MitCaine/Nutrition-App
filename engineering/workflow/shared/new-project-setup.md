@@ -33,7 +33,7 @@ references; preserve active pins and historical evidence.
 | Actor | Required inputs | Conditional inputs |
 | --- | --- | --- |
 | Author | Current map, complete selected issue procedure, original issue/decisions, applicable instructions and exact base | Relevant source, callers, tests, contracts, actual runner/help and recovery records |
-| Independent reviewer | Selected reviewer skill/locator and Shared worker rules, original requirements/settled decisions, task record, exact candidate/full integration diff, standards and actual evidence | Affected callers/contracts and expressly authorized checks |
+| Independent reviewer | Selected reviewer contract/resource locator and Shared worker rules, original requirements/settled decisions, task record, exact candidate/full integration diff, standards and actual evidence | Affected callers/contracts and expressly authorized checks |
 
 Use [tool ownership](capsule-controller-workflow.md#keep-the-integration-small) to
 inventory actual imports/public invocations before removing an old dependency.
@@ -45,8 +45,8 @@ Existing exceptional assignments are reconciled, never silently taken over.
 
 ## Kickoff inputs and selected configuration
 
-Use `ri-work-kickoff` when actually installed, or the same inputs with the selected
-documents. Required inputs are repository and issue/bounded objective. An explicit
+Use the selected project map and issue procedure directly; repository-installed RI
+skills are not selected. Required inputs are repository and issue/bounded objective. An explicit
 list or range may select an authorized queue. Optional owner inputs include existing
 controller/author selection, applicable authority, constraints and stopping conditions.
 A maintenance label may describe bounded upkeep, but it selects no extra role or
@@ -139,7 +139,6 @@ permissions; apply actual owner grants and project policy.
 ### Brief invocation examples
 
 ```text
-@ri-work-kickoff
 @GitHub
 Repository: <owner/repository>
 Issue(s): #<issue>
@@ -148,7 +147,7 @@ Authority: I select the reusable task grant for this issue.
 ```
 
 Supply only true/intended selections and grants. `@GitHub` is optional with another
-permitted route. Without installed skills, send the same inputs and selected
+permitted route. Send the same inputs and selected
 procedure through the map. No Codex dispatcher or second-chat messaging grant is
 required. A separately authorized relay, if genuinely necessary, names its concrete
 immediate return destination and onward owner; skill loading creates no authority.

@@ -4,8 +4,8 @@
 
 New work uses one Work author for engineering and coding, and one fresh independent
 Work reviewer. The author reads [Start an issue](start-an-issue.md); the reviewer
-reads the [reviewer skill](../../../.agents/skills/ri-independent-reviewer/SKILL.md), its
-locator and [Shared worker rules](#shared-worker-rules). Supported document-based
+reads the [reviewer contract](../independent-review.md), its
+[resource locator](../reviewer-resources.md) and [Shared worker rules](#shared-worker-rules). Supported document-based
 reading of those exact resources is sufficient; installation is not authority.
 The map supplies selected revision/locations, project requirements and permissions.
 Missing selected resources return to the author, never automatically newest upstream.
@@ -43,7 +43,7 @@ source and existing assignment after compaction without transferring authority.
 
 ## Independent reviewer
 
-Use [ri-independent-reviewer](../../../.agents/skills/ri-independent-reviewer/SKILL.md).
+Use [ri-independent-reviewer](../independent-review.md).
 It assesses the original requirements, full exact-candidate diff and proof adequacy.
 The optional [inspection-only helper](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/capsule-independent-review/SKILL.md)
 cannot override a route requiring expressly authorized reviewer-executed checks.
@@ -55,16 +55,16 @@ are unselected for new normal work and do not create extra required assignments.
 
 ### Capsule builder
 
-Historical [ri-capsule-creator](../../../.agents/skills/ri-capsule-creator/SKILL.md).
+Historical [ri-capsule-creator](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-capsule-creator/SKILL.md).
 
 ### Implementor
 
-Historical [ri-implementor](../../../.agents/skills/ri-implementor/SKILL.md).
+Historical [ri-implementor](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-implementor/SKILL.md).
 The current author owns implementation under the daily procedure.
 
 ### Codex dispatcher
 
-Historical [ri-dispatcher](../../../.agents/skills/ri-dispatcher/SKILL.md).
+Historical [ri-dispatcher](https://github.com/MitCaine/repository-intelligence/blob/6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/ri-dispatcher/SKILL.md).
 No dispatcher or second chat is required by the current route.
 
 #### Read and dispatch

@@ -167,12 +167,17 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
         assert len(data) == item["destination_bytes"]
         assert hashlib.sha256(data).hexdigest() == item["destination_sha256"]
         assert item["source_sha256"] in source and item["destination_sha256"] in source
-        for relocation in item["relocations"]:
-            assert unquote(relocation["to"]) in unquote(data.decode())
+        for index, relocation in enumerate(item["relocations"]):
+            # Declared consumer adaptations may replace an earlier link relocation.
+            final_text = relocation["to"]
+            for later in item["relocations"][index + 1:]:
+                final_text = final_text.replace(later["from"], later["to"])
+            assert unquote(final_text) in unquote(data.decode())
             assert unquote(relocation["from"]) in source and unquote(relocation["to"]) in source
-    for role in ("ri-capsule-creator", "ri-implementor", "ri-independent-reviewer", "ri-dispatcher"):
-        for name in ("SKILL.md", "references/project-procedure.md"):
-            assert f".agents/skills/{role}/{name}" in destinations
+    assert not any(path.startswith(".agents/skills/") for path in destinations)
+    assert not list((ROOT / ".agents/skills").glob("ri-*/SKILL.md"))
+    assert "engineering/workflow/independent-review.md" in destinations
+    assert "engineering/workflow/reviewer-resources.md" in destinations
     producer = json.loads((ROOT / "engineering/tooling/ri-lock.json").read_text())
     assert producer["revision"] == "20a5039e7731eaa1303443b782caa81a383a0af1"
     assert producer["contracts"]["navigation"] == 7 and producer["contracts"]["inventory"] == 16
@@ -183,13 +188,12 @@ def test_pinned_worker_document_selects_author_reviewer_and_retains_history():
     worker = (ROOT / "engineering/workflow/shared/worker-instructions.md").read_text()
     current, historical = worker.split("## Historical roles", 1)
     assert "one Work author" in current and "fresh independent" in current
-    assert "ri-independent-reviewer/SKILL.md" in current
+    assert "../independent-review.md" in current
     for role in ("ri-capsule-creator", "ri-implementor", "ri-dispatcher"):
         assert role not in current
         assert role in historical
-        skill = (ROOT / f".agents/skills/{role}/SKILL.md").read_text()
-        assert "historical" in skill.lower() and "unselected" in skill.lower()
-    reviewer = (ROOT / ".agents/skills/ri-independent-reviewer/SKILL.md").read_text()
+        assert f"6058b143610c1902faf1bf832227359c9fc4f5a4/docs/skill-templates/{role}/SKILL.md" in historical
+    reviewer = (ROOT / "engineering/workflow/independent-review.md").read_text()
     assert "original" in reviewer and "actually assert its claimed outcome" in reviewer and "full" in reviewer
 
 
@@ -213,8 +217,8 @@ def test_current_entrypoints_reach_one_daily_authority_and_reviewer_contract():
         text = (ROOT / name).read_text()
         assert "start-an-issue.md" in text and "worker-instructions.md" in text
     worker = (ROOT / "engineering/workflow/shared/worker-instructions.md").read_text()
-    assert "reviewer skill" in worker and "Shared worker rules" in worker
-    assert (ROOT / ".agents/skills/ri-independent-reviewer/references/project-procedure.md").is_file()
+    assert "reviewer contract" in worker and "Shared worker rules" in worker
+    assert (ROOT / "engineering/workflow/reviewer-resources.md").is_file()
 
 
 
@@ -1209,10 +1213,8 @@ def test_all_affected_local_directed_links_and_anchors_resolve():
              "engineering/workflow/shared/skill-templates/README.md",
              "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md",
              "engineering/workflow/shared/workflow-tools.md",
-             ".agents/skills/ri-work-kickoff/SKILL.md",
-             ".agents/skills/ri-work-kickoff/references/project-procedure.md",
-             ".agents/skills/ri-codex-dispatcher-kickoff/SKILL.md",
-             ".agents/skills/ri-codex-dispatcher-kickoff/references/project-procedure.md")
+             "engineering/workflow/independent-review.md",
+             "engineering/workflow/reviewer-resources.md")
     for name in paths:
         source = ROOT / name
         visible, _, errors = validator._scan_document(source)
@@ -1260,6 +1262,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_selected_optional_upstream_relocations_are_pinned_and_declared():
+    from urllib.parse import unquote
     revision = "6058b143610c1902faf1bf832227359c9fc4f5a4"
     lock = json.loads((ROOT / "engineering/tooling/ri-helper-lock.json").read_text())
     declared = (ROOT / "engineering/workflow/shared/SOURCE.md").read_text().split(
@@ -1267,7 +1270,7 @@ def test_selected_optional_upstream_relocations_are_pinned_and_declared():
     for item in lock["resources"]:
         for relocation in item["relocations"]:
             target = relocation["to"]
-            assert target in declared
+            assert unquote(target) in unquote(declared)
             if target.startswith("https://github.com/MitCaine/repository-intelligence/blob/"):
                 assert "/" + revision + "/" in target
     setup = (ROOT / "engineering/workflow/shared/new-project-setup.md").read_text()
@@ -1540,3 +1543,16 @@ def test_normal_record_refuses_symlinked_source(tmp_path):
     result = _run_public_record_validator(link)
     assert result.returncode == 1
     assert "ordinary readable file" in json.loads(result.stdout)["error"]
+
+
+def test_skill_removal_preserves_native_tools_and_direct_document_review():
+    assert not (ROOT / ".agents/skills").exists()
+    reviewer = (ROOT / "engineering/workflow/independent-review.md").read_text()
+    assert not reviewer.startswith("---")
+    for requirement in ("author cannot review", "full proposed integration", "actually assert its claimed outcome",
+                        "separate approval", "no source/Git/issue/checkpoint mutation"):
+        assert requirement in reviewer
+    source = (ROOT / "scripts/worker_execution.py").read_text()
+    assert ".agents/skills" not in source
+    for name in ("scripts/ri", "scripts/worker-execution", "scripts/native-dispatch", "scripts/setup-ri-helpers.py"):
+        assert (ROOT / name).is_file()

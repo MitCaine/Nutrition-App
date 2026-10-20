@@ -8,7 +8,9 @@ and [SOURCE record](../engineering/workflow/shared/SOURCE.md). One author perfor
 engineering and coding in a concise existing task record, followed by one fresh independent
 reviewer. No capsule creator, dispatcher, separate implementor or planning-review stage is selected.
 [Common and reviewer inputs](../engineering/workflow/shared/worker-instructions.md#role-index)
-own review duties. Setup is conditional on a changed binding. Historical resources remain
+own review duties through the ordinary [review contract](../engineering/workflow/independent-review.md)
+and [resource locator](../engineering/workflow/reviewer-resources.md). No RI skill packages are installed
+in this repository; authors use the selected documents directly. Setup is conditional on a changed binding. Historical resources remain
 reachable for pinned attempts; new instruction selection never repins active work.
 
 The [workflow tools contract](../engineering/workflow/shared/workflow-tools.md) describes
@@ -133,7 +135,7 @@ Use the shared [serial phase sequence](../engineering/workflow/shared/start-an-i
 and [evidence eligibility](../engineering/workflow/shared/start-an-issue.md#evidence-eligibility-and-corrections).
 The author reads this map, the complete daily procedure, original issue and necessary local owners.
 The reviewer receives the original requirements, concise task, exact full integration diff,
-actual evidence, common contract and complete selected reviewer skill/locator. Product changes
+actual evidence, common contract and complete selected reviewer contract/resources. Product changes
 also use [onboarding](project/onboarding.md#before-any-implementation), domain invariants and
 task-relevant database/privacy/iOS standards. A link is not a requirement to read unrelated guides.
 
