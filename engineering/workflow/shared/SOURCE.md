@@ -814,7 +814,7 @@ No repository-installed RI skills. Ordinary workflow documents retain reviewer d
 
 ### engineering/workflow/shared/start-an-issue.md
 
-Source `docs/start-an-issue.md`: 27675 bytes, SHA-256 `c5147c3f2aa9799f7b9c50558fb131b0f1144718cf0f8df7dbbc05bf5cfd0c0f`. Current document: 27930 bytes, SHA-256 `85d97812762eae69c68a0a00887edb74577276f280ba205c4aa38c5eee6f65c2`.
+Source `docs/start-an-issue.md`: 27675 bytes, SHA-256 `c5147c3f2aa9799f7b9c50558fb131b0f1144718cf0f8df7dbbc05bf5cfd0c0f`. Current document: 27833 bytes, SHA-256 `4c18b4029839eb1b8761a73904389a8eac1eb2f9fe4f333bcb963cbadddcabaf`.
 
 Declared from:
 ````text
@@ -845,6 +845,30 @@ Declared to:
 ````text
 A new or existing chat starts through this procedure and the project map; no installed RI skill is required.
 ````
+GH-441 owner-authorized local policy adaptation; upstream identity and active attempts remain unchanged.
+
+Declared from:
+````text
+Give expensive suites project-defined runtime investigation budgets in their
+existing check definitions, informed by retained measurements where available.
+Tooling signals exceedance for bounded investigation before further expensive
+work; an actual completed pass and an exceeded budget are separate observations.
+A budget does not waive required proof or convert a timeout, omitted test or
+unfinished result into PASS. Preserve those as incomplete and reconcile the active
+operation before retry. Missing budget controls are an owning-runner integration
+gap, not permission to invent a pass or another monitoring framework.
+````
+
+Declared to:
+````text
+Nutrition retains elapsed-time diagnostics without RI run/investigation thresholds,
+classifications or continuation obligations. Historical budget fields remain evidence,
+not new-run governors. Real test failures, omitted or interrupted proof, product/network
+timeouts, deliberate watchdog/resource safeguards and platform limits remain authoritative.
+Missing timing/input coverage cannot establish reuse eligibility or turn incomplete proof
+into PASS. Preserve original results and reconcile incomplete operations before retry.
+````
+
 ### engineering/workflow/shared/new-project-setup.md
 
 Source `docs/new-project-setup.md`: 10857 bytes, SHA-256 `712b83496f32df456bc23c7ac691dc2d895dd1d8e0915316d54ce6da041028ea`. Current document: 10942 bytes, SHA-256 `ba3cf54bf2e2e5be1f3ef2c3065c165bd4ece626307b8c470233fdc3571f7260`.

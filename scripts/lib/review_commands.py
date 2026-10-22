@@ -372,6 +372,7 @@ def _validate_request(request: Any, root: Path, expected_head: str, attempt: str
                 "index": index,
             }
         )
+        # Accepted only as historical request metadata; never a new-run governor.
         if "runtime_budget_seconds" in step:
             budget = step["runtime_budget_seconds"]
             try:
@@ -777,8 +778,8 @@ def _write_step_result(step_dir: Path, record: dict[str, Any]) -> None:
     _atomic_write(step_dir / "result.json", _json_bytes(record))
 
 
-def runtime_investigation(step: dict, duration: Any) -> dict:
-    """An investigation signal, never a replacement for command acceptance."""
+def _historical_runtime_investigation(step: dict, duration: Any) -> dict:
+    """Read historical classifications without applying them to current runs."""
     budget = step.get("runtime_budget_seconds")
     try:
         measured = type(duration) in (int, float) and math.isfinite(duration) and duration >= 0
@@ -791,14 +792,28 @@ def runtime_investigation(step: dict, duration: Any) -> dict:
                             else "investigate" if exceeded else "within-budget")}
 
 
-def validate_runtime_investigation(step: dict, record: dict) -> None:
+def validate_historical_runtime_investigation(step: dict, record: dict) -> None:
     if "runtime_budget_seconds" not in step:
         return
-    expected = runtime_investigation(step, record.get("duration_seconds"))
+    expected = _historical_runtime_investigation(step, record.get("duration_seconds"))
     if record.get("status") != "blocked" and expected["duration_seconds"] is None:
         raise RequestError("Runtime investigation timing missing or invalid: " + step["id"])
     if record.get("runtime_investigation") != expected:
         raise RequestError("Runtime investigation differs from owning definition: " + step["id"])
+
+
+def validate_command_evidence(step: dict, record: dict) -> None:
+    """Timing and input identity are proof, independent of retired thresholds."""
+    duration = record.get("duration_seconds")
+    if record.get("status") != "blocked":
+        try:
+            valid = type(duration) in (int, float) and math.isfinite(duration) and duration >= 0
+        except OverflowError:
+            valid = False
+        if not valid:
+            raise RequestError("Command timing missing or invalid: " + step["id"])
+    if not isinstance(record.get("input_identity"), dict):
+        raise RequestError("Command input identity missing: " + step["id"])
 
 
 def _command_input_identity(attempt_dir: Path, step: dict, effective_inputs: dict,
@@ -892,12 +907,6 @@ def _record_runner_result(args: argparse.Namespace) -> int:
         "measurements": {"duration_seconds": result.get("duration_seconds")},
     }
     _write_step_result(attempt_dir / "commands" / step["id"], result)
-    investigation = result.get("runtime_investigation")
-    if investigation and investigation["exceeded"]:
-        print(f"Runtime investigation budget exceeded: {step['id']}; "
-              f"{investigation['duration_seconds']}s > {investigation['budget_seconds']}s. "
-              f"Command status remains {result['status']}; investigate before further expensive work.",
-              file=sys.stderr, flush=True)
     print(json.dumps({"step": step["id"], "runner_status": row["status"], "runner_exit_code": row["exit_code"], "runner_log_sha256": result["runner_log_sha256"]}))
     return 0
 
@@ -931,8 +940,7 @@ def _execute(args: argparse.Namespace) -> int:
     }
     _write_exclusive(step_dir / "effective-child-inputs.json", _json_bytes(effective_inputs))
     _, request_identity, _ = _load_attempt(attempt_dir)
-    input_identity = (_command_input_identity(attempt_dir, step, effective_inputs, request_identity)
-                      if "runtime_budget_seconds" in step else None)
+    input_identity = _command_input_identity(attempt_dir, step, effective_inputs, request_identity)
 
     failed_prerequisites = []
     for prerequisite in step["prerequisites"]:
@@ -966,7 +974,6 @@ def _execute(args: argparse.Namespace) -> int:
         }
         if input_identity is not None:
             record["input_identity"] = input_identity
-            record["runtime_investigation"] = runtime_investigation(step, None)
         _write_step_result(step_dir, record)
         sys.stderr.buffer.write(message)
         return BLOCKED_EXIT
@@ -1025,7 +1032,6 @@ def _execute(args: argparse.Namespace) -> int:
     }
     if input_identity is not None:
         record["input_identity"] = input_identity
-        record["runtime_investigation"] = runtime_investigation(step, record["duration_seconds"])
     _write_step_result(step_dir, record)
     _fsync_directory(step_dir)
 
@@ -1152,7 +1158,11 @@ def _finalize(args: argparse.Namespace) -> int:
             continue
         if recorded.get("designation") != step["designation"] or recorded.get("argv") != step["argv"]:
             raise RequestError(f"step result does not match the retained request: {step['id']}")
-        validate_runtime_investigation(step, recorded)
+        validate_command_evidence(step, recorded)
+        effective_inputs = _parse_json((attempt_dir / "commands" / step["id"] /
+                                        "effective-child-inputs.json").read_bytes())
+        if recorded["input_identity"] != _command_input_identity(attempt_dir, step, effective_inputs, identity):
+            raise RequestError("Command input bindings changed: " + step["id"])
         step_dir = attempt_dir / "commands" / step["id"]
         stdout_path = step_dir / "stdout.log"
         stderr_path = step_dir / "stderr.log"
@@ -1269,10 +1279,8 @@ def _finalize(args: argparse.Namespace) -> int:
         "opt_in_qualification_status": "unspecified",
         "eligible": source_stable,
         "completion_marker_required": True,
-        "runtime_investigations": [dict(id=step["id"], **step["runtime_investigation"])
-                                   for step in step_results
-                                   if step.get("runtime_investigation", {}).get("exceeded") is True],
         "authored_commands": {
+            "command_input_version": 1,
             "schema_version": SCHEMA_VERSION,
             "attempt": request["attempt"],
             "request_identity": identity,

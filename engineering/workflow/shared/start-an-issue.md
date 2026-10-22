@@ -181,14 +181,12 @@ under [input equivalence](#evidence-eligibility-and-corrections), preserving its
 original execution identity. A wrapper's total time is not each nested gate's time;
 missing input coverage or runtime data remains unknown, never inferred.
 
-Give expensive suites project-defined runtime investigation budgets in their
-existing check definitions, informed by retained measurements where available.
-Tooling signals exceedance for bounded investigation before further expensive
-work; an actual completed pass and an exceeded budget are separate observations.
-A budget does not waive required proof or convert a timeout, omitted test or
-unfinished result into PASS. Preserve those as incomplete and reconcile the active
-operation before retry. Missing budget controls are an owning-runner integration
-gap, not permission to invent a pass or another monitoring framework.
+Nutrition retains elapsed-time diagnostics without RI run/investigation thresholds,
+classifications or continuation obligations. Historical budget fields remain evidence,
+not new-run governors. Real test failures, omitted or interrupted proof, product/network
+timeouts, deliberate watchdog/resource safeguards and platform limits remain authoritative.
+Missing timing/input coverage cannot establish reuse eligibility or turn incomplete proof
+into PASS. Preserve original results and reconcile incomplete operations before retry.
 
 ### Retain evidence and dispose of owned outputs
 

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import zipfile
@@ -837,8 +838,7 @@ def test_public_generated_budget_and_bound_input_reuse(adapter, tmp_path, budget
     configuration.write_text('{"mode":"fixture"}\n')
     prerequisite_input.write_text('known fixture prerequisite\n')
     tool = tmp_path / 'observed-command-tool'
-    tool.write_text('#!' + sys.executable + '\nimport os,sys\n'
-                    'os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n')
+    tool.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' "$@"\n')
     tool.chmod(0o755)
     for path in (configuration, prerequisite_input):
         case['definition']['inputs'].append({'path': str(path), 'sha256': sha(path)})
@@ -858,9 +858,10 @@ def test_public_generated_budget_and_bound_input_reuse(adapter, tmp_path, budget
     assert generated['check_request']['steps'][0]['runtime_budget_seconds'] == budget
     native_request = json.loads((attempt / 'CHECK_REQUEST.json').read_text())
     assert native_request['steps'][0]['runtime_budget_seconds'] == budget
-    first, second = result['facts']['runtime_investigations']
-    assert first['id'] == 'case_a' and first['budget_seconds'] == budget
-    assert first['exceeded'] == (budget < 1)
+    first, second = result['facts']['command_inputs']
+    assert first['id'] == 'case_a' and first['duration_seconds'] >= 0
+    assert 'runtime_investigations' not in result['facts']
+    assert 'budget_seconds' not in first and 'exceeded' not in first
     assert second['input_identity']['prerequisites'][0]['id'] == 'case_a'
     native_result = attempt / 'native/runs' / case['seed']['attempt'] / 'commands/case_a/result.json'
     assert second['input_identity']['prerequisites'][0]['result_sha256'] == sha(native_result)
@@ -875,7 +876,7 @@ def test_public_generated_budget_and_bound_input_reuse(adapter, tmp_path, budget
     try:
         tool.write_bytes(tool_before + b'\n# changed relevant command tool\n')
         refused = _generated_public(case, 'intake')
-        assert _generated_error(refused) == 'Runtime investigation tool identity changed'
+        assert _generated_error(refused) == 'Command tool identity changed'
         assert result_path.read_bytes() == original_result and terminal_path.read_bytes() == original_terminal
     finally:
         tool.write_bytes(tool_before)
@@ -1021,14 +1022,52 @@ def _publish_fault_copy(result_path, terminal_path, result, terminal):
 
 def _rebase_copied_native_record_artifacts(result, terminal, source_attempt, copied_attempt):
     """Rebind copied command artifacts and their exact native-record hashes."""
-    commands = copied_attempt / 'native/runs' / copied_attempt.name / 'commands'
-    for record_path in sorted(commands.glob('*/result.json')):
+    native_directory = copied_attempt / 'native/runs' / copied_attempt.name
+    combined_path = native_directory / 'results.json'
+    combined = json.loads(combined_path.read_text())
+    current = combined['authored_commands'].get('command_input_version') == 1
+    records = []
+    for row in combined['authored_commands']['steps']:
+        record_path = native_directory / 'commands' / row['id'] / 'result.json'
         record = json.loads(record_path.read_text())
         _rebase_attempt_paths(record, source_attempt, copied_attempt)
+        if current:
+            for prerequisite in record['input_identity']['prerequisites']:
+                prerequisite['result_sha256'] = sha(
+                    native_directory / 'commands' / prerequisite['id'] / 'result.json')
         write(record_path, record)
+        records.append(record)
         binding = {'path': str(record_path), 'sha256': sha(record_path)}
         _rewrite_reference(result, str(record_path), binding)
         _rewrite_reference(terminal, str(record_path), binding)
+    combined['authored_commands']['steps'] = records
+    write(combined_path, combined)
+    if current:
+        result['facts']['command_inputs'] = [
+            {'id': row['id'], 'duration_seconds': row.get('duration_seconds'),
+             'input_identity': row['input_identity']} for row in records]
+    complete_path = native_directory / 'complete.json'
+    complete = json.loads(complete_path.read_text())
+    bundle = native_directory / Path(complete['bundle_path']).name
+    # Rebind the isolated positive fixture's whole evidence graph before any fault.
+    with zipfile.ZipFile(bundle) as archive:
+        members = [(item, archive.read(item.filename)) for item in archive.infolist()]
+    with zipfile.ZipFile(bundle, 'w') as archive:
+        for item, data in members:
+            archive.writestr(item, combined_path.read_bytes()
+                             if item.filename == 'evidence/results.json' else data)
+    complete.update(bundle_path=str(bundle), results_sha256=sha(combined_path),
+                    bundle_sha256=sha(bundle))
+    write(complete_path, complete)
+    state_path = native_directory / 'attempt-state.json'
+    state = json.loads(state_path.read_text())
+    state.update(attempt_directory=str(native_directory.resolve()),
+                 results_sha256=complete['results_sha256'], bundle_sha256=complete['bundle_sha256'])
+    write(state_path, state)
+    for path in (combined_path, bundle, complete_path, state_path):
+        binding = {'path': str(path), 'sha256': sha(path)}
+        _rewrite_reference(result, str(path), binding)
+        _rewrite_reference(terminal, str(path), binding)
 
 
 def _recompute_fault_conformance(case, attempt, result, terminal):

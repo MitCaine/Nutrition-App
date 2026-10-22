@@ -38,8 +38,8 @@
       "destination": "engineering/workflow/shared/start-an-issue.md",
       "source_bytes": 27675,
       "source_sha256": "c5147c3f2aa9799f7b9c50558fb131b0f1144718cf0f8df7dbbc05bf5cfd0c0f",
-      "destination_bytes": 27930,
-      "destination_sha256": "85d97812762eae69c68a0a00887edb74577276f280ba205c4aa38c5eee6f65c2",
+      "destination_bytes": 27833,
+      "destination_sha256": "4c18b4029839eb1b8761a73904389a8eac1eb2f9fe4f333bcb963cbadddcabaf",
       "relocations": [
         {
           "from": "consumer-guide.md#navigate-before-expanding-scope",
@@ -52,6 +52,10 @@
         {
           "from": "A new or existing chat may start through `ri-work-kickoff`.",
           "to": "A new or existing chat starts through this procedure and the project map; no installed RI skill is required."
+        },
+        {
+          "from": "Give expensive suites project-defined runtime investigation budgets in their\nexisting check definitions, informed by retained measurements where available.\nTooling signals exceedance for bounded investigation before further expensive\nwork; an actual completed pass and an exceeded budget are separate observations.\nA budget does not waive required proof or convert a timeout, omitted test or\nunfinished result into PASS. Preserve those as incomplete and reconcile the active\noperation before retry. Missing budget controls are an owning-runner integration\ngap, not permission to invent a pass or another monitoring framework.",
+          "to": "Nutrition retains elapsed-time diagnostics without RI run/investigation thresholds,\nclassifications or continuation obligations. Historical budget fields remain evidence,\nnot new-run governors. Real test failures, omitted or interrupted proof, product/network\ntimeouts, deliberate watchdog/resource safeguards and platform limits remain authoritative.\nMissing timing/input coverage cannot establish reuse eligibility or turn incomplete proof\ninto PASS. Preserve original results and reconcile incomplete operations before retry."
         }
       ]
     },

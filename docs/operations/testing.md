@@ -389,8 +389,7 @@ prerequisites. For example:
       "cwd": ".",
       "env": {},
       "prerequisites": [],
-      "designation": "mandatory",
-      "runtime_budget_seconds": 30
+      "designation": "mandatory"
     }
   ]
 }
@@ -409,32 +408,31 @@ exit codes remain null because no process ran. The executor returns a nonzero st
 runner, which records a failed check and retains a failure-log copy with the launch diagnostic.
 Dependent steps stay blocked; a later independent success cannot clear a mandatory launch failure.
 
-`runtime_budget_seconds` is optional and accepts a finite positive number, excluding Booleans.
-Select investigation budgets in the accepted task's existing check definition, informed by retained
-individual command measurements. Generation and execution use the same validator and field; there
-is no separate budget inventory. The example's 30 seconds is illustrative, not a repository default.
-Select affected implementation checks, failed plus affected correction reruns, and broader acceptance
-checks by risk and required profile floors before execution. A full suite needs a concrete reason;
-the controller owns changes to that selection.
+Normal runs do not select RI measurement thresholds or produce investigation classifications,
+notices or continuation/reuse obligations. `runtime_budget_seconds` remains accepted as validated
+historical request metadata only; it does not govern a new run. Historical results retain their
+original classifications and outcomes under their original identities.
 
-Each budgeted command records `runtime_investigation` separately from its exit/status: measured duration,
-selected budget, exceedance and `within-budget`, `investigate`, `unknown` or `not-selected` disposition.
-Reconciliation emits an exceeded-budget notice before the runner advances to later commands, and
-the terminal `runtime_investigations` list retains exceedances. Investigate that signal before
-selecting further expensive work; it neither cancels already required checks nor waives a gate.
-A legitimately completed pass over budget stays a pass with a separate investigation signal.
-This duration measures the direct command invocation, including launch/wait overhead, not each
-nested test or gate. It is independent of a job deadline or process timeout. Blocked/unlaunched,
-failed, interrupted, omitted and incomplete results retain their actual status; missing timing is
-unknown and never establishes successful completion or evidence equivalence.
+Every current command retains elapsed seconds and command/source/input/log identities independent
+of budget fields. The current native `authored_commands.command_input_version` is 1; generated
+results project these records as `facts.command_inputs`. Older native records without that marker
+retain their historical `facts.runtime_investigations` representation for integrity-checked reading.
+No historical blocked or unexecuted row is converted to success. Missing timing or input proof
+cannot establish acceptance or reuse. Relevant source/tool/configuration/prerequisite changes
+still invalidate reuse; real failures, warnings, blocked dependencies and incomplete results remain.
+
+Select affected checks and applicable profile floors before execution. Elapsed diagnostics measure
+the direct invocation, including launch/wait overhead, separately from nested tests. Real product,
+network and test timeouts, deliberate hang/runaway/resource safeguards and external platform hard
+limits remain in force. Removing RI measurement policy neither waives required proof nor removes
+those safeguards.
 
 The existing per-command input record binds the raw request, source observation, effective child
 configuration, observed executable/runner bytes and prerequisite result hashes. These observations
 do not enumerate every dependency of an arbitrary child. Unknown bindings cannot support reuse.
 For generated requests, the same owning definition also binds selected original configuration,
 prerequisite inputs, tools and runtime. Read-only SAME intake rechecks observed command/runner tool
-hashes and revalidates those inputs and the budget
-facts against retained native evidence, preserving the original RETURN. An unchanged-input result is
+hashes and revalidates those inputs against retained native evidence, preserving the original RETURN. An unchanged-input result is
 reuse-eligible only after controller verification of all relevant transitive inputs/environment;
 changed relevant configuration or prerequisite inputs refuse intake. Successful intake authenticates
 the selected bindings, not an exhaustive dependency claim. No automatic cache or skipped execution

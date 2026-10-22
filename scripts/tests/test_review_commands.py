@@ -753,28 +753,30 @@ def test_term_leaves_durable_incomplete_attempt_without_terminal_pass(
         assert json.loads((attempt_dir / "results.json").read_text())["eligible"] is False
 
 
-@pytest.mark.parametrize("scenario,budget", [("within", 10), ("over", 0.001),
+@pytest.mark.parametrize("scenario,budget", [("normal", None), ("within", 10), ("over", 0.001),
                                             ("failure", 0.001), ("launch", 0.001)])
-def test_public_cli_runtime_budget_signals_preserve_status(authored_repo, tmp_path, scenario, budget):
-    argv = [sys.executable, "-c", "import time; time.sleep(0.03)"]
+def test_public_cli_legacy_budget_is_metadata_and_preserves_real_status(authored_repo, tmp_path, scenario, budget):
+    argv = [sys.executable, "-c", "import time,warnings; warnings.warn('fixture deprecation', DeprecationWarning); time.sleep(0.03)"]
     if scenario == "failure":
         argv[-1] += "; raise SystemExit(17)"
     elif scenario == "launch":
         argv = [str(tmp_path / "missing-command")]
-    first = dict(_step("observe", argv), runtime_budget_seconds=budget)
-    dependent = dict(_step("dependent", [sys.executable, "-c", "pass"],
-                           prerequisites=["observe"]), runtime_budget_seconds=10)
+    first = _step("observe", argv)
+    dependent = _step("dependent", [sys.executable, "-c", "pass"], prerequisites=["observe"])
+    if budget is not None:
+        first["runtime_budget_seconds"] = budget
+        dependent["runtime_budget_seconds"] = 10
     request = _write_request(authored_repo, tmp_path / "request.json", "budget", [first, dependent])
     result = _run(authored_repo, request, "budget", tmp_path / "evidence")
-    expected_pass = scenario in {"within", "over"}
+    expected_pass = scenario in {"normal", "within", "over"}
     assert result.returncode == (0 if expected_pass else 1), result.stdout + result.stderr
     attempt = _attempt_dir(tmp_path / "evidence", "budget")
     native = json.loads((attempt / "results.json").read_text())
     observed, later = native["authored_commands"]["steps"]
-    investigation = observed["runtime_investigation"]
-    assert investigation["budget_seconds"] == budget
-    assert investigation["duration_seconds"] == observed["duration_seconds"]
-    assert investigation["exceeded"] == (observed["duration_seconds"] > budget)
+    assert "runtime_investigation" not in observed
+    assert "runtime_investigations" not in native
+    assert observed["duration_seconds"] >= 0
+    assert "Runtime investigation budget exceeded" not in result.stderr
     assert observed["status"] == ("passed" if expected_pass else "failed")
     assert native["summary"]["mandatory_gate"] == ("passed" if expected_pass else "failed")
     bindings = observed["input_identity"]
@@ -782,17 +784,18 @@ def test_public_cli_runtime_budget_signals_preserve_status(authored_repo, tmp_pa
     assert bindings["effective_child_inputs_sha256"] == _sha256(
         attempt / "commands/observe/effective-child-inputs.json")
     assert bindings["source_fingerprint"] == native["authored_commands"]["source_observation"]["before_fingerprint"]
+    if expected_pass:
+        assert "fixture deprecation" in (attempt / "commands/observe/stderr.log").read_text()
     if scenario == "over":
-        assert investigation["disposition"] == "investigate"
-        assert "Runtime investigation budget exceeded: observe" in result.stderr
-        assert native["runtime_investigations"][0]["id"] == "observe"
+        assert observed["duration_seconds"] > budget
+        assert later["status"] == "passed"
     if expected_pass:
         assert later["input_identity"]["prerequisites"] == [{
             "id": "observe", "result_sha256": _sha256(attempt / "commands/observe/result.json")}]
     else:
         assert later["status"] == "blocked"
-        assert later["runtime_investigation"]["duration_seconds"] is None
-        assert later["runtime_investigation"]["exceeded"] is None
+        assert later.get("duration_seconds") is None
+        assert "runtime_investigation" not in later
     if scenario == "launch":
         assert observed["child_return_code"] is None
         assert bindings["executable"] is None
@@ -821,10 +824,44 @@ def test_public_cli_budget_missing_timing_cannot_be_finalized_as_pass(authored_r
                              [first, _step('omit', [sys.executable, '-c', tamper])])
     result = _run(authored_repo, request, 'budget-omission', output)
     assert result.returncode != 0
-    assert 'Runtime investigation timing missing or invalid' in result.stderr
+    assert 'Command timing missing or invalid' in result.stderr
     attempt = _attempt_dir(output, 'budget-omission')
     assert not (attempt / 'complete.json').exists()
     assert json.loads((attempt / 'attempt-state.json').read_text())['status'] == 'incomplete'
+
+
+def test_public_cli_real_child_deadline_preserves_failure_and_blocking(authored_repo, tmp_path):
+    # The child owns this real deadline; retired measurement metadata cannot waive it.
+    code = ("import subprocess,sys; "
+            "subprocess.run([sys.executable, '-c', 'import time; time.sleep(30)'], timeout=0.05)")
+    request = _write_request(authored_repo, tmp_path / "request.json", "child-timeout", [
+        dict(_step("deadline", [sys.executable, "-c", code]), runtime_budget_seconds=0.001),
+        _step("dependent", [sys.executable, "-c", "pass"], prerequisites=["deadline"]),
+    ])
+    result = _run(authored_repo, request, "child-timeout", tmp_path / "evidence")
+    assert result.returncode != 0
+    attempt = _attempt_dir(tmp_path / "evidence", "child-timeout")
+    native = json.loads((attempt / "results.json").read_text())
+    first, second = native["authored_commands"]["steps"]
+    assert first["status"] == "failed" and first["child_return_code"] != 0
+    assert second["status"] == "blocked"
+    assert "TimeoutExpired" in (attempt / "commands/deadline/stderr.log").read_text()
+    assert "runtime_investigations" not in native
+
+
+def test_historical_budget_reader_preserves_original_classification():
+    from lib import review_commands
+
+    step = {"id": "old", "runtime_budget_seconds": 1}
+    original = {"status": "passed", "duration_seconds": 2,
+                "runtime_investigation": {"budget_seconds": 1, "duration_seconds": 2,
+                                          "exceeded": True, "disposition": "investigate"}}
+    before = json.dumps(original, sort_keys=True)
+    review_commands.validate_historical_runtime_investigation(step, original)
+    assert json.dumps(original, sort_keys=True) == before
+    original["runtime_investigation"]["exceeded"] = False
+    with pytest.raises(review_commands.RequestError, match="differs"):
+        review_commands.validate_historical_runtime_investigation(step, original)
 
 
 def test_native_case_export_uses_real_runner_source_and_logs(authored_repo, tmp_path):

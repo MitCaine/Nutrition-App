@@ -150,6 +150,10 @@ these are recovery interfaces, not extra steps in the new normal route.
 
 ## Standards and checks
 
+GH-441 declares the local selected-copy adaptation retiring RI runtime-investigation policy;
+[elapsed diagnostics and compatibility](operations/testing.md#authored-command-review-attempts)
+retain real outcomes, input identities and deliberate timeout/resource safeguards.
+
 Worker handoffs apply the canonical [local actor and timing rule](operations/session-contract.md#actor-and-timing)
 within their selected role read scopes. Read-only result delivery is not task completion;
 controller-owned acceptance checks remain required at their proper gates.
