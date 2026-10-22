@@ -177,3 +177,19 @@ fresh independent review before guarded integration. Separate qualified and
 reviewed terminal closeout retained the full reviewed capsule. The register
 records authorization and validation requirements; its original review fields
 remain historical evidence rather than proof of these replacement gates.
+
+## Current upstream UUID removal
+
+GH-443's reduced Expo patch resolves expo-sharing 57.0.24 → config-plugins 57.0.11
+→ npm xcode 4.0.0. Upstream xcode no longer declares UUID. The register appends
+`current_upstream_removal`; historical assessments, authority, replacement and the
+GH-384 re-evaluation remain unchanged. Their original readers remain selected for
+old records without the removal marker.
+
+For the current marker, offline validation requires the exact reviewed versions and
+edges, UUID absence throughout the lock, no UUID dependency edge, and no additional
+xcode installation. Installed validation checks the actual xcode path/owner, full npm
+tree UUID absence and absence of UUID imports in the installed owner. Drift or UUID
+reintroduction fails closed. The old scoped manifest override stays unchanged and is
+inert with no UUID dependency; this is no new override or advisory dismissal.
+Repository/mobile/iOS-native qualification and independent review remain required.

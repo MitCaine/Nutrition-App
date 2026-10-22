@@ -101,6 +101,27 @@ CURRENT_REEVALUATION_ACTUAL_SOURCE = {
 }
 
 
+UPSTREAM_UUID_REMOVAL = {'dependency_path': [{'location': '',
+                      'name': 'nutrition-mobile',
+                      'requested': None,
+                      'version': '2.2.0'},
+                     {'location': 'node_modules/expo-sharing',
+                      'name': 'expo-sharing',
+                      'requested': '~57.0.22',
+                      'version': '57.0.24'},
+                     {'location': 'node_modules/@expo/config-plugins',
+                      'name': '@expo/config-plugins',
+                      'requested': '^57.0.11',
+                      'version': '57.0.11'},
+                     {'location': 'node_modules/xcode',
+                      'name': 'xcode',
+                      'requested': '^4.0.0',
+                      'version': '4.0.0'}],
+ 'disposition': 'upstream xcode 4 removed its uuid dependency',
+ 'manifest_path': 'apps/mobile/package-lock.json',
+ 'source_issue': 443}
+
+
 class DependencyRiskError(RuntimeError):
     pass
 
@@ -618,6 +639,9 @@ def validate_register_schema(
             "current re-evaluation missing",
         )
         validate_current_re_evaluation_schema(current)
+        if "current_upstream_removal" in retired:
+            require(retired["current_upstream_removal"] == UPSTREAM_UUID_REMOVAL,
+                    "upstream UUID removal record drift")
         require(
             retired.get("disposition")
             == "fixed by owner-authorized tested compatibility override",
@@ -899,11 +923,50 @@ def validate_current_re_evaluation(
     )
 
 
+def validate_upstream_uuid_removal(retired, lock_document, manifest):
+    require(retired.get("current_upstream_removal") == UPSTREAM_UUID_REMOVAL,
+            "upstream UUID removal record drift")
+    require(manifest.get("overrides") == {"xcode": {"uuid": "11.1.1"}},
+            "owner-authorized xcode-only override missing or changed")
+    validate_lock_path({"alert_number": 2,
+                        "dependency_path": UPSTREAM_UUID_REMOVAL["dependency_path"]}, lock_document)
+    packages = lock_document["packages"]
+    require(not any(location.endswith("node_modules/uuid") for location in packages),
+            "UUID package reintroduced after upstream removal")
+    require(not any("uuid" in dependency_map(node) for node in packages.values()),
+            "UUID dependency edge reintroduced after upstream removal")
+    require({location for location in packages if location.endswith("node_modules/xcode")}
+            == {"node_modules/xcode"}, "unreviewed xcode install location")
+
+
+def validate_installed_upstream_removal(mobile_root):
+    expected = [f"{node['name']}@{node['version']}"
+                for node in UPSTREAM_UUID_REMOVAL["dependency_path"]]
+    paths = npm_paths(mobile_root, "xcode")
+    require(expected in paths and all(path[-1] == "xcode@4.0.0" for path in paths),
+            "installed upstream xcode path drift")
+    tree = npm_json(mobile_root, ["ls", "--all", "--json"])
+    def has_uuid(node):
+        dependencies = node.get("dependencies", {})
+        return "uuid" in dependencies or any(has_uuid(child) for child in dependencies.values())
+    require(not has_uuid(tree), "installed UUID reintroduced after upstream removal")
+    owner = mobile_root / "node_modules/xcode"
+    package = read_json(owner / "package.json")
+    require(package.get("name") == "xcode" and package.get("version") == "4.0.0"
+            and "uuid" not in dependency_map(package), "installed xcode owner drift")
+    require(re.search(r"require\s*\(\s*['\"]uuid['\"]|from\s+['\"]uuid['\"]",
+                      read_text_tree(owner)) is None, "installed xcode imports removed UUID")
+    return paths
+
+
 def validate_retired_replacement(
     retired: dict[str, Any],
     lock_document: dict[str, Any],
     manifest: dict[str, Any],
 ) -> None:
+    if "current_upstream_removal" in retired:
+        validate_upstream_uuid_removal(retired, lock_document, manifest)
+        return
     # The historical replacement is checked immutably by the register schema.
     # This runtime check follows the narrowly recorded current path instead of
     # treating the frozen historical @expo/config-plugins@57.0.9 path as current.
@@ -1423,6 +1486,7 @@ def validate_installed(
     current_records = register["records"] + [
         current_replacement_record(item)
         for item in register.get("retired_records", [])
+        if "current_upstream_removal" not in item
     ]
     for record in current_records:
         records_by_package.setdefault(
@@ -1476,6 +1540,13 @@ def validate_installed(
         observed_paths[
             package
         ] = observed
+
+    if any("current_upstream_removal" in item for item in register.get("retired_records", [])):
+        paths = validate_installed_upstream_removal(mobile_root)
+        return {**offline, "mode": "installed",
+                "active_packages": sorted({record["package"] for record in register["records"]}),
+                "validated_packages": sorted(set(observed_paths) | {"xcode"}),
+                "uuid_path_count": 0, "upstream_uuid_removed": True, "xcode_paths": paths}
 
     uuid_explain = npm_json(
         mobile_root,

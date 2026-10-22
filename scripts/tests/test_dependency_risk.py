@@ -30,28 +30,23 @@ SPEC.loader.exec_module(
 
 class DependencyRiskTests(unittest.TestCase):
     def load_register(self):
-        return json.loads(
-            (
-                ROOT
-                / "engineering"
-                / "security"
-                / "dependency-risk-register.json"
-            ).read_text(
-                encoding="utf-8"
-            )
-        )
+        # Original fixtures explicitly exercise the preserved pre-removal contract.
+        register = json.loads((ROOT / "engineering/security/dependency-risk-register.json").read_text())
+        for retired in register["retired_records"]:
+            retired.pop("current_upstream_removal", None)
+        return register
 
     def load_lock(self):
-        return json.loads(
-            (
-                ROOT
-                / "apps"
-                / "mobile"
-                / "package-lock.json"
-            ).read_text(
-                encoding="utf-8"
-            )
-        )
+        lock = json.loads((ROOT / "apps/mobile/package-lock.json").read_text())
+        # Reconstruct the exact old reviewed edges for the historical reader tests.
+        path = dependency_risk.CURRENT_REEVALUATION_PATH
+        for index, node in enumerate(path):
+            item = lock["packages"].setdefault(node["location"], {})
+            item["version"] = node["version"]
+            if index:
+                parent = lock["packages"][path[index - 1]["location"]]
+                parent.setdefault("dependencies", {})[node["name"]] = node["requested"]
+        return lock
 
     def historical_register(self):
         register = self.load_register()
@@ -625,6 +620,70 @@ class DependencyRiskTests(unittest.TestCase):
             [],
         )
 
+
+
+class UpstreamUuidRemovalTests(unittest.TestCase):
+    def setUp(self):
+        self.register = json.loads((ROOT / "engineering/security/dependency-risk-register.json").read_text())
+        self.retired = self.register["retired_records"][0]
+        self.lock = json.loads((ROOT / "apps/mobile/package-lock.json").read_text())
+        self.manifest = json.loads((ROOT / "apps/mobile/package.json").read_text())
+
+    def test_current_exact_removal_and_preserved_history(self):
+        dependency_risk.validate_register_schema(self.register)
+        before = copy.deepcopy(self.retired)
+        dependency_risk.validate_retired_replacement(self.retired, self.lock, self.manifest)
+        self.assertEqual(self.retired, before)
+        self.assertEqual(self.retired["current_re_evaluation"]["dependency_path"],
+                         dependency_risk.CURRENT_REEVALUATION_PATH)
+        self.assertEqual(self.retired["historical_assessment"]["installed_version"], "7.0.3")
+
+    def test_removal_fails_closed_for_graph_and_record_drift(self):
+        for fault in ("version", "edge", "uuid_node", "uuid_edge", "extra_xcode", "record"):
+            with self.subTest(fault=fault):
+                lock, retired = copy.deepcopy(self.lock), copy.deepcopy(self.retired)
+                if fault == "version":
+                    lock["packages"]["node_modules/xcode"]["version"] = "3.0.1"
+                elif fault == "edge":
+                    lock["packages"]["node_modules/@expo/config-plugins"]["dependencies"]["xcode"] = "^3.0.1"
+                elif fault == "uuid_node":
+                    lock["packages"]["node_modules/uuid"] = {"version": "11.1.1"}
+                elif fault == "uuid_edge":
+                    lock["packages"]["node_modules/xcode"]["dependencies"]["uuid"] = "^11.1.1"
+                elif fault == "extra_xcode":
+                    lock["packages"]["node_modules/other/node_modules/xcode"] = {"version": "4.0.0"}
+                else:
+                    retired["current_upstream_removal"]["source_issue"] = 1
+                with self.assertRaises(dependency_risk.DependencyRiskError):
+                    dependency_risk.validate_retired_replacement(retired, lock, self.manifest)
+
+    def test_installed_removal_validates_owner_tree_and_imports(self):
+        import tempfile
+        expected = [f"{node['name']}@{node['version']}"
+                    for node in dependency_risk.UPSTREAM_UUID_REMOVAL["dependency_path"]]
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            owner = root / "node_modules/xcode"
+            owner.mkdir(parents=True)
+            package = {"name": "xcode", "version": "4.0.0", "dependencies": {"simple-plist": "^1.3.1"}}
+            (owner / "package.json").write_text(json.dumps(package))
+            source = owner / "index.js"
+            source.write_text("const crypto = require('crypto'); crypto.randomUUID();")
+            with patch.object(dependency_risk, "npm_paths", return_value=[expected]), \
+                    patch.object(dependency_risk, "npm_json", return_value={"dependencies": {}}) as tree:
+                self.assertEqual(dependency_risk.validate_installed_upstream_removal(root), [expected])
+                tree.return_value = {"dependencies": {"uuid": {"version": "11.1.1"}}}
+                with self.assertRaisesRegex(dependency_risk.DependencyRiskError, "installed UUID"):
+                    dependency_risk.validate_installed_upstream_removal(root)
+                tree.return_value = {"dependencies": {}}
+                source.write_text("const uuid = require('uuid');")
+                with self.assertRaisesRegex(dependency_risk.DependencyRiskError, "imports removed UUID"):
+                    dependency_risk.validate_installed_upstream_removal(root)
+                source.write_text("const crypto = require('crypto'); crypto.randomUUID();")
+                package["version"] = "3.0.1"
+                (owner / "package.json").write_text(json.dumps(package))
+                with self.assertRaisesRegex(dependency_risk.DependencyRiskError, "owner drift"):
+                    dependency_risk.validate_installed_upstream_removal(root)
 
 if __name__ == "__main__":
     unittest.main()

@@ -126,6 +126,37 @@
         "scope": "issue-384 current @expo/config-plugins compatibility re-evaluation",
         "source_issue": 384
       },
+      "current_upstream_removal": {
+        "dependency_path": [
+          {
+            "location": "",
+            "name": "nutrition-mobile",
+            "requested": null,
+            "version": "2.2.0"
+          },
+          {
+            "location": "node_modules/expo-sharing",
+            "name": "expo-sharing",
+            "requested": "~57.0.22",
+            "version": "57.0.24"
+          },
+          {
+            "location": "node_modules/@expo/config-plugins",
+            "name": "@expo/config-plugins",
+            "requested": "^57.0.11",
+            "version": "57.0.11"
+          },
+          {
+            "location": "node_modules/xcode",
+            "name": "xcode",
+            "requested": "^4.0.0",
+            "version": "4.0.0"
+          }
+        ],
+        "disposition": "upstream xcode 4 removed its uuid dependency",
+        "manifest_path": "apps/mobile/package-lock.json",
+        "source_issue": 443
+      },
       "disposition": "fixed by owner-authorized tested compatibility override",
       "historical_assessment": {
         "advisory_id": "GHSA-w5hq-g745-h8pq",
