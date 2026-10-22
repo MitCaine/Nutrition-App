@@ -46,8 +46,9 @@ There are no active accepted-risk records. The same task patched brace-expansion
 to 5.0.12 and its four nested copies to 1.1.21. Do not reuse historical installed
 paths or versions as a current dependency graph.
 
-The replacement package is reached through `expo-sharing`, `@expo/config-plugins`,
-and `xcode`. The reviewed `xcode` caller uses `uuid.v4()`; the historical UUID 7
+In the historical replacement graph, the replacement package was reached through
+`expo-sharing`, `@expo/config-plugins`, and `xcode`. That reviewed `xcode` caller
+used `uuid.v4()`; the historical UUID 7
 finding concerned other UUID APIs with caller-supplied buffers. The exact versions, edges,
 advisory, reviewed commit, and reevaluation triggers live in the risk register.
 After every dependency refresh, run offline validation to detect any changed
@@ -78,21 +79,30 @@ After installing the exact mobile lockfile, run:
     cd ../..
     python scripts/dependency_risk.py validate-installed
 
-Installed validation derives the current dependency paths with `npm ls`, checks
-ownership with `npm explain`, and inspects the installed xcode package for exactly
-one `uuid.v4()` call and no `uuid.v3`, `uuid.v5`, or `uuid.v6` calls. Currently this
-validates the UUID replacement path; it does not validate an installed Metro /
-image-size asset surface.
+For the current upstream-removal record, installed validation derives the reviewed
+sharing → config-plugins → xcode 4 paths with `npm ls`, verifies the installed owner
+and dependency metadata, and requires UUID to be absent from the installed tree
+and xcode source imports. The offline check also requires UUID absence from the
+lockfile and verifies its exact reviewed edges. These are the current graph checks.
+
+For historical records without the removal marker, installed validation retains
+the original replacement-path checks: `npm ls`, ownership through `npm explain`,
+and exactly one `uuid.v4()` call with no `uuid.v3`, `uuid.v5`, or `uuid.v6` calls.
+Neither route validates an installed Metro / image-size asset surface.
 
 This separates package-manager proof from assumptions encoded only in prose.
 
-### Focused security check
+### Historical replacement-graph security check
 
-After the same locked `npm ci` installation, run from the repository root:
+Only for a historical locked graph that still contains the reviewed UUID replacement,
+run from the repository root after its locked `npm ci` installation:
 
     node apps/mobile/scripts/check-security-dependencies.cjs
 
-The check compares installed and locked brace-expansion/UUID versions and checks
+This preserved helper requires UUID to be installed, so it is not a current-graph
+check after upstream removal. Use the offline and installed validation commands
+above for the current graph. For its historical graph, the helper compares installed
+and locked brace-expansion/UUID versions and checks
 that the UUID override is scoped to xcode. It exercises ordinary brace expansion
 and five hostile inputs against every installed brace-expansion copy, with each
 hostile case in a separate process bounded by a 15-second deadline. It checks
