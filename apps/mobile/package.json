@@ -33,7 +33,7 @@
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
-    "zod": "^3.0.0"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@react-native/jest-preset": "^0.86.3",
