@@ -1,7 +1,7 @@
 # Controller-only public dependencies; RI source stays private and is installed separately.
 packaging==26.0 --hash=sha256:b36f1fef9334a5588b4166f8bcd26a14e521f2b55e6b9de3aaa80d3ff7a37529
 pip==26.2 --hash=sha256:931c303696af6fa3417112103b1cad26890e5a07eccb5b99783700e33f2b8aad
-setuptools==84.0.0 --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670
+setuptools==84.1.0 --hash=sha256:23657205b63d4d31395ab917815247f694aafad28cd21316bf5fd45a51048ea0 --hash=sha256:5231689c6ac8156cd155cfb98c3fd6fb252c3e7e9bd3d78b64d3c55f132624c9
 tree-sitter==0.25.1 --hash=sha256:ae024d8ccfef51e61c44a81af7a48670601430701c24f450bea10f4b4effd8d1
 tree-sitter-c==0.24.2 --hash=sha256:97bc80a224d48215d4e6e6376bf30d114f4c317b8145ff1b02afe785d4ba7bdd
 tree-sitter-c-sharp==0.23.5 --hash=sha256:a75994a11f6fed3f5b8c36ad6a00e5dc43205bd912c43af3a2a54fdf649664eb
