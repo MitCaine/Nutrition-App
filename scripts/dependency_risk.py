@@ -104,7 +104,7 @@ CURRENT_REEVALUATION_ACTUAL_SOURCE = {
 UPSTREAM_UUID_REMOVAL = {'dependency_path': [{'location': '',
                       'name': 'nutrition-mobile',
                       'requested': None,
-                      'version': '2.2.0'},
+                      'version': '2.2.1'},
                      {'location': 'node_modules/expo-sharing',
                       'name': 'expo-sharing',
                       'requested': '~57.0.22',

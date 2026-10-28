@@ -8,14 +8,17 @@ role permissions and completion routing. This guide retains its product/planning
 ## Release and product status
 
 Version 2.2 is the current source-release line. Root `VERSION` is the canonical
-repository release authority with exact value `2.2.0`; current mobile, Expo,
+repository release authority with exact value `2.2.1`; current mobile, Expo,
 backend, and documentation metadata mirror it. The Version 2.0 release was
 qualified with Node 24 and Python 3.12. Current development and qualification
 use the Node and Python lines declared by `.nvmrc` and `.python-version`.
 
-The [v2.2.0 GitHub release](https://github.com/MitCaine/Nutrition-App/releases/tag/v2.2.0)
-records qualified source commit `2f888ec8bb8a65eef59ac8fd71f894e1444cc3c9`,
-identified by the annotated `v2.2.0` tag.
+The [v2.2.1 GitHub release](https://github.com/MitCaine/Nutrition-App/releases/tag/v2.2.1)
+identifies its qualified source through the annotated `v2.2.1` tag. This patch
+includes the merged Expo compatibility fixes required by release refresh; dependency
+versions and PostCSS 8.5.30 remain unchanged from the repaired main.
+The earlier [v2.2.0 release](https://github.com/MitCaine/Nutrition-App/releases/tag/v2.2.0)
+retains source commit `2f888ec8bb8a65eef59ac8fd71f894e1444cc3c9`.
 Version 2.2 includes durable remote Log mutation receipts, strict backup schema admission
 and staged version-7 backup migration, owner-scoped batched Food and Recipe list hydration,
 and aligned development and review tooling. The local SQLite runtime remains the primary
@@ -114,7 +117,7 @@ Use that index rather than maintaining a second routing table here.
   Follow [dependency risk management](../operations/dependency-risk-management.md)
   for validation and retained evidence. Check GitHub security alerts for newly
   reported findings instead of relying on a fixed count in this guide.
-- Version 2.2.0 is a source/GitHub release boundary. No iOS `buildNumber` or Android `versionCode` is introduced by this release, and no App Store or Play Store binary publication is implied.
+- Version 2.2.1 is a source/GitHub release boundary. No iOS `buildNumber` or Android `versionCode` is introduced by this release, and no App Store or Play Store binary publication is implied.
 
 ## Authority and maintenance
 

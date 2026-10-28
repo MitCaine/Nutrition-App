@@ -132,7 +132,7 @@
             "location": "",
             "name": "nutrition-mobile",
             "requested": null,
-            "version": "2.2.0"
+            "version": "2.2.1"
           },
           {
             "location": "node_modules/expo-sharing",
