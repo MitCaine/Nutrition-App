@@ -309,7 +309,7 @@ class RuntimeTests(SourceFixture):
         versions = {wheel["name"]: wheel["version"] for wheel in self.lock["wheels"]}
         self.assertEqual(versions["tree-sitter"], "0.25.1")
         self.assertEqual(versions["tree-sitter-markdown"], "0.5.1")
-        self.assertEqual(versions["setuptools"], "84.0.0")
+        self.assertEqual(versions["setuptools"], "84.1.0")
         self.assertEqual(versions["wheel"], "0.48.0")
         self.assertNotIn("0.26.0", versions.values())
         for wheel in self.lock["wheels"]:

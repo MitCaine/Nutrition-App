@@ -18,7 +18,10 @@ at `20a5039e7731eaa1303443b782caa81a383a0af1`: navigation 7, inventory 16, adapt
 version 0.1.0 alone is insufficient. Later upstream commits and dirty checkout files are
 not part of this installation. The pin records the archive digest, all 21 installed RI
 source-file hashes, and 15 public parser/build/installer wheels with versions and hashes.
-The new producer build contract requires setuptools 84.0.0, wheel 0.48.0 and
+The pinned producer source declares setuptools 84.0.0. Nutrition uses the security-patched
+setuptools 84.1.0 in its paired public wheel lock and the existing offline
+`--no-build-isolation` installation route; fresh bootstrap/verify qualifies that
+consumer selection without changing the private source. Wheel 0.48.0 and
 tree-sitter-markdown 0.5.1; compatible pip, packaging, Tree-sitter 0.25.1 and grammar pins
 remain exact. Rejected Tree-sitter 0.26.0 stays excluded.
 The [requirements file](ri-requirements.txt) is controller tooling, not an app dependency.
