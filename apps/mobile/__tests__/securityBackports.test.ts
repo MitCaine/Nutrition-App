@@ -19,3 +19,12 @@ describe('maintained deepmerge backport', () => {
     expect((Object.prototype as any).nutritionFixtureAdmin).toBeUndefined();
   });
 });
+
+
+it('rejects installed payload, closure, symlink and selector drift from valid baselines', () => {
+  const {execFileSync}=require('node:child_process');
+  const path=require('node:path');
+  const checker=path.resolve(__dirname,'../scripts/check-security-backports.cjs');
+  const output=execFileSync(process.execPath,['-e','require('+JSON.stringify(checker)+').checkNegativeFixtures()'],{encoding:'utf8',timeout:120000,maxBuffer:1024*1024});
+  expect(output).toContain('nine installed-verifier faults reject; controls pass');
+},150000);

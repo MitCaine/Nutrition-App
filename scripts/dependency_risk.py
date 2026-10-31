@@ -1512,15 +1512,19 @@ def read_text_tree(
     return "\n".join(chunks)
 
 
+def validate_installed_backports(repo_root: Path) -> None:
+    result = subprocess.run(["node", "scripts/check-security-backports.cjs"],
+                            cwd=repo_root / MOBILE_RELATIVE, capture_output=True, text=True, timeout=60)
+    require(result.returncode == 0, "installed security backport verification failed: " + result.stdout + result.stderr)
+
+
 def validate_installed(
     repo_root: Path,
 ) -> dict[str, Any]:
     offline = validate_offline(
         repo_root
     )
-    result = subprocess.run(["node", "scripts/check-security-backports.cjs"],
-                            cwd=repo_root / MOBILE_RELATIVE, capture_output=True, text=True, timeout=60)
-    require(result.returncode == 0, "installed security backport verification failed: " + result.stdout + result.stderr)
+    validate_installed_backports(repo_root)
 
     register = read_json(
         repo_root / REGISTER_RELATIVE

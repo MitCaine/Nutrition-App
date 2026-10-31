@@ -161,6 +161,7 @@ class DependencyRiskTests(unittest.TestCase):
             },
         ]
         with (
+            patch.object(dependency_risk, "validate_installed_backports") as backports,
             patch.object(Path, "is_dir", return_value=True),
             patch.object(
                 dependency_risk,
@@ -198,6 +199,7 @@ class DependencyRiskTests(unittest.TestCase):
             self.assertEqual(
                 result["validated_packages"], ["uuid"]
             )
+            backports.assert_called_once_with(ROOT)
             paths.assert_called_once()
             explain.assert_called_once()
             for surface in ("", "uuid.v4(); uuid.v5()"):
@@ -703,6 +705,19 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
                 else: lock['packages']['node_modules/postcss']['version'] = '8.5.31'
                 with self.assertRaises(dependency_risk.DependencyRiskError):
                     dependency_risk.validate_deepmerge_backport(lock, manifest)
+
+    def test_installed_backport_command_and_failure_are_independent_of_installation(self):
+        import subprocess
+        command = ['node', 'scripts/check-security-backports.cjs']
+        with patch.object(dependency_risk.subprocess, 'run', return_value=subprocess.CompletedProcess(command, 0, 'PASS', '')) as run:
+            dependency_risk.validate_installed_backports(ROOT)
+            run.assert_called_once_with(command, cwd=ROOT / 'apps/mobile', capture_output=True, text=True, timeout=60)
+            run.return_value = subprocess.CompletedProcess(command, 1, '', 'fixture payload mismatch')
+            with self.assertRaisesRegex(dependency_risk.DependencyRiskError, 'fixture payload mismatch'):
+                dependency_risk.validate_installed_backports(ROOT)
+            run.side_effect = subprocess.TimeoutExpired(command, 60)
+            with self.assertRaises(subprocess.TimeoutExpired):
+                dependency_risk.validate_installed_backports(ROOT)
 
     def test_deepmerge_archive_and_provenance_fail_closed(self):
         import tempfile
