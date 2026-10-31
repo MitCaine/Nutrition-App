@@ -38,7 +38,7 @@ const uuid = z.string().regex(
 );
 
 const confirmationResponseSchema = z.object({
-  food: z.record(z.unknown()),
+  food: z.record(z.string(), z.unknown()),
   trace_id: uuid,
 }).strict();
 

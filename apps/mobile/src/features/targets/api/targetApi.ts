@@ -145,7 +145,7 @@ const configurationSchema = z.object({
   manual_overrides:
     z.array(targetValue),
   tracking_preferences:
-    z.record(trackingPreferenceMode),
+    z.record(z.string(), trackingPreferenceMode),
   effective_targets:
     z.array(targetValue),
   daily_value_catalog_version:

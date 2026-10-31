@@ -203,3 +203,33 @@ tree UUID absence and absence of UUID imports in the installed owner. Drift or U
 reintroduction fails closed. The old scoped manifest override stays unchanged and is
 inert with no UUID dependency; this is no new override or advisory dismissal.
 Repository/mobile/iOS-native qualification and independent review remain required.
+
+## Zod compatibility exception
+
+Nutrition selects Zod 4.6.7 for the app and uses an `@expo/cli`-only override
+referencing that same direct dependency. Expo still declares Zod 3; this is a
+repository-qualified compatibility exception, not upstream Expo support. It
+removes the separate vulnerable resolution while retaining the native dependency
+baseline and PostCSS 8.5.30. Do not replace it with a blanket override or infer
+compatibility for new callers from this selection.
+
+The normal `npm test` command runs this compatibility check through `pretest`,
+including in mobile CI. After an exact locked installation, it can also run
+directly from `apps/mobile`:
+
+    node scripts/check-zod-compatibility.cjs
+
+The check resolves Zod from the actual installed Expo caller, requires a single
+patched lock entry, discovers the installed CLI's Zod imports, and exercises its
+real plugin/output schemas, plugin constructor and MCP registration boundary.
+It verifies required/optional fields, parameter types, strict unknown-key rejection
+and the exclusion of CLI-only commands from MCP schemas. New imports or legacy
+subpath engines fail closed for review. The ordinary Expo configuration/Doctor,
+mobile tests and native qualification remain separate requirements.
+
+The selected graph does not install the optional `expo-mcp` transport. The check
+covers schema registration, not a live tunnel or plugin-command execution. Adding
+that transport requires separate compatibility qualification; this exception does
+not grant it. The bounded collection regressions in `zodMigration.test.ts` verify
+that oversized constrained collections reject before element parsing, without an
+out-of-memory test. They do not claim that unconstrained collections become bounded.

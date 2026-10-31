@@ -36,11 +36,11 @@ const jsonValue: z.ZodType<unknown> =
       z.boolean(),
       z.null(),
       z.array(jsonValue),
-      z.record(jsonValue),
+      z.record(z.string(), jsonValue),
     ]),
   );
 
-const jsonObject = z.record(jsonValue);
+const jsonObject = z.record(z.string(), jsonValue);
 
 const nutrientCandidateSchema = z
   .object({
