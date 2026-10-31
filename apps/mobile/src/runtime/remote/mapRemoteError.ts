@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { ApiError } from "../../shared/api/client";
 import {
   RuntimeError,
@@ -84,9 +85,11 @@ function normalizedFieldErrors(detail: unknown): RuntimeFieldError[] {
   });
 }
 
-function isResponseValidationError(error: unknown): error is Error {
-  return error instanceof Error
-    && (error.name === "ZodError" || RESPONSE_VALIDATION_MESSAGES.has(error.message));
+function isResponseValidationError(error: unknown): boolean {
+  // Constructed Zod 4 errors (including Food compatibility errors) need not
+  // inherit Error. Keep recognition class-based rather than trusting objects.
+  return error instanceof ZodError || (error instanceof Error
+    && (error.name === "ZodError" || RESPONSE_VALIDATION_MESSAGES.has(error.message)));
 }
 
 function safeMessage(error: ApiError, detail: unknown, kind: RuntimeErrorKind): string {

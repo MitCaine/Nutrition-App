@@ -923,11 +923,31 @@ def validate_current_re_evaluation(
     )
 
 
+def validate_current_overrides(lock_document, manifest):
+    expected = {"xcode": {"uuid": "11.1.1"}}
+    overrides = manifest.get("overrides")
+    requested = manifest.get("dependencies", {}).get("zod")
+    if requested == "4.6.7" or (isinstance(overrides, dict) and "@expo/cli" in overrides):
+        # Current consumer exception only. Historical UUID readers retain their
+        # original exact override contract and are never rewritten by this rule.
+        expected["@expo/cli"] = {"zod": "$zod"}
+        require(requested == "4.6.7", "Zod compatibility declaration drift")
+        packages = lock_document.get("packages", {})
+        require(packages.get("", {}).get("dependencies", {}).get("zod") == "4.6.7",
+                "Zod root lock declaration drift")
+        require({name for name in packages if name.endswith("node_modules/zod")}
+                == {"node_modules/zod"}, "unreviewed Zod install location")
+        require(packages.get("node_modules/zod", {}).get("version") == "4.6.7",
+                "Zod compatibility version drift")
+        require(packages.get("node_modules/@expo/cli", {}).get("dependencies", {}).get("zod")
+                == "^3.25.76", "Expo Zod caller edge changed; requalify compatibility")
+    require(overrides == expected, "current scoped overrides missing or changed")
+
+
 def validate_upstream_uuid_removal(retired, lock_document, manifest):
     require(retired.get("current_upstream_removal") == UPSTREAM_UUID_REMOVAL,
             "upstream UUID removal record drift")
-    require(manifest.get("overrides") == {"xcode": {"uuid": "11.1.1"}},
-            "owner-authorized xcode-only override missing or changed")
+    validate_current_overrides(lock_document, manifest)
     validate_lock_path({"alert_number": 2,
                         "dependency_path": UPSTREAM_UUID_REMOVAL["dependency_path"]}, lock_document)
     packages = lock_document["packages"]

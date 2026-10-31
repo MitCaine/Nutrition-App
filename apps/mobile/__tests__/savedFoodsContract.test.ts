@@ -131,7 +131,7 @@ test("malformed source kinds and recent timestamps fail safely", async () => {
     listFavoriteFoods(),
     "Invalid Food source contract",
     "source_kind",
-    "invalid_enum_value",
+    "invalid_value",
   );
 
   global.fetch = jest.fn().mockResolvedValueOnce({

@@ -657,6 +657,36 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
                 with self.assertRaises(dependency_risk.DependencyRiskError):
                     dependency_risk.validate_retired_replacement(retired, lock, self.manifest)
 
+    def test_zod_exception_is_exact_and_uuid_history_stays_strict(self):
+        dependency_risk.validate_current_overrides(self.lock, self.manifest)
+        for fault in ("missing_override", "global_override", "different_reference", "uuid_override",
+                      "declaration", "root_lock", "old_zod", "nested_zod", "caller_edge"):
+            with self.subTest(fault=fault):
+                lock, manifest = copy.deepcopy(self.lock), copy.deepcopy(self.manifest)
+                if fault == "missing_override":
+                    manifest["overrides"].pop("@expo/cli")
+                elif fault == "global_override":
+                    manifest["overrides"]["zod"] = "$zod"
+                elif fault == "different_reference":
+                    manifest["overrides"]["@expo/cli"]["zod"] = "4.6.7"
+                elif fault == "uuid_override":
+                    manifest["overrides"]["xcode"]["uuid"] = "7.0.3"
+                elif fault == "declaration":
+                    manifest["dependencies"]["zod"] = "4.6.6"
+                elif fault == "root_lock":
+                    lock["packages"][""]["dependencies"]["zod"] = "3.25.76"
+                elif fault == "old_zod":
+                    lock["packages"]["node_modules/zod"]["version"] = "3.25.76"
+                elif fault == "nested_zod":
+                    lock["packages"]["node_modules/@expo/cli/node_modules/zod"] = {"version": "3.25.76"}
+                else:
+                    lock["packages"]["node_modules/@expo/cli"]["dependencies"]["zod"] = "^4.6.7"
+                with self.assertRaises(dependency_risk.DependencyRiskError):
+                    dependency_risk.validate_current_overrides(lock, manifest)
+        # The historical reader must still reject this new consumer exception.
+        with self.assertRaisesRegex(dependency_risk.DependencyRiskError, "xcode-only"):
+            dependency_risk.validate_current_re_evaluation(self.retired, self.lock, self.manifest)
+
     def test_installed_removal_validates_owner_tree_and_imports(self):
         import tempfile
         expected = [f"{node['name']}@{node['version']}"

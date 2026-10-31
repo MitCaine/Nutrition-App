@@ -3,11 +3,15 @@ import { z } from "zod";
 import { RuntimeError } from "../src/runtime/RuntimeError";
 import { mapRemoteError } from "../src/runtime/remote/mapRemoteError";
 
+const parsedZodResult = z.string().safeParse(1);
+if (parsedZodResult.success) throw new Error("Expected response validation fixture to fail");
+
 const responseValidationErrors = [
   ["Invalid Food response", new Error("Invalid Food response")],
   ["Invalid Food source contract", new Error("Invalid Food source contract")],
   ["Invalid recent Food timestamp", new Error("Invalid recent Food timestamp")],
-  ["ZodError", new z.ZodError([{ code: "custom", path: ["food"], message: "Internal response contract detail" }])],
+  ["parsed ZodError", parsedZodResult.error],
+  ["constructed ZodError", new z.ZodError([{ code: "custom", path: ["food"], message: "Internal response contract detail" }])],
 ] as const;
 
 test("application code takes precedence over HTTP conflict status", () => {
@@ -135,3 +139,10 @@ test.each([
     }));
   },
 );
+
+test("an object merely named ZodError cannot impersonate the validation class", () => {
+  const error = mapRemoteError({ name: "ZodError", message: "private forged detail" }, "mutation");
+  expect(error.kind).toBe("unavailable");
+  expect(error.mutationOutcome).toBe("unresolved");
+  expect(error.message).not.toContain("private forged detail");
+});
