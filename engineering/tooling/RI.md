@@ -235,8 +235,9 @@ while retaining pip 26.2 and the existing RI/parser pins. The alert concerns Uni
 normalization when applying source-distribution exclusions on macOS. The fixed wheel
 and its hash are synchronized in both lock files. As with the pip refresh, bootstrap
 a new external runtime and requalify it; do not edit an accepted manifest or environment
-in place. The selected 20a5039 runtime uses setuptools 84.0.0 to match its committed build
-requirements. No private source distribution is published by this workflow.
+in place. The prior 20a5039 runtime selection used setuptools 84.0.0 to match its committed
+build requirements. The current patched consumer selection is documented under
+[Pinned installation and private access](#pinned-installation-and-private-access). No private source distribution is published by this workflow.
 
 ## Comparison and review
 
