@@ -254,6 +254,7 @@ def risk_result(scratch: Path) -> tuple[str, ...]:
         risk.validate_backport_files(scratch / risk.MOBILE_RELATIVE)
         manifest = risk.read_json(scratch / risk.MOBILE_RELATIVE / "package.json")
         risk.validate_deepmerge_backport(lock, manifest)
+        risk.validate_modern_backports(lock, manifest)
     findings = []
     for record in register["records"]:
         try:

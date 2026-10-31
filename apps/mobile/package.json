@@ -35,7 +35,9 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
     "zod": "4.6.7",
-    "deepmerge": "file:vendor/security/deepmerge/patched.tgz"
+    "deepmerge": "file:vendor/security/deepmerge/patched.tgz",
+    "glob": "file:vendor/security/glob/patched.tgz",
+    "minimatch": "file:vendor/security/minimatch/patched.tgz"
   },
   "devDependencies": {
     "@react-native/jest-preset": "^0.86.3",
@@ -69,6 +71,8 @@
     "@expo/cli": {
       "zod": "$zod"
     },
-    "deepmerge@4.3.1": "$deepmerge"
+    "deepmerge@4.3.1": "$deepmerge",
+    "glob@13.0.6": "$glob",
+    "minimatch@10.2.6": "$minimatch"
   }
 }

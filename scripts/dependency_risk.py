@@ -949,6 +949,43 @@ def validate_deepmerge_backport(lock_document, manifest):
     require(postcss == {'node_modules/postcss': '8.5.30'}, 'PostCSS backport baseline drift')
 
 
+MODERN_BACKPORTS = {'glob': {'version': '13.0.6',
+          'archive': 'ca77434806ba1299cc733d71edcae4bffe3d403c8c2c3d88556a41e893c6c611',
+          'provenance': '53173ecc800be0c1e57236e46d1c22756352b9401dd0fd8feb02d9bad62313ea',
+          'integrity': 'sha512-Ivy/mh1w5lthba4Nt4NMhQ3+LWsUifK/f00Bh22zL2RHa9EEY6F2xfgSch/y8oaNuxaxpEDgFgVScmXvQUWQZA=='},
+ 'minimatch': {'version': '10.2.6',
+               'archive': 'b549c07ec5ec21c79f9d6c8ae6f8b13430a5d84defc366b40beb6e3c083d0f30',
+               'provenance': 'b3787c19467c78fd03940c3e11e9cc752b6d46d5b8dd2e0593a2810baf7022b8',
+               'integrity': 'sha512-/LidICrcWJK7RVzX7QfOoaboT6KwEb0b8w3Vyc9z1BunU8KYCpR222/IPP+PEGqD4JhiyN4a8uJctb+CzSo73w=='}}
+LEGACY_BACKPORT_OWNERS = ("@jest/reporters", "jest-config", "jest-runtime", "test-exclude")
+
+
+def validate_modern_backports(lock_document, manifest):
+    packages = lock_document.get('packages', {})
+    for name, expected in MODERN_BACKPORTS.items():
+        spec = 'file:vendor/security/'+name+'/patched.tgz'
+        require(manifest.get('dependencies', {}).get(name) == spec
+                and packages.get('', {}).get('dependencies', {}).get(name) == spec,
+                name+' backport declaration drift')
+        require(manifest.get('overrides', {}).get(name+'@'+expected['version']) == '$'+name,
+                name+' backport selector drift')
+        node = packages.get('node_modules/'+name, {})
+        require(node.get('version') == expected['version'] and node.get('resolved') == spec
+                and node.get('integrity') == expected['integrity'], name+' backport lock drift')
+        locations = {'node_modules/'+name, *('node_modules/'+owner+'/node_modules/'+name for owner in LEGACY_BACKPORT_OWNERS)}
+        require({location for location in packages if location.endswith('node_modules/'+name)} == locations,
+                name+' backport closure drift')
+        for owner in LEGACY_BACKPORT_OWNERS:
+            require(packages.get('node_modules/'+owner+'/node_modules/'+name, {}).get('version')
+                    == ('7.2.3' if name == 'glob' else '3.1.5'), name+' legacy version drift')
+    for owner in ('@expo/cli', '@expo/config', '@expo/config-plugins', '@expo/fingerprint', '@expo/metro-config'):
+        require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('glob') == '^13.0.0',
+                'glob owner edge drift: '+owner)
+    for owner in ('glob', '@expo/fingerprint'):
+        require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('minimatch') == '^10.2.2',
+                'minimatch owner edge drift: '+owner)
+
+
 def validate_backport_files(mobile_root):
     vendor = mobile_root / 'vendor/security/deepmerge'
     for name, expected in [('patched.tgz', DEEPMERGE_BACKPORT_SHA256),
@@ -957,6 +994,19 @@ def validate_backport_files(mobile_root):
         require(path.is_file() and not path.is_symlink()
                 and hashlib.sha256(path.read_bytes()).hexdigest() == expected,
                 'deepmerge artifact drift: '+name)
+    for package, expected in MODERN_BACKPORTS.items():
+        for filename, identity in [('patched.tgz', expected['archive']), ('provenance.json', expected['provenance'])]:
+            path = mobile_root / 'vendor/security' / package / filename
+            require(path.is_file() and not any(part.is_symlink() for part in [path, *path.parents][:4])
+                    and hashlib.sha256(path.read_bytes()).hexdigest() == identity,
+                    package+' artifact drift: '+filename)
+        metadata = read_json(mobile_root / 'vendor/security' / package / 'provenance.json')
+        require(set(metadata['build_inputs']) == {'package.json', 'package-lock.json'}, 'compiler input inventory drift')
+        for filename, identity in metadata['build_inputs'].items():
+            input_path = mobile_root / 'vendor/security/build' / filename
+            require(input_path.is_file() and not input_path.is_symlink()
+                    and hashlib.sha256(input_path.read_bytes()).hexdigest() == identity,
+                    'compiler input identity drift: '+filename)
 
 
 def validate_current_overrides(lock_document, manifest):
@@ -977,6 +1027,8 @@ def validate_current_overrides(lock_document, manifest):
                 "Zod compatibility version drift")
         require(packages.get("node_modules/@expo/cli", {}).get("dependencies", {}).get("zod")
                 == "^3.25.76", "Expo Zod caller edge changed; requalify compatibility")
+    expected.update({name+"@"+item["version"]: "$"+name for name, item in MODERN_BACKPORTS.items()})
+    validate_modern_backports(lock_document, manifest)
     expected["deepmerge@4.3.1"] = "$deepmerge"
     validate_deepmerge_backport(lock_document, manifest)
     require(overrides == expected, "current scoped overrides missing or changed")

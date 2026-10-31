@@ -265,3 +265,55 @@ or replacing the patch and fresh compatibility/security qualification. Original
 advisory/version findings may remain visible; disappearance from a local-file
 scanner is not proof of repair. No accepted-risk entry or alert dismissal is added.
 Glob/minimatch remediation is separate #455 work, with minimatch3 findings open.
+
+## Maintained glob/minimatch backports and legacy findings
+
+The same explicit owner decision authorizes #455's bounded glob13.0.6 cancellation
+and minimatch10.2.6 preprocessing repairs, with required qualification/review before
+publication/protected integration. Original package names/versions, licenses,
+dependency ranges and the previous deepmerge/Zod/UUID selections remain. PostCSS
+stays8.5.30. Glob7 and minimatch3 are not upgraded or patched by this work; unresolved
+minimatch3 findings remain open, without accepted-risk or alert-dismissal changes.
+
+Glob's original default `index.min.js` entrypoints bundle a private minimatch copy.
+Patching only readable walker modules or the standalone dependency would miss it.
+The maintained archives preserve the public default/raw paths and exported APIs,
+but default CJS/ESM entrypoints forward to their corresponding readable `index.js`.
+They now use the declared, locked and patched minimatch instead of hidden bundled
+third-party code. This delivery difference requires explicit default/raw CJS/ESM
+parity, cancellation, paused-stream and real Expo-caller qualification.
+
+The complete five-edit upstream glob repair includes the four immediate callback
+returns and the `onResume` correction. The minimatch repair bounds generated
+patterns with `braceExpandMax` (default100,000) and skips pairwise deduplication for
+more than1,000 entries. As with the existing brace-expansion limit, expansion above
+the cap can be incomplete: do not promise unrestricted matching equivalence after
+clipping. Ordinary below/at-cap matches and large-set positive/negative behavior
+are tested; the default cap runs only on patched code in a resource-bounded child.
+Existing real timeouts, including Expo's five-second search deadline, remain.
+
+`apps/mobile/vendor/security/glob` and `minimatch` contain original/patched archives,
+readable source patches, licenses and complete payload provenance. Corrected source,
+CJS/ESM modules and JavaScript maps are generated with exact esbuild0.28.2. Unchanged
+declaration files retain their bytes; declaration maps rebase only source positions,
+with preserved source tokens checked through an independent decoder. The original
+bundles remain in the original archives for provenance/recovery.
+
+The build manifest/lock is in `apps/mobile/vendor/security/build`. Copy those two
+files to an isolated task-owned directory and install that exact lock with scripts
+disabled; never install build tools globally or into the application runtime.
+The offline check is then run from the repository root with selected Python3.14:
+
+    python scripts/build-mobile-security-backports.py --package all --check --tools-root /absolute/path/to/locked-build-tools
+
+No automatic compiler installation or runtime build hook is selected. The existing
+pretest verifier covers all maintained archives, complete installed inventories,
+actual owner resolution, source-map contents, public APIs and bounded security
+behavior. Focused negatives exercise actual corruption, stale default bundles,
+symlinks, extra copies, selectors and legacy-source preservation. Dependency updater
+scratch installs stage these same immutable inputs and fail closed on drift.
+
+Source repair does not change published advisory ranges. Capture actual audit and
+hosted scanner outcomes without treating their disappearance as proof; original
+versions and legacy minimatch3 may remain flagged. Keep issues tracking unresolved
+scanner/applicability/maintenance obligations open after verified behavior repairs.

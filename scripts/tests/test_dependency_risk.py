@@ -706,6 +706,65 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
                 with self.assertRaises(dependency_risk.DependencyRiskError):
                     dependency_risk.validate_deepmerge_backport(lock, manifest)
 
+    def test_modern_backport_graph_stays_version_scoped_and_legacy_is_preserved(self):
+        dependency_risk.validate_modern_backports(self.lock, self.manifest)
+        for name in ('glob', 'minimatch'):
+            for fault in ('declaration', 'root', 'version', 'archive', 'integrity', 'extra', 'legacy', 'selector', 'owner'):
+                with self.subTest(name=name, fault=fault):
+                    lock, manifest = copy.deepcopy(self.lock), copy.deepcopy(self.manifest)
+                    node = lock['packages']['node_modules/'+name]
+                    version = dependency_risk.MODERN_BACKPORTS[name]['version']
+                    if fault == 'declaration': manifest['dependencies'][name] = version
+                    elif fault == 'root': lock['packages']['']['dependencies'][name] = version
+                    elif fault == 'version': node['version'] = '99.0.0'
+                    elif fault == 'archive': node['resolved'] = 'https://unreviewed.invalid/package.tgz'
+                    elif fault == 'integrity': node['integrity'] = 'sha512-invalid'
+                    elif fault == 'extra': lock['packages']['node_modules/other/node_modules/'+name] = copy.deepcopy(node)
+                    elif fault == 'legacy': lock['packages']['node_modules/jest-config/node_modules/'+name]['version'] = '99.0.0'
+                    elif fault == 'selector': manifest['overrides'][name+'@'+version] = version
+                    else: lock['packages']['node_modules/@expo/fingerprint']['dependencies'][name] = '^99.0.0'
+                    with self.assertRaises(dependency_risk.DependencyRiskError):
+                        dependency_risk.validate_modern_backports(lock, manifest)
+
+    def test_modern_backport_archives_and_metadata_fail_closed(self):
+        import tempfile
+        import shutil
+        with tempfile.TemporaryDirectory() as name:
+            mobile = Path(name)
+            shutil.copytree(ROOT / 'apps/mobile/vendor/security', mobile / 'vendor/security')
+            dependency_risk.validate_backport_files(mobile)
+            for package in ('glob', 'minimatch'):
+                for filename in ('patched.tgz', 'provenance.json'):
+                    target = mobile / 'vendor/security' / package / filename
+                    original = target.read_bytes()
+                    target.write_bytes(original+b'drift')
+                    with self.assertRaisesRegex(dependency_risk.DependencyRiskError, package+' artifact drift'):
+                        dependency_risk.validate_backport_files(mobile)
+                    target.write_bytes(original)
+                    target.unlink()
+                    target.symlink_to(ROOT / 'apps/mobile/vendor/security' / package / filename)
+                    with self.assertRaisesRegex(dependency_risk.DependencyRiskError, package+' artifact drift'):
+                        dependency_risk.validate_backport_files(mobile)
+                    target.unlink()
+                    target.write_bytes(original)
+                    dependency_risk.validate_backport_files(mobile)
+
+    def test_compiler_input_identity_fails_closed(self):
+        import tempfile
+        import shutil
+        with tempfile.TemporaryDirectory() as name:
+            mobile = Path(name)
+            shutil.copytree(ROOT / 'apps/mobile/vendor/security', mobile / 'vendor/security')
+            dependency_risk.validate_backport_files(mobile)
+            for filename in ('package.json', 'package-lock.json'):
+                target = mobile / 'vendor/security/build' / filename
+                original = target.read_bytes()
+                target.write_bytes(original+b' ')
+                with self.assertRaisesRegex(dependency_risk.DependencyRiskError, 'compiler input identity drift'):
+                    dependency_risk.validate_backport_files(mobile)
+                target.write_bytes(original)
+                dependency_risk.validate_backport_files(mobile)
+
     def test_installed_backport_command_and_failure_are_independent_of_installation(self):
         import subprocess
         command = ['node', 'scripts/check-security-backports.cjs']
@@ -726,7 +785,8 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             mobile = Path(name)
             vendor = mobile / 'vendor/security/deepmerge'
-            shutil.copytree(ROOT / 'apps/mobile/vendor/security/deepmerge', vendor)
+            shutil.copytree(ROOT / 'apps/mobile/vendor/security', mobile / 'vendor/security')
+            dependency_risk.validate_backport_files(mobile)
             for filename in ('patched.tgz', 'provenance.json'):
                 target = vendor / filename
                 saved = target.read_bytes()

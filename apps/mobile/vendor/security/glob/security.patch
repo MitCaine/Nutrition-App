@@ -1,0 +1,46 @@
+--- a/src/walker.ts
++++ b/src/walker.ts
+@@ -149,7 +149,6 @@
+     }
+   }
+   onResume(fn: () => any) {
+-    if (this.signal?.aborted) return
+     /* c8 ignore start */
+     if (!this.paused) {
+       fn()
+@@ -259,7 +258,7 @@
+ 
+   walkCB(target: Path, patterns: Pattern[], cb: () => any) {
+     /* c8 ignore start */
+-    if (this.signal?.aborted) cb()
++    if (this.signal?.aborted) return cb()
+     /* c8 ignore stop */
+     this.walkCB2(target, patterns, new Processor(this.opts), cb)
+   }
+@@ -271,7 +270,7 @@
+     cb: () => any,
+   ) {
+     if (this.#childrenIgnored(target)) return cb()
+-    if (this.signal?.aborted) cb()
++    if (this.signal?.aborted) return cb()
+     if (this.paused) {
+       this.onResume(() => this.walkCB2(target, patterns, processor, cb))
+       return
+@@ -339,7 +338,7 @@
+ 
+   walkCBSync(target: Path, patterns: Pattern[], cb: () => any) {
+     /* c8 ignore start */
+-    if (this.signal?.aborted) cb()
++    if (this.signal?.aborted) return cb()
+     /* c8 ignore stop */
+     this.walkCB2Sync(target, patterns, new Processor(this.opts), cb)
+   }
+@@ -351,7 +350,7 @@
+     cb: () => any,
+   ) {
+     if (this.#childrenIgnored(target)) return cb()
+-    if (this.signal?.aborted) cb()
++    if (this.signal?.aborted) return cb()
+     if (this.paused) {
+       this.onResume(() =>
+         this.walkCB2Sync(target, patterns, processor, cb),

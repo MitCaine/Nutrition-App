@@ -1131,6 +1131,9 @@ class MobileBackportStagingTests(unittest.TestCase):
             vendor.mkdir(parents=True)
             archive = vendor / 'patched.tgz'
             archive.write_bytes(b'fixture-archive-v1')
+            modern = mobile / 'vendor/security/glob'
+            modern.mkdir()
+            (modern / 'patched.tgz').write_bytes(b'modern-fixture')
             (mobile / 'scripts').mkdir()
             checker = mobile / 'scripts/check-security-backports.cjs'
             checker.write_text('// fixture checker')
@@ -1141,6 +1144,7 @@ class MobileBackportStagingTests(unittest.TestCase):
                 module.stage_mobile_backports(target)
                 self.assertEqual((target / 'vendor/security/deepmerge/patched.tgz').read_bytes(), archive.read_bytes())
                 self.assertEqual((target / 'scripts/check-security-backports.cjs').read_bytes(), checker.read_bytes())
+                self.assertEqual((target / 'vendor/security/glob/patched.tgz').read_bytes(), b'modern-fixture')
                 archive.write_bytes(b'fixture-archive-v2')
                 with self.assertRaises(module.UpdateError):
                     module.verify_area_inputs('mobile', before)
