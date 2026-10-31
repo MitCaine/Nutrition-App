@@ -120,6 +120,9 @@ qualification entry points.
 
 Use the [Glossary](reference/glossary.md) for repository-specific terminology.
 
+The [minimatch 3 resolution assessment](engineering/minimatch3-resolution-assessment.md)
+records the remaining advisory applicability question and proposed safe next steps.
+
 ## Historical knowledge and learning
 
 Use the [Historical Knowledge Index](historical/README.md) for completed
