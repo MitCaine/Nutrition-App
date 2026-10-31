@@ -687,6 +687,45 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
         with self.assertRaisesRegex(dependency_risk.DependencyRiskError, "xcode-only"):
             dependency_risk.validate_current_re_evaluation(self.retired, self.lock, self.manifest)
 
+    def test_deepmerge_backport_rejects_unqualified_graph(self):
+        dependency_risk.validate_deepmerge_backport(self.lock, self.manifest)
+        for fault in ('declaration', 'root', 'version', 'archive', 'integrity', 'extra', 'owner', 'postcss'):
+            with self.subTest(fault=fault):
+                lock, manifest = copy.deepcopy(self.lock), copy.deepcopy(self.manifest)
+                node = lock['packages']['node_modules/deepmerge']
+                if fault == 'declaration': manifest['dependencies']['deepmerge'] = '4.3.1'
+                elif fault == 'root': lock['packages']['']['dependencies']['deepmerge'] = '4.3.1'
+                elif fault == 'version': node['version'] = '4.3.2'
+                elif fault == 'archive': node['resolved'] = 'https://registry.npmjs.org/deepmerge/-/deepmerge-4.3.1.tgz'
+                elif fault == 'integrity': node['integrity'] = 'sha512-invalid'
+                elif fault == 'extra': lock['packages']['node_modules/other/node_modules/deepmerge'] = copy.deepcopy(node)
+                elif fault == 'owner': lock['packages']['node_modules/@expo/config']['dependencies']['deepmerge'] = '^5.0.0'
+                else: lock['packages']['node_modules/postcss']['version'] = '8.5.31'
+                with self.assertRaises(dependency_risk.DependencyRiskError):
+                    dependency_risk.validate_deepmerge_backport(lock, manifest)
+
+    def test_deepmerge_archive_and_provenance_fail_closed(self):
+        import tempfile
+        import shutil
+        dependency_risk.validate_backport_files(ROOT / 'apps/mobile')
+        with tempfile.TemporaryDirectory() as name:
+            mobile = Path(name)
+            vendor = mobile / 'vendor/security/deepmerge'
+            shutil.copytree(ROOT / 'apps/mobile/vendor/security/deepmerge', vendor)
+            for filename in ('patched.tgz', 'provenance.json'):
+                target = vendor / filename
+                saved = target.read_bytes()
+                target.write_bytes(saved + b'drift')
+                with self.assertRaises(dependency_risk.DependencyRiskError):
+                    dependency_risk.validate_backport_files(mobile)
+                target.write_bytes(saved)
+                target.unlink()
+                target.symlink_to(ROOT / 'apps/mobile/vendor/security/deepmerge' / filename)
+                with self.assertRaises(dependency_risk.DependencyRiskError):
+                    dependency_risk.validate_backport_files(mobile)
+                target.unlink()
+                target.write_bytes(saved)
+
     def test_installed_removal_validates_owner_tree_and_imports(self):
         import tempfile
         expected = [f"{node['name']}@{node['version']}"

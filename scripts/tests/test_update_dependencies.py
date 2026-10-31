@@ -1120,3 +1120,31 @@ elif args and args[0] == "outdated":
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MobileBackportStagingTests(unittest.TestCase):
+    def test_stages_artifact_and_checker_and_captures_input_drift(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            mobile = root / 'apps/mobile'
+            vendor = mobile / 'vendor/security/deepmerge'
+            vendor.mkdir(parents=True)
+            archive = vendor / 'patched.tgz'
+            archive.write_bytes(b'fixture-archive-v1')
+            (mobile / 'scripts').mkdir()
+            checker = mobile / 'scripts/check-security-backports.cjs'
+            checker.write_text('// fixture checker')
+            target = root / 'scratch/apps/mobile'
+            target.mkdir(parents=True)
+            with patch.object(module, 'MOBILE', mobile), patch.object(module, 'ROOT', root):
+                before = module.area_inputs('mobile')
+                module.stage_mobile_backports(target)
+                self.assertEqual((target / 'vendor/security/deepmerge/patched.tgz').read_bytes(), archive.read_bytes())
+                self.assertEqual((target / 'scripts/check-security-backports.cjs').read_bytes(), checker.read_bytes())
+                archive.write_bytes(b'fixture-archive-v2')
+                with self.assertRaises(module.UpdateError):
+                    module.verify_area_inputs('mobile', before)
+                archive.unlink()
+                archive.symlink_to(checker)
+                with self.assertRaises(module.UpdateError):
+                    module.stage_mobile_backports(root / 'another')

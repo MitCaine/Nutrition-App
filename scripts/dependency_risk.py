@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import os
 import re
@@ -923,6 +924,41 @@ def validate_current_re_evaluation(
     )
 
 
+DEEPMERGE_BACKPORT_SHA256 = 'c219514b29aa8f22c9e6b73b00886e3e175eddb11cde7cbbe98366c6e3a61a36'
+DEEPMERGE_BACKPORT_INTEGRITY = 'sha512-lMr4El+TLujcOK0Vww23CqOWBKfXQvA4N+GDJmgJ9rIGIP1HrSoS8Rnw/NVnIcoOJdkZO/saORzMgH8JMYxbvA=='
+DEEPMERGE_PROVENANCE_SHA256 = 'ad49fc2e20d14dcbdda381654d961e56867021f5a23f5d104935e242e391e6c6'
+DEEPMERGE_SPEC = 'file:vendor/security/deepmerge/patched.tgz'
+
+
+def validate_deepmerge_backport(lock_document, manifest):
+    packages = lock_document.get('packages', {})
+    require(manifest.get('dependencies', {}).get('deepmerge') == DEEPMERGE_SPEC,
+            'deepmerge backport declaration drift')
+    require(packages.get('', {}).get('dependencies', {}).get('deepmerge') == DEEPMERGE_SPEC,
+            'deepmerge root lock declaration drift')
+    require({p for p in packages if p.endswith('node_modules/deepmerge')} == {'node_modules/deepmerge'},
+            'unreviewed deepmerge installation')
+    node = packages.get('node_modules/deepmerge', {})
+    require(node.get('version') == '4.3.1' and node.get('resolved') == DEEPMERGE_SPEC
+            and node.get('integrity') == DEEPMERGE_BACKPORT_INTEGRITY,
+            'deepmerge patched lock identity drift')
+    for owner, requested in [('@expo/config', '^4.3.1'), ('jest-config', '^4.2.2')]:
+        require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('deepmerge') == requested,
+                'deepmerge caller edge changed; requalify')
+    postcss = {p: n.get('version') for p, n in packages.items() if p.endswith('node_modules/postcss')}
+    require(postcss == {'node_modules/postcss': '8.5.30'}, 'PostCSS backport baseline drift')
+
+
+def validate_backport_files(mobile_root):
+    vendor = mobile_root / 'vendor/security/deepmerge'
+    for name, expected in [('patched.tgz', DEEPMERGE_BACKPORT_SHA256),
+                           ('provenance.json', DEEPMERGE_PROVENANCE_SHA256)]:
+        path = vendor / name
+        require(path.is_file() and not path.is_symlink()
+                and hashlib.sha256(path.read_bytes()).hexdigest() == expected,
+                'deepmerge artifact drift: '+name)
+
+
 def validate_current_overrides(lock_document, manifest):
     expected = {"xcode": {"uuid": "11.1.1"}}
     overrides = manifest.get("overrides")
@@ -941,6 +977,8 @@ def validate_current_overrides(lock_document, manifest):
                 "Zod compatibility version drift")
         require(packages.get("node_modules/@expo/cli", {}).get("dependencies", {}).get("zod")
                 == "^3.25.76", "Expo Zod caller edge changed; requalify compatibility")
+    expected["deepmerge@4.3.1"] = "$deepmerge"
+    validate_deepmerge_backport(lock_document, manifest)
     require(overrides == expected, "current scoped overrides missing or changed")
 
 
@@ -1193,6 +1231,8 @@ def validate_offline(
         isinstance(manifest, dict),
         "package manifest root invalid",
     )
+
+    validate_backport_files(repo_root / MOBILE_RELATIVE)
 
     for record in register[
         "records"
@@ -1478,6 +1518,9 @@ def validate_installed(
     offline = validate_offline(
         repo_root
     )
+    result = subprocess.run(["node", "scripts/check-security-backports.cjs"],
+                            cwd=repo_root / MOBILE_RELATIVE, capture_output=True, text=True, timeout=60)
+    require(result.returncode == 0, "installed security backport verification failed: " + result.stdout + result.stderr)
 
     register = read_json(
         repo_root / REGISTER_RELATIVE

@@ -142,8 +142,9 @@ def area_inputs(area: str) -> dict[Path, str | None]:
         paths = [MOBILE / "package.json", MOBILE / "package-lock.json", ROOT / ".nvmrc",
                  ROOT / "engineering/security/dependency-risk-register.json",
                  ROOT / ".github/workflows/dependency-risk-monitor.yml"]
-        paths.extend(path for source_root in (MOBILE / "src", MOBILE / "modules")
+        paths.extend(path for source_root in (MOBILE / "src", MOBILE / "modules", MOBILE / "vendor/security")
                      for path in source_root.rglob("*") if path.is_file())
+        paths.append(MOBILE / "scripts/check-security-backports.cjs")
     else:
         paths = [ROOT / ".python-version", ROOT / "engineering/tooling/ri-lock.json",
                  ROOT / "engineering/tooling/ri-requirements.txt"]
@@ -231,12 +232,28 @@ def peer_accepts(target: Path, expected_version: str, peer_range: str) -> bool:
     return result.returncode == 0 and result.stdout == "true"
 
 
+def stage_mobile_backports(target: Path) -> None:
+    """Local archive resolutions must survive the updater's isolated install."""
+    vendor = MOBILE / "vendor/security"
+    if not vendor.exists():
+        return  # Historical/fixture graphs have no local backport input.
+    if any(path.is_symlink() for path in [MOBILE / "vendor", vendor, *vendor.rglob("*")]):
+        raise UpdateError("Security backport inputs must not be symlinks")
+    shutil.copytree(vendor, target / "vendor/security")
+    (target / "scripts").mkdir(exist_ok=True)
+    shutil.copy2(MOBILE / "scripts/check-security-backports.cjs", target / "scripts/check-security-backports.cjs")
+
+
 def risk_result(scratch: Path) -> tuple[str, ...]:
     # Run every repository-owned offline check even when an existing record has drifted.
     import dependency_risk as risk
     register = risk.read_json(scratch / risk.REGISTER_RELATIVE)
     risk.validate_register_schema(register)
     lock = risk.read_json(scratch / risk.MOBILE_RELATIVE / "package-lock.json")
+    if (MOBILE / "vendor/security/deepmerge").exists():
+        risk.validate_backport_files(scratch / risk.MOBILE_RELATIVE)
+        manifest = risk.read_json(scratch / risk.MOBILE_RELATIVE / "package.json")
+        risk.validate_deepmerge_backport(lock, manifest)
     findings = []
     for record in register["records"]:
         try:
@@ -430,6 +447,7 @@ def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False,
     workflow.mkdir(parents=True)
     shutil.copy2(ROOT / ".github/workflows/dependency-risk-monitor.yml",
                  workflow / "dependency-risk-monitor.yml")
+    stage_mobile_backports(target)
     prior_risk = risk_result(scratch)
     before = (target / "package-lock.json").read_bytes()
     held: set[str] = set()
@@ -499,6 +517,8 @@ def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False,
         run(["npm", "ci", "--ignore-scripts", "--engine-strict", "--no-audit", "--no-fund"],
             target, capture=True)
         run(["npm", "exec", "--", "expo", "install", "--check"], target, capture=True)
+    if (MOBILE / "vendor/security/deepmerge").exists():
+        run(["node", "scripts/check-security-backports.cjs"], target, capture=True)
     if report_latest:
         try:
             outdated = subprocess.run(["npm", "outdated", "--json", "--depth=0"], cwd=target,

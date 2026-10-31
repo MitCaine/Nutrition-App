@@ -140,6 +140,10 @@ Do not dismiss a Dependabot alert merely to make the security dashboard green.
 Do not use package-manager `overrides`, `resolutions`, direct lockfile edits,
 vendored forks, or unsupported transitive pinning solely to silence a finding.
 
+The [#454/#455 repair research](../engineering/dependency-security-repair-research.md)
+compares bounded security backports and migration options. It is a research
+snapshot, not an accepted exception, implemented repair or risk disposition.
+
 When a compatible supported fix becomes available, stop relying on the previous
 accepted-risk disposition, create or identify the bounded remediation task,
 update through the supported dependency chain, and run the required repository
@@ -233,3 +237,31 @@ that transport requires separate compatibility qualification; this exception doe
 not grant it. The bounded collection regressions in `zodMigration.test.ts` verify
 that oversized constrained collections reject before element parsing, without an
 out-of-memory test. They do not claim that unconstrained collections become bounded.
+
+
+## Maintained deepmerge security backport
+
+For #454 the owner explicitly authorized the researched backports, required checks,
+independent review, publication and protected merge, preserving PostCSS8.5.30 and
+recovery. This permits the bounded deepmerge4.3.1 behavior repair; it does not accept
+unresolved risk or authorize alert suppression. The upstream proposed fix remains
+unmerged. The root direct file dependency and exact-version `$deepmerge` override
+select the repository-contained archive before any install hooks, including with
+`npm ci --ignore-scripts`. Original package identity/version and MIT notice remain.
+
+`apps/mobile/vendor/security/deepmerge` retains the original integrity-bound archive,
+patched archive, readable patch, license and per-member provenance. From the root,
+run `python scripts/build-mobile-security-backports.py --check` with the selected
+Python3.14 to reproduce/check all bytes offline. The bounded recipe applies the
+same two-loop key exclusion to source and published CJS/UMD distributions; it uses
+no downloaded compiler or install-time patch. All other payload members are intact.
+The pretest `check-security-backports.cjs` verifies every installed member and actual
+Expo/Jest owner resolution, plus hostile and ordinary behavior through their callers.
+Current risk validation pins the artifact/graph; historical UUID/Zod evidence stays
+unchanged. The targeted updater copies and binds these inputs before scratch installs.
+
+This creates maintenance responsibility: dependency-owner changes require rebasing
+or replacing the patch and fresh compatibility/security qualification. Original
+advisory/version findings may remain visible; disappearance from a local-file
+scanner is not proof of repair. No accepted-risk entry or alert dismissal is added.
+Glob/minimatch remediation is separate #455 work, with minimatch3 findings open.

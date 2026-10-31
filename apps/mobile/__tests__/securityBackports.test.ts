@@ -1,0 +1,21 @@
+const merge = require('deepmerge');
+
+describe('maintained deepmerge backport', () => {
+  const poison = () => JSON.parse('{"__proto__":{"nutritionFixtureAdmin":true}}');
+  const safe = (value: object) => {
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+    expect((value as any).nutritionFixtureAdmin).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(value, '__proto__')).toBe(false);
+  };
+  it('rejects a source key for a null-prototype target', () => safe(merge(Object.create(null), poison())));
+  it('rejects a key when recursively merging a null placeholder', () => safe(merge({session:null},{session:poison()}).session));
+  it('does not copy a target-owned key', () => safe(merge(poison(),{ordinary:true})));
+  it('protects cloned array elements', () => safe(merge({items:[]},{items:[poison()]}).items[0]));
+  it('preserves ordinary symbols, arrays and custom merge options', () => {
+    const key = Symbol('fixture');
+    const result=merge({[key]:1,items:[1],nested:{a:1}},{[key]:2,items:[2],nested:{b:2}});
+    expect(result).toEqual({[key]:2,items:[1,2],nested:{a:1,b:2}});
+    expect(merge({items:[1]},{items:[2]},{arrayMerge:(_:unknown,b:unknown)=>b})).toEqual({items:[2]});
+    expect((Object.prototype as any).nutritionFixtureAdmin).toBeUndefined();
+  });
+});
