@@ -268,7 +268,28 @@ Glob/minimatch remediation is separate #455 work, with minimatch3 findings open.
 
 ## Maintained glob/minimatch backports and legacy findings
 
-The same explicit owner decision authorizes #455's bounded glob13.0.6 cancellation
+For #462, the owner approved replacing the active glob13 backport with official
+glob14.0.3 to resolve the published cancellation advisory range. The exact root
+declaration and `glob@^13.0.0: $glob` override intentionally cross the five Expo
+callers' declared13 range; this is a bounded, compatibility-tested exception, not
+a general permission to override major versions. Glob7 callers remain unchanged.
+Glob14 uses its official default bundles and readable CJS/ESM modules, nested
+minimatch11.0.4, path-scurry3.0.0 and nonrecursive-glob-match1.0.3. The already
+compatible lru-cache11.5.2 is retained. Expo fingerprint still uses the root
+maintained minimatch10.2.6; deepmerge/Zod/UUID history and PostCSS8.5.30 remain.
+
+`apps/mobile/vendor/security/glob/registry-14.0.3.json` pins the integrity-verified
+registry archives and every distributed member of those five packages, including
+the unchanged lru-cache and the default bundles' embedded matcher. The existing
+Python risk guard and pretest installed checker bind that inventory's bytes,
+versions, dependency edges and exact owner/installed closure. Unexpected nested
+members, stale glob13 bundles, payload/source-map corruption, symlinks or widened
+selectors fail closed. Qualification also exercises the actual four default/raw
+CJS/ESM glob entrypoints, cancellation/timeouts, pause/iteration/ignore semantics,
+and real Expo helpers and TypeScript prerequisite. Scanner closure is verified
+separately after integration; unresolved minimatch3 applicability stays open.
+
+Historical #455 preparation and recovery: the earlier owner decision authorized bounded glob13.0.6 cancellation
 and minimatch10.2.6 preprocessing repairs, with required qualification/review before
 publication/protected integration. Original package names/versions, licenses,
 dependency ranges and the previous deepmerge/Zod/UUID selections remain. PostCSS
@@ -277,9 +298,9 @@ minimatch3 findings remain open, without accepted-risk or alert-dismissal change
 
 Glob's original default `index.min.js` entrypoints bundle a private minimatch copy.
 Patching only readable walker modules or the standalone dependency would miss it.
-The maintained archives preserve the public default/raw paths and exported APIs,
+Those historical maintained archives preserve the public default/raw paths and exported APIs,
 but default CJS/ESM entrypoints forward to their corresponding readable `index.js`.
-They now use the declared, locked and patched minimatch instead of hidden bundled
+They use the declared, locked and patched minimatch instead of hidden bundled
 third-party code. This delivery difference requires explicit default/raw CJS/ESM
 parity, cancellation, paused-stream and real Expo-caller qualification.
 
@@ -292,7 +313,7 @@ clipping. Ordinary below/at-cap matches and large-set positive/negative behavior
 are tested; the default cap runs only on patched code in a resource-bounded child.
 Existing real timeouts, including Expo's five-second search deadline, remain.
 
-`apps/mobile/vendor/security/glob` and `minimatch` contain original/patched archives,
+`apps/mobile/vendor/security/glob` and `minimatch` retain original/patched archives,
 readable source patches, licenses and complete payload provenance. Corrected source,
 CJS/ESM modules and JavaScript maps are generated with exact esbuild0.28.2. Unchanged
 declaration files retain their bytes; declaration maps rebase only source positions,
@@ -307,7 +328,7 @@ The offline check is then run from the repository root with selected Python3.14:
     python scripts/build-mobile-security-backports.py --package all --check --tools-root /absolute/path/to/locked-build-tools
 
 No automatic compiler installation or runtime build hook is selected. The existing
-pretest verifier covers all maintained archives, complete installed inventories,
+pretest verifier covers active maintained archives and official glob registry payloads, complete installed inventories,
 actual owner resolution, source-map contents, public APIs and bounded security
 behavior. Focused negatives exercise actual corruption, stale default bundles,
 symlinks, extra copies, selectors and legacy-source preservation. Dependency updater

@@ -36,7 +36,7 @@
     "react-native-svg": "15.15.4",
     "zod": "4.6.7",
     "deepmerge": "file:vendor/security/deepmerge/patched.tgz",
-    "glob": "file:vendor/security/glob/patched.tgz",
+    "glob": "14.0.3",
     "minimatch": "file:vendor/security/minimatch/patched.tgz"
   },
   "devDependencies": {
@@ -72,7 +72,7 @@
       "zod": "$zod"
     },
     "deepmerge@4.3.1": "$deepmerge",
-    "glob@13.0.6": "$glob",
-    "minimatch@10.2.6": "$minimatch"
+    "minimatch@10.2.6": "$minimatch",
+    "glob@^13.0.0": "$glob"
   }
 }

@@ -1134,6 +1134,8 @@ class MobileBackportStagingTests(unittest.TestCase):
             modern = mobile / 'vendor/security/glob'
             modern.mkdir()
             (modern / 'patched.tgz').write_bytes(b'modern-fixture')
+            registry = modern / 'registry-14.0.3.json'
+            registry.write_bytes(b'official-registry-fixture')
             (mobile / 'scripts').mkdir()
             checker = mobile / 'scripts/check-security-backports.cjs'
             checker.write_text('// fixture checker')
@@ -1145,6 +1147,11 @@ class MobileBackportStagingTests(unittest.TestCase):
                 self.assertEqual((target / 'vendor/security/deepmerge/patched.tgz').read_bytes(), archive.read_bytes())
                 self.assertEqual((target / 'scripts/check-security-backports.cjs').read_bytes(), checker.read_bytes())
                 self.assertEqual((target / 'vendor/security/glob/patched.tgz').read_bytes(), b'modern-fixture')
+                self.assertEqual((target / 'vendor/security/glob/registry-14.0.3.json').read_bytes(), registry.read_bytes())
+                registry.write_bytes(b'changed-registry-fixture')
+                with self.assertRaises(module.UpdateError):
+                    module.verify_area_inputs('mobile', before)
+                registry.write_bytes(b'official-registry-fixture')
                 archive.write_bytes(b'fixture-archive-v2')
                 with self.assertRaises(module.UpdateError):
                     module.verify_area_inputs('mobile', before)

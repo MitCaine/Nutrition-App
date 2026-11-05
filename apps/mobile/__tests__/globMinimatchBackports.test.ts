@@ -3,6 +3,21 @@ const {execFileSync}=require('node:child_process');
 const path=require('node:path');
 const checker=path.resolve(process.cwd(),'scripts/check-security-backports.cjs');
 
+it('keeps Expo fingerprint on the maintained matcher while glob uses official fixed dependencies', () => {
+  const {createRequire}=require('node:module');
+  const root=process.cwd();
+  const globCaller=createRequire(path.join(root,'node_modules/glob/package.json'));
+  const fingerprintCaller=createRequire(path.join(root,'node_modules/@expo/fingerprint/package.json'));
+  expect(globCaller('minimatch/package.json').version).toBe('11.0.4');
+  expect(fingerprintCaller('minimatch/package.json').version).toBe('10.2.6');
+  expect(globCaller('path-scurry/package.json').version).toBe('3.0.0');
+  const matcher=globCaller('minimatch');
+  expect(matcher.minimatch('src/a.ts','src/*.{ts,js}')).toBe(true);
+  expect(matcher.minimatch('src/a.py','src/*.{ts,js}')).toBe(false);
+  expect(matcher.minimatch('src/.hidden.ts','src/*.ts')).toBe(false);
+  expect(matcher.minimatch('src/.hidden.ts','src/*.ts',{dot:true})).toBe(true);
+});
+
 function check(method: string, timeout=120000): string {
   return execFileSync(process.execPath,['-e','require('+JSON.stringify(checker)+').'+method],{encoding:'utf8',timeout,maxBuffer:2*1024*1024});
 }
@@ -34,9 +49,9 @@ it('qualifies default/raw CJS/ESM cancellation, pause and actual Expo callers wi
   expect(check('checkModernBehavior()')).toContain('default/raw CJS/ESM cancellation');
 },150000);
 
-it('rebases declaration source positions using an independent source-map decoder', () => {
+it('rebases retained minimatch backport declaration positions using an independent source-map decoder', () => {
   const result=check('checkSourceMaps()');
-  for(const name of ['glob/commonjs','glob/esm','minimatch/commonjs','minimatch/esm']) expect(result).toContain('PASS declaration map: '+name);
+  for(const name of ['minimatch/commonjs','minimatch/esm']) expect(result).toContain('PASS declaration map: '+name);
 });
 
 it('rejects eighteen modern payload, bundle, owner, legacy and selector faults with valid controls', () => {

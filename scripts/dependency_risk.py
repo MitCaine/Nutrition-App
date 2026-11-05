@@ -949,19 +949,49 @@ def validate_deepmerge_backport(lock_document, manifest):
     require(postcss == {'node_modules/postcss': '8.5.30'}, 'PostCSS backport baseline drift')
 
 
-MODERN_BACKPORTS = {'glob': {'version': '13.0.6',
-          'archive': 'ca77434806ba1299cc733d71edcae4bffe3d403c8c2c3d88556a41e893c6c611',
-          'provenance': '53173ecc800be0c1e57236e46d1c22756352b9401dd0fd8feb02d9bad62313ea',
-          'integrity': 'sha512-Ivy/mh1w5lthba4Nt4NMhQ3+LWsUifK/f00Bh22zL2RHa9EEY6F2xfgSch/y8oaNuxaxpEDgFgVScmXvQUWQZA=='},
- 'minimatch': {'version': '10.2.6',
+MODERN_BACKPORTS = {'minimatch': {'version': '10.2.6',
                'archive': 'b549c07ec5ec21c79f9d6c8ae6f8b13430a5d84defc366b40beb6e3c083d0f30',
                'provenance': 'b3787c19467c78fd03940c3e11e9cc752b6d46d5b8dd2e0593a2810baf7022b8',
                'integrity': 'sha512-/LidICrcWJK7RVzX7QfOoaboT6KwEb0b8w3Vyc9z1BunU8KYCpR222/IPP+PEGqD4JhiyN4a8uJctb+CzSo73w=='}}
 LEGACY_BACKPORT_OWNERS = ("@jest/reporters", "jest-config", "jest-runtime", "test-exclude")
+REGISTRY_GLOB_INVENTORY = 'vendor/security/glob/registry-14.0.3.json'
+REGISTRY_GLOB_INVENTORY_SHA256 = 'd3ae6659fc0085484d717b08e2b1b13b5fdbdc8213215b4bba495f042a8beb42'
+
+
+def read_registry_glob_inventory(mobile_root):
+    path = mobile_root / REGISTRY_GLOB_INVENTORY
+    require(path.is_file() and not any(p.is_symlink() for p in [path, *path.parents][:4])
+            and hashlib.sha256(path.read_bytes()).hexdigest() == REGISTRY_GLOB_INVENTORY_SHA256,
+            'glob registry inventory drift')
+    return read_json(path)['packages']
+
+
+def validate_registry_glob(lock_document, manifest):
+    packages = lock_document.get('packages', {})
+    inventory = read_registry_glob_inventory(Path(__file__).resolve().parents[1] / MOBILE_RELATIVE)
+    require(manifest.get('dependencies', {}).get('glob') == '14.0.3'
+            and packages.get('', {}).get('dependencies', {}).get('glob') == '14.0.3',
+            'glob registry declaration drift')
+    require(manifest.get('overrides', {}).get('glob@^13.0.0') == '$glob',
+            'glob registry selector drift')
+    for location, identity in inventory.items():
+        node = packages.get(location, {})
+        require(all(node.get(key, {}) == identity[key] for key in ('version', 'resolved', 'integrity', 'dependencies')),
+                'glob registry lock drift: '+location)
+    locations = {'node_modules/glob', *('node_modules/'+owner+'/node_modules/glob' for owner in LEGACY_BACKPORT_OWNERS)}
+    require({p for p in packages if p.endswith('node_modules/glob')} == locations,
+            'glob registry closure drift')
+    for owner in LEGACY_BACKPORT_OWNERS:
+        require(packages.get('node_modules/'+owner+'/node_modules/glob', {}).get('version') == '7.2.3',
+                'glob legacy version drift')
+    for name in ('path-scurry', '@isaacs/nonrecursive-glob-match'):
+        require({p for p in packages if p.endswith('node_modules/'+name)} == {'node_modules/'+name},
+                'glob registry transitive closure drift: '+name)
 
 
 def validate_modern_backports(lock_document, manifest):
     packages = lock_document.get('packages', {})
+    validate_registry_glob(lock_document, manifest)
     for name, expected in MODERN_BACKPORTS.items():
         spec = 'file:vendor/security/'+name+'/patched.tgz'
         require(manifest.get('dependencies', {}).get(name) == spec
@@ -972,7 +1002,8 @@ def validate_modern_backports(lock_document, manifest):
         node = packages.get('node_modules/'+name, {})
         require(node.get('version') == expected['version'] and node.get('resolved') == spec
                 and node.get('integrity') == expected['integrity'], name+' backport lock drift')
-        locations = {'node_modules/'+name, *('node_modules/'+owner+'/node_modules/'+name for owner in LEGACY_BACKPORT_OWNERS)}
+        locations = {'node_modules/'+name, 'node_modules/glob/node_modules/minimatch',
+                     *('node_modules/'+owner+'/node_modules/'+name for owner in LEGACY_BACKPORT_OWNERS)}
         require({location for location in packages if location.endswith('node_modules/'+name)} == locations,
                 name+' backport closure drift')
         for owner in LEGACY_BACKPORT_OWNERS:
@@ -981,12 +1012,13 @@ def validate_modern_backports(lock_document, manifest):
     for owner in ('@expo/cli', '@expo/config', '@expo/config-plugins', '@expo/fingerprint', '@expo/metro-config'):
         require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('glob') == '^13.0.0',
                 'glob owner edge drift: '+owner)
-    for owner in ('glob', '@expo/fingerprint'):
+    for owner in ('@expo/fingerprint',):
         require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('minimatch') == '^10.2.2',
                 'minimatch owner edge drift: '+owner)
 
 
 def validate_backport_files(mobile_root):
+    read_registry_glob_inventory(mobile_root)
     vendor = mobile_root / 'vendor/security/deepmerge'
     for name, expected in [('patched.tgz', DEEPMERGE_BACKPORT_SHA256),
                            ('provenance.json', DEEPMERGE_PROVENANCE_SHA256)]:
@@ -1028,6 +1060,7 @@ def validate_current_overrides(lock_document, manifest):
         require(packages.get("node_modules/@expo/cli", {}).get("dependencies", {}).get("zod")
                 == "^3.25.76", "Expo Zod caller edge changed; requalify compatibility")
     expected.update({name+"@"+item["version"]: "$"+name for name, item in MODERN_BACKPORTS.items()})
+    expected['glob@^13.0.0'] = '$glob'
     validate_modern_backports(lock_document, manifest)
     expected["deepmerge@4.3.1"] = "$deepmerge"
     validate_deepmerge_backport(lock_document, manifest)

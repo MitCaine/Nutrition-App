@@ -12,12 +12,6 @@ const vendor = path.join(root, 'vendor/security/deepmerge');
 const EXPECTED_ARTIFACT = 'c219514b29aa8f22c9e6b73b00886e3e175eddb11cde7cbbe98366c6e3a61a36';
 
 const MODERN_BACKPORTS={
-  "glob": {
-    "version": "13.0.6",
-    "archive": "ca77434806ba1299cc733d71edcae4bffe3d403c8c2c3d88556a41e893c6c611",
-    "provenance": "53173ecc800be0c1e57236e46d1c22756352b9401dd0fd8feb02d9bad62313ea",
-    "integrity": "sha512-Ivy/mh1w5lthba4Nt4NMhQ3+LWsUifK/f00Bh22zL2RHa9EEY6F2xfgSch/y8oaNuxaxpEDgFgVScmXvQUWQZA=="
-  },
   "minimatch": {
     "version": "10.2.6",
     "archive": "b549c07ec5ec21c79f9d6c8ae6f8b13430a5d84defc366b40beb6e3c083d0f30",
@@ -27,6 +21,53 @@ const MODERN_BACKPORTS={
 };
 const LEGACY_MINIMATCH_SOURCE="746849f267c4868a53729225bd85c7dccd387712136fb305fcc0a3eadd4a3d9d";
 const LEGACY_OWNERS=['@jest/reporters','jest-config','jest-runtime','test-exclude'];
+const REGISTRY_GLOB_INVENTORY='vendor/security/glob/registry-14.0.3.json';
+const REGISTRY_GLOB_INVENTORY_SHA='d3ae6659fc0085484d717b08e2b1b13b5fdbdc8213215b4bba495f042a8beb42';
+function checkRegistryGlob(manifest,lock) {
+  const inventoryPath=path.join(root,REGISTRY_GLOB_INVENTORY);
+  for(const relative of ['vendor','vendor/security','vendor/security/glob',REGISTRY_GLOB_INVENTORY]) assert(!fs.lstatSync(path.join(root,relative)).isSymbolicLink(),'glob registry inventory symlink');
+  const bytes=fs.readFileSync(inventoryPath);assert.equal(sha(bytes),REGISTRY_GLOB_INVENTORY_SHA,'glob registry inventory drift');
+  const inventory=JSON.parse(bytes).packages;
+  assert.equal(manifest.dependencies.glob,'14.0.3','glob declaration drift');
+  assert.equal(lock.packages[''].dependencies.glob,'14.0.3','glob root declaration drift');
+  assert.equal(manifest.overrides['glob@^13.0.0'],'$glob','glob selector/reference drift');
+  for(const [location,expected] of Object.entries(inventory)) {
+    const entry=lock.packages[location];assert(entry,'glob registry location missing: '+location);
+    for(const key of ['version','resolved','integrity']) assert.equal(entry[key],expected[key],'glob registry lock drift: '+location+'/'+key);
+    assert.deepEqual(entry.dependencies||{},expected.dependencies,'glob registry dependency edge drift: '+location);
+    const directory=path.join(root,location);assert(!fs.lstatSync(directory).isSymbolicLink(),'glob package symlink: '+location);
+    const members=[];
+    function walk(d,prefix='') {for(const member of fs.readdirSync(d,{withFileTypes:true})) {
+      assert(!member.isSymbolicLink(),'glob member symlink: '+location);
+      // npm's nested dependencies are separate registry payloads, verified by
+      // their own inventory entries. Permit only those exact child directories.
+      const children={'node_modules/glob':['minimatch'],'node_modules/path-scurry':['lru-cache']};
+      if(children[location]&&!prefix&&member.name==='node_modules') {
+        assert(member.isDirectory());assert.deepEqual(fs.readdirSync(path.join(d,member.name)),children[location]);continue;
+      }
+      if(member.isDirectory()) walk(path.join(d,member.name),prefix+member.name+'/');else members.push(prefix+member.name);
+    }}
+    walk(directory);assert.deepEqual(members.sort(),Object.keys(expected.members).sort(),'glob member inventory drift: '+location);
+    for(const [member,identity] of Object.entries(expected.members)) assert.equal(sha(fs.readFileSync(path.join(directory,member))),identity,'glob payload: '+location+'/'+member);
+  }
+  for(const owner of ['@expo/cli','@expo/config','@expo/config-plugins','@expo/fingerprint','@expo/metro-config']) {
+    assert.equal(lock.packages['node_modules/'+owner].dependencies.glob,'^13.0.0','glob owner edge drift');
+    const caller=createRequire(path.join(root,'node_modules',owner,'package.json'));
+    assert.equal(fs.realpathSync(caller.resolve('glob')),fs.realpathSync(path.join(root,'node_modules/glob/dist/commonjs/index.min.js')),'glob owner resolution drift: '+owner);
+  }
+  const locations=['node_modules/glob',...LEGACY_OWNERS.map(o=>'node_modules/'+o+'/node_modules/glob')].sort();
+  assert.deepEqual(Object.keys(lock.packages).filter(p=>p.endsWith('node_modules/glob')).sort(),locations,'glob lock closure drift');
+  const installed=cp.execFileSync('npm',['ls','glob','--all','--parseable'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean).map(p=>fs.realpathSync(p)).sort();
+  assert.deepEqual(installed,locations.map(p=>fs.realpathSync(path.join(root,p))).sort(),'glob installed closure drift');
+  for(const owner of LEGACY_OWNERS) {
+    const legacy=path.join(root,'node_modules',owner,'node_modules/glob');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(legacy,'package.json'))).version,'7.2.3');assert.equal(typeof require(legacy),'function');
+  }
+  for(const name of ['path-scurry','@isaacs/nonrecursive-glob-match']) {
+    const locations=cp.execFileSync('npm',['ls',name,'--all','--parseable'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean).map(p=>fs.realpathSync(p));
+    assert.deepEqual(locations,[fs.realpathSync(path.join(root,'node_modules',name))],name+' installed closure drift');
+  }
+}
 function verifyModernPayload(name,expected) {
   const directory=path.join(root,'node_modules',name);
   assert(!fs.lstatSync(directory).isSymbolicLink(),name+' package symlink');
@@ -62,16 +103,17 @@ function verifyModernPayload(name,expected) {
 function checkModernArtifacts() {
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'package.json')));
   const lock=JSON.parse(fs.readFileSync(path.join(root,'package-lock.json')));
+  checkRegistryGlob(manifest,lock);
   for(const [name,expected] of Object.entries(MODERN_BACKPORTS)) {
     const spec='file:vendor/security/'+name+'/patched.tgz';
     assert.equal(manifest.dependencies[name],spec,name+' declaration drift');
     assert.equal(manifest.overrides[name+'@'+expected.version],'$'+name,name+' selector/reference drift');
     const entry=lock.packages['node_modules/'+name];
     assert.equal(entry.version,expected.version);assert.equal(entry.resolved,spec);assert.equal(entry.integrity,expected.integrity);
-    const expectedLocations=['node_modules/'+name,...LEGACY_OWNERS.map(o=>'node_modules/'+o+'/node_modules/'+name)].sort();
+    const expectedLocations=['node_modules/'+name,'node_modules/glob/node_modules/minimatch',...LEGACY_OWNERS.map(o=>'node_modules/'+o+'/node_modules/'+name)].sort();
     assert.deepEqual(Object.keys(lock.packages).filter(p=>p.endsWith('node_modules/'+name)).sort(),expectedLocations,name+' lock closure drift');
     const directory=verifyModernPayload(name,expected);
-    const owners=name==='glob'?['@expo/cli','@expo/config','@expo/config-plugins','@expo/fingerprint','@expo/metro-config']:['glob','@expo/fingerprint'];
+    const owners=['@expo/fingerprint'];
     for(const owner of owners) {
       const caller=createRequire(path.join(root,'node_modules',owner,'package.json'));
       assert.equal(fs.realpathSync(caller.resolve(name)),fs.realpathSync(path.join(directory,'dist/commonjs',name==='glob'?'index.min.js':'index.js')),name+' owner resolution drift: '+owner);
@@ -88,14 +130,8 @@ function checkModernArtifacts() {
     }
 
   }
-  // Default glob entrypoints must not reintroduce a hidden unguarded matcher.
-  for(const kind of ['commonjs','esm']) {
-    const directory=path.join(root,'node_modules/glob/dist',kind);
-    const forward=fs.readFileSync(path.join(directory,'security-forwarder.js'),'utf8');
-    assert.equal(fs.readFileSync(path.join(directory,'index.min.js'),'utf8'),forward+'//# sourceMappingURL=index.min.js.map\n');
-    const map=JSON.parse(fs.readFileSync(path.join(directory,'index.min.js.map')));
-    assert.deepEqual(map.sourcesContent,[forward]);assert(forward.length<100);
-  }
+  // Official glob14 default bundles and readable modules are authenticated in
+  // full above, including bundled matcher code; glob13 forwarders are recovery.
 }
 function checkMinimatchBehavior(library) {
   const {Minimatch}=library;
@@ -120,7 +156,7 @@ function checkMinimatchBehavior(library) {
 }
 function checkSourceMaps() {
   const {TraceMap,decodedMappings}=require('@jridgewell/trace-mapping');
-  for(const name of ['glob','minimatch']) for(const kind of ['commonjs','esm']) {
+  for(const name of ['minimatch']) for(const kind of ['commonjs','esm']) {
     const basename=name==='glob'?'walker':'index';
     const relative='package/dist/'+kind+'/'+basename+'.d.ts.map';
     const original=JSON.parse(cp.execFileSync('tar',['-xOf',path.join(root,'vendor/security',name,'upstream.tgz'),relative],{encoding:'utf8',timeout:30000,maxBuffer:4*1024*1024}));
@@ -299,9 +335,9 @@ function checkNegativeFixtures(family='deepmerge') {
           const file=path.join(directory,'dist/commonjs',basename+suffix),bytes=fs.readFileSync(file);
           rejects(name+' '+suffix+' corruption',new RegExp(name+' payload:'),()=>{fs.appendFileSync(file,'corruption');return()=>fs.writeFileSync(file,bytes);});
         }
-        for(const filename of ['patched.tgz','provenance.json']) {
+        for(const filename of name==='glob'?['registry-14.0.3.json']:['patched.tgz','provenance.json']) {
           const artifact=path.join(fixture,'vendor/security',name,filename),bytes=fs.readFileSync(artifact);
-          rejects(name+' '+filename+' symlink',new RegExp(name+' artifact symlink'),()=>{fs.unlinkSync(artifact);fs.symlinkSync(path.join(root,'vendor/security',name,filename),artifact);return()=>{fs.unlinkSync(artifact);fs.writeFileSync(artifact,bytes);};});
+          rejects(name+' '+filename+' symlink',new RegExp(name==='glob'?'glob registry inventory symlink':name+' artifact symlink'),()=>{fs.unlinkSync(artifact);fs.symlinkSync(path.join(root,'vendor/security',name,filename),artifact);return()=>{fs.unlinkSync(artifact);fs.writeFileSync(artifact,bytes);};});
         }
         const saved=path.join(fixture,'saved-'+name);
         rejects(name+' package symlink',new RegExp(name+' package symlink'),()=>{fs.renameSync(directory,saved);fs.symlinkSync(saved,directory,'dir');return()=>{fs.unlinkSync(directory);fs.renameSync(saved,directory);};});
@@ -309,11 +345,13 @@ function checkNegativeFixtures(family='deepmerge') {
         const nested=path.join(fixture,'node_modules',owner,'node_modules',name);
         rejects(name+' owner-local copy',new RegExp(name+' owner resolution drift'),()=>{fs.mkdirSync(path.dirname(nested),{recursive:true});fs.cpSync(directory,nested,{recursive:true});return()=>fs.rmSync(nested,{recursive:true});});
         const manifest=path.join(fixture,'package.json'),bytes=fs.readFileSync(manifest);
-        rejects(name+' selector',new RegExp(name+' selector/reference drift'),()=>{const d=JSON.parse(bytes);delete d.overrides[name+'@'+MODERN_BACKPORTS[name].version];d.overrides[name]='$'+name;fs.writeFileSync(manifest,JSON.stringify(d));return()=>fs.writeFileSync(manifest,bytes);});
+        rejects(name+' selector',new RegExp(name+' selector/reference drift'),()=>{const d=JSON.parse(bytes);delete d.overrides[name==='glob'?'glob@^13.0.0':name+'@'+MODERN_BACKPORTS[name].version];d.overrides[name]='$'+name;fs.writeFileSync(manifest,JSON.stringify(d));return()=>fs.writeFileSync(manifest,bytes);});
       }
       const bundle=path.join(fixture,'node_modules/glob/dist/commonjs/index.min.js'),saved=fs.readFileSync(bundle);
       const originalBundle=cp.execFileSync('tar',['-xOf',path.join(fixture,'vendor/security/glob/upstream.tgz'),'package/dist/commonjs/index.min.js'],{timeout:30000,maxBuffer:1024*1024});
       rejects('hidden vulnerable default bundle',/glob payload:/,()=>{fs.writeFileSync(bundle,originalBundle);return()=>fs.writeFileSync(bundle,saved);});
+      const nestedMatcher=path.join(fixture,'node_modules/glob/node_modules/minimatch/dist/commonjs/index.js'),nestedBytes=fs.readFileSync(nestedMatcher);
+      rejects('official nested matcher corruption',/glob payload:/,()=>{fs.appendFileSync(nestedMatcher,'corruption');return()=>fs.writeFileSync(nestedMatcher,nestedBytes);});
       const legacy=path.join(fixture,'node_modules/jest-config/node_modules/minimatch/minimatch.js'),legacyBytes=fs.readFileSync(legacy);
       rejects('legacy matcher preservation',/legacy minimatch source drift/,()=>{fs.appendFileSync(legacy,'\n// drift');return()=>fs.writeFileSync(legacy,legacyBytes);});
       const member=path.join(fixture,'node_modules/glob/dist/commonjs/walker.js'),memberBytes=fs.readFileSync(member);

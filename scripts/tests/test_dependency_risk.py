@@ -713,15 +713,15 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
                 with self.subTest(name=name, fault=fault):
                     lock, manifest = copy.deepcopy(self.lock), copy.deepcopy(self.manifest)
                     node = lock['packages']['node_modules/'+name]
-                    version = dependency_risk.MODERN_BACKPORTS[name]['version']
-                    if fault == 'declaration': manifest['dependencies'][name] = version
-                    elif fault == 'root': lock['packages']['']['dependencies'][name] = version
+                    version = '14.0.3' if name == 'glob' else dependency_risk.MODERN_BACKPORTS[name]['version']
+                    if fault == 'declaration': manifest['dependencies'][name] = '^99.0.0'
+                    elif fault == 'root': lock['packages']['']['dependencies'][name] = '^99.0.0'
                     elif fault == 'version': node['version'] = '99.0.0'
                     elif fault == 'archive': node['resolved'] = 'https://unreviewed.invalid/package.tgz'
                     elif fault == 'integrity': node['integrity'] = 'sha512-invalid'
                     elif fault == 'extra': lock['packages']['node_modules/other/node_modules/'+name] = copy.deepcopy(node)
                     elif fault == 'legacy': lock['packages']['node_modules/jest-config/node_modules/'+name]['version'] = '99.0.0'
-                    elif fault == 'selector': manifest['overrides'][name+'@'+version] = version
+                    elif fault == 'selector': manifest['overrides']['glob@^13.0.0' if name == 'glob' else name+'@'+version] = version
                     else: lock['packages']['node_modules/@expo/fingerprint']['dependencies'][name] = '^99.0.0'
                     with self.assertRaises(dependency_risk.DependencyRiskError):
                         dependency_risk.validate_modern_backports(lock, manifest)
@@ -733,7 +733,7 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
             mobile = Path(name)
             shutil.copytree(ROOT / 'apps/mobile/vendor/security', mobile / 'vendor/security')
             dependency_risk.validate_backport_files(mobile)
-            for package in ('glob', 'minimatch'):
+            for package in dependency_risk.MODERN_BACKPORTS:
                 for filename in ('patched.tgz', 'provenance.json'):
                     target = mobile / 'vendor/security' / package / filename
                     original = target.read_bytes()
@@ -744,6 +744,35 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
                     target.unlink()
                     target.symlink_to(ROOT / 'apps/mobile/vendor/security' / package / filename)
                     with self.assertRaisesRegex(dependency_risk.DependencyRiskError, package+' artifact drift'):
+                        dependency_risk.validate_backport_files(mobile)
+                    target.unlink()
+                    target.write_bytes(original)
+                    dependency_risk.validate_backport_files(mobile)
+
+    def test_official_glob_inventory_and_transitive_graph_fail_closed(self):
+        import tempfile
+        import shutil
+        inventory = dependency_risk.read_registry_glob_inventory(ROOT / 'apps/mobile')
+        self.assertEqual(len(inventory), 5)
+        for location in inventory:
+            for key in ('version', 'resolved', 'integrity', 'dependencies'):
+                with self.subTest(location=location, key=key):
+                    lock = copy.deepcopy(self.lock)
+                    lock['packages'][location][key] = {'unexpected': '*'} if key == 'dependencies' else 'drift'
+                    with self.assertRaisesRegex(dependency_risk.DependencyRiskError, 'glob registry lock drift'):
+                        dependency_risk.validate_modern_backports(lock, self.manifest)
+        with tempfile.TemporaryDirectory() as name:
+            mobile = Path(name)
+            shutil.copytree(ROOT / 'apps/mobile/vendor/security', mobile / 'vendor/security')
+            target = mobile / dependency_risk.REGISTRY_GLOB_INVENTORY
+            original = target.read_bytes()
+            for fault in ('bytes', 'symlink'):
+                with self.subTest(fault=fault):
+                    if fault == 'bytes': target.write_bytes(original+b' ')
+                    else:
+                        target.unlink()
+                        target.symlink_to(ROOT / 'apps/mobile' / dependency_risk.REGISTRY_GLOB_INVENTORY)
+                    with self.assertRaisesRegex(dependency_risk.DependencyRiskError, 'glob registry inventory drift'):
                         dependency_risk.validate_backport_files(mobile)
                     target.unlink()
                     target.write_bytes(original)
