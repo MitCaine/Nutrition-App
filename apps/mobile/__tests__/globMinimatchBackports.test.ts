@@ -3,13 +3,13 @@ const {execFileSync}=require('node:child_process');
 const path=require('node:path');
 const checker=path.resolve(process.cwd(),'scripts/check-security-backports.cjs');
 
-it('keeps Expo fingerprint on the maintained matcher while glob uses official fixed dependencies', () => {
+it('uses official root11.0.1 for fingerprint and preserves glob newer11.0.4', () => {
   const {createRequire}=require('node:module');
   const root=process.cwd();
   const globCaller=createRequire(path.join(root,'node_modules/glob/package.json'));
   const fingerprintCaller=createRequire(path.join(root,'node_modules/@expo/fingerprint/package.json'));
   expect(globCaller('minimatch/package.json').version).toBe('11.0.4');
-  expect(fingerprintCaller('minimatch/package.json').version).toBe('10.2.6');
+  expect(fingerprintCaller('minimatch/package.json').version).toBe('11.0.1');
   expect(globCaller('path-scurry/package.json').version).toBe('3.0.0');
   const matcher=globCaller('minimatch');
   expect(matcher.minimatch('src/a.ts','src/*.{ts,js}')).toBe(true);
@@ -49,9 +49,13 @@ it('qualifies default/raw CJS/ESM cancellation, pause and actual Expo callers wi
   expect(check('checkModernBehavior()')).toContain('default/raw CJS/ESM cancellation');
 },150000);
 
-it('rebases retained minimatch backport declaration positions using an independent source-map decoder', () => {
+it('validates retained10 recovery declaration maps separately from active11 registry bytes', () => {
   const result=check('checkSourceMaps()');
-  for(const name of ['minimatch/commonjs','minimatch/esm']) expect(result).toContain('PASS declaration map: '+name);
+  for(const name of ['minimatch/commonjs','minimatch/esm']) expect(result).toContain('PASS recovery declaration map: '+name);
+});
+
+it('preserves actual fingerprint path/ignore semantics including directory reinclusion', () => {
+  expect(check('checkFingerprintBehavior()')).toContain('PASS actual fingerprint direct/prebuilt matching');
 });
 
 it('rejects eighteen modern payload, bundle, owner, legacy and selector faults with valid controls', () => {

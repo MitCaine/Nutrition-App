@@ -37,7 +37,7 @@
     "zod": "4.6.7",
     "deepmerge": "file:vendor/security/deepmerge/patched.tgz",
     "glob": "14.0.3",
-    "minimatch": "file:vendor/security/minimatch/patched.tgz"
+    "minimatch": "11.0.1"
   },
   "devDependencies": {
     "@react-native/jest-preset": "^0.86.3",

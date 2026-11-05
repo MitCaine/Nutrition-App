@@ -1136,6 +1136,9 @@ class MobileBackportStagingTests(unittest.TestCase):
             (modern / 'patched.tgz').write_bytes(b'modern-fixture')
             registry = modern / 'registry-14.0.3.json'
             registry.write_bytes(b'official-registry-fixture')
+            matcher_inventory = mobile / 'vendor/security/minimatch/registry-11.0.1.json'
+            matcher_inventory.parent.mkdir()
+            matcher_inventory.write_bytes(b'root-matcher-registry-fixture')
             (mobile / 'scripts').mkdir()
             checker = mobile / 'scripts/check-security-backports.cjs'
             checker.write_text('// fixture checker')
@@ -1152,6 +1155,11 @@ class MobileBackportStagingTests(unittest.TestCase):
                 with self.assertRaises(module.UpdateError):
                     module.verify_area_inputs('mobile', before)
                 registry.write_bytes(b'official-registry-fixture')
+                self.assertEqual((target / 'vendor/security/minimatch/registry-11.0.1.json').read_bytes(), matcher_inventory.read_bytes())
+                matcher_inventory.write_bytes(b'changed-matcher-registry-fixture')
+                with self.assertRaises(module.UpdateError):
+                    module.verify_area_inputs('mobile', before)
+                matcher_inventory.write_bytes(b'root-matcher-registry-fixture')
                 archive.write_bytes(b'fixture-archive-v2')
                 with self.assertRaises(module.UpdateError):
                     module.verify_area_inputs('mobile', before)

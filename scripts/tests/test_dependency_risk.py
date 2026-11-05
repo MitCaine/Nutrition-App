@@ -713,7 +713,7 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
                 with self.subTest(name=name, fault=fault):
                     lock, manifest = copy.deepcopy(self.lock), copy.deepcopy(self.manifest)
                     node = lock['packages']['node_modules/'+name]
-                    version = '14.0.3' if name == 'glob' else dependency_risk.MODERN_BACKPORTS[name]['version']
+                    version = '14.0.3' if name == 'glob' else '11.0.1'
                     if fault == 'declaration': manifest['dependencies'][name] = '^99.0.0'
                     elif fault == 'root': lock['packages']['']['dependencies'][name] = '^99.0.0'
                     elif fault == 'version': node['version'] = '99.0.0'
@@ -721,7 +721,7 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
                     elif fault == 'integrity': node['integrity'] = 'sha512-invalid'
                     elif fault == 'extra': lock['packages']['node_modules/other/node_modules/'+name] = copy.deepcopy(node)
                     elif fault == 'legacy': lock['packages']['node_modules/jest-config/node_modules/'+name]['version'] = '99.0.0'
-                    elif fault == 'selector': manifest['overrides']['glob@^13.0.0' if name == 'glob' else name+'@'+version] = version
+                    elif fault == 'selector': manifest['overrides']['glob@^13.0.0' if name == 'glob' else 'minimatch@10.2.6'] = version
                     else: lock['packages']['node_modules/@expo/fingerprint']['dependencies'][name] = '^99.0.0'
                     with self.assertRaises(dependency_risk.DependencyRiskError):
                         dependency_risk.validate_modern_backports(lock, manifest)
@@ -733,7 +733,7 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
             mobile = Path(name)
             shutil.copytree(ROOT / 'apps/mobile/vendor/security', mobile / 'vendor/security')
             dependency_risk.validate_backport_files(mobile)
-            for package in dependency_risk.MODERN_BACKPORTS:
+            for package in dependency_risk.RECOVERY_BACKPORTS:
                 for filename in ('patched.tgz', 'provenance.json'):
                     target = mobile / 'vendor/security' / package / filename
                     original = target.read_bytes()
@@ -777,6 +777,33 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
                     target.unlink()
                     target.write_bytes(original)
                     dependency_risk.validate_backport_files(mobile)
+
+    def test_official_root_minimatch_identity_fails_closed(self):
+        import tempfile
+        import shutil
+        inventory = dependency_risk.read_registry_minimatch_inventory(ROOT / 'apps/mobile')
+        self.assertEqual(set(inventory), {'node_modules/minimatch'})
+        for key in ('version', 'resolved', 'integrity', 'dependencies'):
+            with self.subTest(key=key):
+                lock = copy.deepcopy(self.lock)
+                lock['packages']['node_modules/minimatch'][key] = {'unexpected': '*'} if key == 'dependencies' else 'drift'
+                with self.assertRaisesRegex(dependency_risk.DependencyRiskError, 'minimatch registry lock drift'):
+                    dependency_risk.validate_modern_backports(lock, self.manifest)
+        with tempfile.TemporaryDirectory() as name:
+            mobile = Path(name)
+            shutil.copytree(ROOT / 'apps/mobile/vendor/security', mobile / 'vendor/security')
+            target = mobile / dependency_risk.REGISTRY_MINIMATCH_INVENTORY
+            original = target.read_bytes()
+            for fault in ('bytes', 'symlink'):
+                if fault == 'bytes': target.write_bytes(original+b' ')
+                else:
+                    target.unlink()
+                    target.symlink_to(ROOT / 'apps/mobile' / dependency_risk.REGISTRY_MINIMATCH_INVENTORY)
+                with self.assertRaisesRegex(dependency_risk.DependencyRiskError, 'minimatch registry inventory drift'):
+                    dependency_risk.validate_backport_files(mobile)
+                target.unlink()
+                target.write_bytes(original)
+                dependency_risk.validate_backport_files(mobile)
 
     def test_compiler_input_identity_fails_closed(self):
         import tempfile

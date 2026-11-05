@@ -1,0 +1,55 @@
+{
+  "purpose": "Owner-approved official root matcher11.0.1 for Expo fingerprint; old10 maintained archive is recovery only. Glob matcher11.0.4 remains independent.",
+  "packages": {
+    "node_modules/minimatch": {
+      "name": "minimatch",
+      "version": "11.0.1",
+      "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-11.0.1.tgz",
+      "integrity": "sha512-t+Vn6DX4wPCxS23y03C0uhF7S1jpi1GfqPrnlEipCJaA2ykiNbMkVlDutZtmvLfRcUN6R8AYVlzTsQrT4RZoLQ==",
+      "archive_sha256": "8e6e370e8cc4d4d0d9e6b041f5ef888dbd9a15b5bdb1957794fe8eef6d60ac62",
+      "dependencies": {
+        "@isaacs/nonrecursive-glob-match": "^1.0.1",
+        "brace-expansion": "^5.0.12"
+      },
+      "members": {
+        "LICENSE.md": "2c7c5d22ed5a8ee968c64757710979afcd77438c48b4a265b94e615babd8a901",
+        "README.md": "17a7bd7a21e56f7abf8b3ccd857c63ad3fdf4658f2246a828aee41a6692ba828",
+        "dist/commonjs/assert-valid-pattern.d.ts": "ff8872a24ed233ed9b80a521c1c5214ee996f4d649f537a1e8d12196d9f83d77",
+        "dist/commonjs/assert-valid-pattern.d.ts.map": "6bda19e78c29faff99d261fb630e1b28ae01f61dd429861535834ae4fdbb9d59",
+        "dist/commonjs/assert-valid-pattern.js": "fcd3b0e6efee67b11249804cc64bf4d22c883395491f79bfb484869d61823600",
+        "dist/commonjs/assert-valid-pattern.js.map": "93d366c74b6028b0b32b257a681cb52d6b1243113916fdd6c2a67daf597d69e3",
+        "dist/commonjs/escape.d.ts": "a7224113134dbd16bcf5e95e31b02f2d3da83aa99756a4b3cd133031670c72fc",
+        "dist/commonjs/escape.d.ts.map": "230a99e35af8c1a96bb303a6f649785d29ca23e9e688230641b931f1c1a5e365",
+        "dist/commonjs/escape.js": "54b57f8f50c8e834f35a30c1848ac3f79acf8dd85894505f046afaf3965e63a0",
+        "dist/commonjs/escape.js.map": "b5f20d5a880214494df8a92d7cdec4e4d68b8b3470b81e4bf3c55f058bac6d28",
+        "dist/commonjs/index.d.ts": "16c357d775998e72a60942626811db8e8297d9f6e408aebd5dcaf37b3486e3f9",
+        "dist/commonjs/index.d.ts.map": "f2cab884aa4fe0129347d6a46f909af68f37f858dbe9797056c77b1bdced0651",
+        "dist/commonjs/index.js": "d89e8ca7dda77bd9dc9efed6920b0ed09deb2f478ada54110980daa3080d3f9b",
+        "dist/commonjs/index.js.map": "0d85d99598bc532d2062c9d608b176f583b87e497c7947b8afee5c785ee26c97",
+        "dist/commonjs/package.json": "8005a3491db7d92f36ac66369861589f9c47123d3a7c71e643fc2c06168cd45a",
+        "dist/commonjs/unescape.d.ts": "7d3795e78cdc9079f6b03c6f85145f469582795af61134bbcf0568ae2e1476fe",
+        "dist/commonjs/unescape.d.ts.map": "f9d8bff082045d428437be45a83e2a5c07cf1f3f4c3481a88779f1e24ecc76c5",
+        "dist/commonjs/unescape.js": "bec1bb4483a2c325599949dd6668b5b7daa2dcbe046c5a09899bc8c5b51c08c1",
+        "dist/commonjs/unescape.js.map": "7a386a679c12ea329eca1c76d10db048489d3292c9a5658574e9307b89392b1b",
+        "dist/esm/assert-valid-pattern.d.ts": "ff8872a24ed233ed9b80a521c1c5214ee996f4d649f537a1e8d12196d9f83d77",
+        "dist/esm/assert-valid-pattern.d.ts.map": "6bda19e78c29faff99d261fb630e1b28ae01f61dd429861535834ae4fdbb9d59",
+        "dist/esm/assert-valid-pattern.js": "90e8d3327d573b9d2391edf03dc7d50c1c0b468d720a4c0fb4a08a36ee5c50dc",
+        "dist/esm/assert-valid-pattern.js.map": "83dd43a7bb36f95e216c8473f43f731d9ce2d1a27cfc5246226efb8a1d5232d9",
+        "dist/esm/escape.d.ts": "a7224113134dbd16bcf5e95e31b02f2d3da83aa99756a4b3cd133031670c72fc",
+        "dist/esm/escape.d.ts.map": "230a99e35af8c1a96bb303a6f649785d29ca23e9e688230641b931f1c1a5e365",
+        "dist/esm/escape.js": "8418e37c202bcd247e76b1c205d4eff9474f15fb76c1db1ef0688cb6a8ec3c94",
+        "dist/esm/escape.js.map": "d167494c1bc002ba3b3ae18bb41bc18b13a9f20631a3c24efe21f6394e107515",
+        "dist/esm/index.d.ts": "16c357d775998e72a60942626811db8e8297d9f6e408aebd5dcaf37b3486e3f9",
+        "dist/esm/index.d.ts.map": "f2cab884aa4fe0129347d6a46f909af68f37f858dbe9797056c77b1bdced0651",
+        "dist/esm/index.js": "c2ac65e82b196476009b53e1939811c788cb001d910304c6108a1f665fac3c3d",
+        "dist/esm/index.js.map": "454d0be4f4ed15d0bea9ceab4ff4040d8c3d0127883701a0b7b92c5794bd005f",
+        "dist/esm/package.json": "3ca9d4afd21425087cf31893b8f9f63c81b0b8408db5e343ca76e5f8aa26ab9a",
+        "dist/esm/unescape.d.ts": "7d3795e78cdc9079f6b03c6f85145f469582795af61134bbcf0568ae2e1476fe",
+        "dist/esm/unescape.d.ts.map": "f9d8bff082045d428437be45a83e2a5c07cf1f3f4c3481a88779f1e24ecc76c5",
+        "dist/esm/unescape.js": "2cd61ba96e616969f152445c61ec2ca129a0afd2028ea71309b862a4222304d6",
+        "dist/esm/unescape.js.map": "11dca08b65b198c0a72baba3d8a866ff32f4875366e76d7205ca54b428bf39cf",
+        "package.json": "ea6b9d265cb24d67204005cb28ffc98264b1c3d84c91c78dce76bffce69778a1"
+      }
+    }
+  }
+}

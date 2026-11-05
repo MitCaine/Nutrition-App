@@ -949,13 +949,15 @@ def validate_deepmerge_backport(lock_document, manifest):
     require(postcss == {'node_modules/postcss': '8.5.30'}, 'PostCSS backport baseline drift')
 
 
-MODERN_BACKPORTS = {'minimatch': {'version': '10.2.6',
+RECOVERY_BACKPORTS = {'minimatch': {'version': '10.2.6',
                'archive': 'b549c07ec5ec21c79f9d6c8ae6f8b13430a5d84defc366b40beb6e3c083d0f30',
                'provenance': 'b3787c19467c78fd03940c3e11e9cc752b6d46d5b8dd2e0593a2810baf7022b8',
                'integrity': 'sha512-/LidICrcWJK7RVzX7QfOoaboT6KwEb0b8w3Vyc9z1BunU8KYCpR222/IPP+PEGqD4JhiyN4a8uJctb+CzSo73w=='}}
 LEGACY_BACKPORT_OWNERS = ("@jest/reporters", "jest-config", "jest-runtime", "test-exclude")
 REGISTRY_GLOB_INVENTORY = 'vendor/security/glob/registry-14.0.3.json'
 REGISTRY_GLOB_INVENTORY_SHA256 = 'd3ae6659fc0085484d717b08e2b1b13b5fdbdc8213215b4bba495f042a8beb42'
+REGISTRY_MINIMATCH_INVENTORY = 'vendor/security/minimatch/registry-11.0.1.json'
+REGISTRY_MINIMATCH_INVENTORY_SHA256 = '7f7db279c11e562165a4996dbbf58e6b93a1ee6a0f061ea3d93f50cc4819deb6'
 
 
 def read_registry_glob_inventory(mobile_root):
@@ -963,6 +965,14 @@ def read_registry_glob_inventory(mobile_root):
     require(path.is_file() and not any(p.is_symlink() for p in [path, *path.parents][:4])
             and hashlib.sha256(path.read_bytes()).hexdigest() == REGISTRY_GLOB_INVENTORY_SHA256,
             'glob registry inventory drift')
+    return read_json(path)['packages']
+
+
+def read_registry_minimatch_inventory(mobile_root):
+    path = mobile_root / REGISTRY_MINIMATCH_INVENTORY
+    require(path.is_file() and not any(p.is_symlink() for p in [path, *path.parents][:4])
+            and hashlib.sha256(path.read_bytes()).hexdigest() == REGISTRY_MINIMATCH_INVENTORY_SHA256,
+            'minimatch registry inventory drift')
     return read_json(path)['packages']
 
 
@@ -992,23 +1002,23 @@ def validate_registry_glob(lock_document, manifest):
 def validate_modern_backports(lock_document, manifest):
     packages = lock_document.get('packages', {})
     validate_registry_glob(lock_document, manifest)
-    for name, expected in MODERN_BACKPORTS.items():
-        spec = 'file:vendor/security/'+name+'/patched.tgz'
-        require(manifest.get('dependencies', {}).get(name) == spec
-                and packages.get('', {}).get('dependencies', {}).get(name) == spec,
-                name+' backport declaration drift')
-        require(manifest.get('overrides', {}).get(name+'@'+expected['version']) == '$'+name,
-                name+' backport selector drift')
-        node = packages.get('node_modules/'+name, {})
-        require(node.get('version') == expected['version'] and node.get('resolved') == spec
-                and node.get('integrity') == expected['integrity'], name+' backport lock drift')
-        locations = {'node_modules/'+name, 'node_modules/glob/node_modules/minimatch',
-                     *('node_modules/'+owner+'/node_modules/'+name for owner in LEGACY_BACKPORT_OWNERS)}
-        require({location for location in packages if location.endswith('node_modules/'+name)} == locations,
-                name+' backport closure drift')
-        for owner in LEGACY_BACKPORT_OWNERS:
-            require(packages.get('node_modules/'+owner+'/node_modules/'+name, {}).get('version')
-                    == ('7.2.3' if name == 'glob' else '3.1.5'), name+' legacy version drift')
+    require(manifest.get('dependencies', {}).get('minimatch') == '11.0.1'
+            and packages.get('', {}).get('dependencies', {}).get('minimatch') == '11.0.1',
+            'minimatch registry declaration drift')
+    require(manifest.get('overrides', {}).get('minimatch@10.2.6') == '$minimatch',
+            'minimatch registry selector drift')
+    inventory = read_registry_minimatch_inventory(Path(__file__).resolve().parents[1] / MOBILE_RELATIVE)
+    for location, identity in inventory.items():
+        node = packages.get(location, {})
+        require(all(node.get(key, {}) == identity[key] for key in ('version', 'resolved', 'integrity', 'dependencies')),
+                'minimatch registry lock drift: '+location)
+    locations = {'node_modules/minimatch', 'node_modules/glob/node_modules/minimatch',
+                 *('node_modules/'+owner+'/node_modules/minimatch' for owner in LEGACY_BACKPORT_OWNERS)}
+    require({location for location in packages if location.endswith('node_modules/minimatch')} == locations,
+            'minimatch registry closure drift')
+    for owner in LEGACY_BACKPORT_OWNERS:
+        require(packages.get('node_modules/'+owner+'/node_modules/minimatch', {}).get('version') == '3.1.5',
+                'minimatch legacy version drift')
     for owner in ('@expo/cli', '@expo/config', '@expo/config-plugins', '@expo/fingerprint', '@expo/metro-config'):
         require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('glob') == '^13.0.0',
                 'glob owner edge drift: '+owner)
@@ -1019,6 +1029,7 @@ def validate_modern_backports(lock_document, manifest):
 
 def validate_backport_files(mobile_root):
     read_registry_glob_inventory(mobile_root)
+    read_registry_minimatch_inventory(mobile_root)
     vendor = mobile_root / 'vendor/security/deepmerge'
     for name, expected in [('patched.tgz', DEEPMERGE_BACKPORT_SHA256),
                            ('provenance.json', DEEPMERGE_PROVENANCE_SHA256)]:
@@ -1026,7 +1037,7 @@ def validate_backport_files(mobile_root):
         require(path.is_file() and not path.is_symlink()
                 and hashlib.sha256(path.read_bytes()).hexdigest() == expected,
                 'deepmerge artifact drift: '+name)
-    for package, expected in MODERN_BACKPORTS.items():
+    for package, expected in RECOVERY_BACKPORTS.items():
         for filename, identity in [('patched.tgz', expected['archive']), ('provenance.json', expected['provenance'])]:
             path = mobile_root / 'vendor/security' / package / filename
             require(path.is_file() and not any(part.is_symlink() for part in [path, *path.parents][:4])
@@ -1059,7 +1070,7 @@ def validate_current_overrides(lock_document, manifest):
                 "Zod compatibility version drift")
         require(packages.get("node_modules/@expo/cli", {}).get("dependencies", {}).get("zod")
                 == "^3.25.76", "Expo Zod caller edge changed; requalify compatibility")
-    expected.update({name+"@"+item["version"]: "$"+name for name, item in MODERN_BACKPORTS.items()})
+    expected["minimatch@10.2.6"] = "$minimatch"
     expected['glob@^13.0.0'] = '$glob'
     validate_modern_backports(lock_document, manifest)
     expected["deepmerge@4.3.1"] = "$deepmerge"

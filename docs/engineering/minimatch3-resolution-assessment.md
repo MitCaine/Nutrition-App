@@ -2,7 +2,23 @@
 
 Research snapshot: October 31, 2026, source `1efa58ccbcd4e8c5ef710d82b2072b190c0a7a34`. This is preparation, not remediation, accepted risk, or permission to dismiss an alert. Current tracking remains [GH-455](https://github.com/MitCaine/Nutrition-App/issues/455). Earlier [backport research](dependency-security-repair-research.md) and completed candidates remain historical evidence.
 
-## Recommended decision
+## Current advisory status — November 4, 2026
+
+[GitHub's authoritative advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+now records `>=7.0.0,<11.0.1`, updated November 4, excluding the installed3.1.5
+copies from this particular GHSA. The prior `<11.0.1` range below is historical.
+This resolves the database-range discrepancy for3.1.5; it does not establish
+general denial-of-service safety or support for the legacy package. No forced
+major upgrade or local scanner exclusion is needed for that range question.
+
+[GH-464](https://github.com/MitCaine/Nutrition-App/issues/464) selects official root
+11.0.1 for the remaining modern fingerprint caller, preserves glob's newer11.0.4
+and all callable3 copies, and requires full compatibility/review/installed proof.
+The live issue and external checkpoint own subsequent results and actual alert
+reconciliation. The original submission, packages and failed/successful proof stay
+retained; #10811's conversation status is separate from the corrected database.
+
+## Historical recommendation — October 31, 2026
 
 Seek an authoritative affected-range clarification for GHSA-g3hv-75wg-m249 first. The described vulnerable optimizer is absent from the installed minimatch 3 implementation. There is no corresponding optimizer fix to backport into 3. Introducing the modern algorithm or forcing minimatch 11 underneath glob 7 would create avoidable compatibility and maintenance risk.
 

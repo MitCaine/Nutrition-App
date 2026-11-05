@@ -11,7 +11,7 @@ const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const vendor = path.join(root, 'vendor/security/deepmerge');
 const EXPECTED_ARTIFACT = 'c219514b29aa8f22c9e6b73b00886e3e175eddb11cde7cbbe98366c6e3a61a36';
 
-const MODERN_BACKPORTS={
+const RECOVERY_BACKPORTS={
   "minimatch": {
     "version": "10.2.6",
     "archive": "b549c07ec5ec21c79f9d6c8ae6f8b13430a5d84defc366b40beb6e3c083d0f30",
@@ -23,22 +23,28 @@ const LEGACY_MINIMATCH_SOURCE="746849f267c4868a53729225bd85c7dccd387712136fb305f
 const LEGACY_OWNERS=['@jest/reporters','jest-config','jest-runtime','test-exclude'];
 const REGISTRY_GLOB_INVENTORY='vendor/security/glob/registry-14.0.3.json';
 const REGISTRY_GLOB_INVENTORY_SHA='d3ae6659fc0085484d717b08e2b1b13b5fdbdc8213215b4bba495f042a8beb42';
+const REGISTRY_MINIMATCH_INVENTORY='vendor/security/minimatch/registry-11.0.1.json';
+const REGISTRY_MINIMATCH_INVENTORY_SHA='7f7db279c11e562165a4996dbbf58e6b93a1ee6a0f061ea3d93f50cc4819deb6';
 function checkRegistryGlob(manifest,lock) {
   const inventoryPath=path.join(root,REGISTRY_GLOB_INVENTORY);
   for(const relative of ['vendor','vendor/security','vendor/security/glob',REGISTRY_GLOB_INVENTORY]) assert(!fs.lstatSync(path.join(root,relative)).isSymbolicLink(),'glob registry inventory symlink');
   const bytes=fs.readFileSync(inventoryPath);assert.equal(sha(bytes),REGISTRY_GLOB_INVENTORY_SHA,'glob registry inventory drift');
-  const inventory=JSON.parse(bytes).packages;
+  const matcherInventoryPath=path.join(root,REGISTRY_MINIMATCH_INVENTORY);
+  for(const relative of ['vendor/security/minimatch',REGISTRY_MINIMATCH_INVENTORY]) assert(!fs.lstatSync(path.join(root,relative)).isSymbolicLink(),'minimatch registry inventory symlink');
+  const matcherBytes=fs.readFileSync(matcherInventoryPath);assert.equal(sha(matcherBytes),REGISTRY_MINIMATCH_INVENTORY_SHA,'minimatch registry inventory drift');
+  const inventory={...JSON.parse(bytes).packages,...JSON.parse(matcherBytes).packages};
   assert.equal(manifest.dependencies.glob,'14.0.3','glob declaration drift');
   assert.equal(lock.packages[''].dependencies.glob,'14.0.3','glob root declaration drift');
   assert.equal(manifest.overrides['glob@^13.0.0'],'$glob','glob selector/reference drift');
   for(const [location,expected] of Object.entries(inventory)) {
-    const entry=lock.packages[location];assert(entry,'glob registry location missing: '+location);
-    for(const key of ['version','resolved','integrity']) assert.equal(entry[key],expected[key],'glob registry lock drift: '+location+'/'+key);
-    assert.deepEqual(entry.dependencies||{},expected.dependencies,'glob registry dependency edge drift: '+location);
-    const directory=path.join(root,location);assert(!fs.lstatSync(directory).isSymbolicLink(),'glob package symlink: '+location);
+    const label=location==='node_modules/minimatch'?'minimatch':'glob';
+    const entry=lock.packages[location];assert(entry,label+' registry location missing: '+location);
+    for(const key of ['version','resolved','integrity']) assert.equal(entry[key],expected[key],label+' registry lock drift: '+location+'/'+key);
+    assert.deepEqual(entry.dependencies||{},expected.dependencies,label+' registry dependency edge drift: '+location);
+    const directory=path.join(root,location);assert(!fs.lstatSync(directory).isSymbolicLink(),label+' package symlink: '+location);
     const members=[];
     function walk(d,prefix='') {for(const member of fs.readdirSync(d,{withFileTypes:true})) {
-      assert(!member.isSymbolicLink(),'glob member symlink: '+location);
+      assert(!member.isSymbolicLink(),label+' member symlink: '+location);
       // npm's nested dependencies are separate registry payloads, verified by
       // their own inventory entries. Permit only those exact child directories.
       const children={'node_modules/glob':['minimatch'],'node_modules/path-scurry':['lru-cache']};
@@ -47,8 +53,8 @@ function checkRegistryGlob(manifest,lock) {
       }
       if(member.isDirectory()) walk(path.join(d,member.name),prefix+member.name+'/');else members.push(prefix+member.name);
     }}
-    walk(directory);assert.deepEqual(members.sort(),Object.keys(expected.members).sort(),'glob member inventory drift: '+location);
-    for(const [member,identity] of Object.entries(expected.members)) assert.equal(sha(fs.readFileSync(path.join(directory,member))),identity,'glob payload: '+location+'/'+member);
+    walk(directory);assert.deepEqual(members.sort(),Object.keys(expected.members).sort(),label+' member inventory drift: '+location);
+    for(const [member,identity] of Object.entries(expected.members)) assert.equal(sha(fs.readFileSync(path.join(directory,member))),identity,label+' payload: '+location+'/'+member);
   }
   for(const owner of ['@expo/cli','@expo/config','@expo/config-plugins','@expo/fingerprint','@expo/metro-config']) {
     assert.equal(lock.packages['node_modules/'+owner].dependencies.glob,'^13.0.0','glob owner edge drift');
@@ -68,70 +74,38 @@ function checkRegistryGlob(manifest,lock) {
     assert.deepEqual(locations,[fs.realpathSync(path.join(root,'node_modules',name))],name+' installed closure drift');
   }
 }
-function verifyModernPayload(name,expected) {
-  const directory=path.join(root,'node_modules',name);
-  assert(!fs.lstatSync(directory).isSymbolicLink(),name+' package symlink');
-  const location=path.join(root,'vendor/security',name);
-  for(const input of [path.join(root,'vendor'),path.join(root,'vendor/security'),location,...['patched.tgz','provenance.json','security.patch'].map(n=>path.join(location,n))]) assert(!fs.lstatSync(input).isSymbolicLink(),name+' artifact symlink');
-  const provenanceBytes=fs.readFileSync(path.join(location,'provenance.json'));
-  assert.equal(sha(provenanceBytes),expected.provenance,name+' provenance drift');
-  assert.equal(sha(fs.readFileSync(path.join(location,'patched.tgz'))),expected.archive,name+' archive drift');
-  const provenance=JSON.parse(provenanceBytes);
-  assert.deepEqual(Object.keys(provenance.build_inputs).sort(),['package-lock.json','package.json']);
-  for(const [name,identity] of Object.entries(provenance.build_inputs)) {
-    const input=path.join(root,'vendor/security/build',name);assert(!fs.lstatSync(input).isSymbolicLink(),'compiler input symlink');
-    assert.equal(sha(fs.readFileSync(input)),identity,'compiler input identity drift');
+function checkRecoveryMinimatch() {
+  const expected=RECOVERY_BACKPORTS.minimatch,location=path.join(root,'vendor/security/minimatch');
+  for(const file of ['patched.tgz','provenance.json','security.patch']) assert(!fs.lstatSync(path.join(location,file)).isSymbolicLink(),'minimatch recovery artifact symlink');
+  const bytes=fs.readFileSync(path.join(location,'provenance.json'));assert.equal(sha(bytes),expected.provenance,'minimatch recovery provenance drift');
+  assert.equal(sha(fs.readFileSync(path.join(location,'patched.tgz'))),expected.archive,'minimatch recovery archive drift');
+  const metadata=JSON.parse(bytes);assert.equal(sha(fs.readFileSync(path.join(location,'security.patch'))),metadata.patch_sha256);
+  assert.deepEqual(Object.keys(metadata.build_inputs).sort(),['package-lock.json','package.json']);
+  for(const [name,identity] of Object.entries(metadata.build_inputs)) {
+    const input=path.join(root,'vendor/security/build',name);assert(!fs.lstatSync(input).isSymbolicLink(),'compiler input symlink');assert.equal(sha(fs.readFileSync(input)),identity,'compiler input identity drift');
   }
-  assert.equal(provenance.patched_integrity,expected.integrity);
-  assert.equal(sha(fs.readFileSync(path.join(location,'security.patch'))),provenance.patch_sha256);
-  const actual=[];
-  function walk(directory,prefix='') {for(const e of fs.readdirSync(directory,{withFileTypes:true})){assert(!e.isSymbolicLink(),name+' member symlink');if(e.isDirectory())walk(path.join(directory,e.name),prefix+e.name+'/');else actual.push(prefix+e.name);}}
-  walk(directory);
-  assert.deepEqual(actual.sort(),Object.keys(provenance.members).map(n=>n.slice(8)).sort(),name+' member inventory drift');
-  for(const [member,identity] of Object.entries(provenance.members)) {
-    const relative=member.slice(8);assert.equal(member,'package/'+relative);assert(!relative.split('/').includes('..'));
-    assert.equal(sha(fs.readFileSync(path.join(directory,relative))),identity.patched_sha256,name+' payload: '+relative);
-  }
-  const basename=name==='glob'?'walker':'index';
-  const source=fs.readFileSync(path.join(directory,'src',basename+'.ts'),'utf8');
-  for(const kind of ['commonjs','esm']) for(const suffix of ['.js.map','.d.ts.map']) {
-    const map=JSON.parse(fs.readFileSync(path.join(directory,'dist',kind,basename+suffix)));
-    assert.deepEqual(map.sources,['../../src/'+basename+'.ts']);assert.deepEqual(map.sourcesContent,[source]);
-  }
-  return directory;
 }
 function checkModernArtifacts() {
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'package.json')));
   const lock=JSON.parse(fs.readFileSync(path.join(root,'package-lock.json')));
+  assert.equal(manifest.dependencies.minimatch,'11.0.1','minimatch declaration drift');
+  assert.equal(lock.packages[''].dependencies.minimatch,'11.0.1','minimatch root declaration drift');
+  assert.equal(manifest.overrides['minimatch@10.2.6'],'$minimatch','minimatch selector/reference drift');
   checkRegistryGlob(manifest,lock);
-  for(const [name,expected] of Object.entries(MODERN_BACKPORTS)) {
-    const spec='file:vendor/security/'+name+'/patched.tgz';
-    assert.equal(manifest.dependencies[name],spec,name+' declaration drift');
-    assert.equal(manifest.overrides[name+'@'+expected.version],'$'+name,name+' selector/reference drift');
-    const entry=lock.packages['node_modules/'+name];
-    assert.equal(entry.version,expected.version);assert.equal(entry.resolved,spec);assert.equal(entry.integrity,expected.integrity);
-    const expectedLocations=['node_modules/'+name,'node_modules/glob/node_modules/minimatch',...LEGACY_OWNERS.map(o=>'node_modules/'+o+'/node_modules/'+name)].sort();
-    assert.deepEqual(Object.keys(lock.packages).filter(p=>p.endsWith('node_modules/'+name)).sort(),expectedLocations,name+' lock closure drift');
-    const directory=verifyModernPayload(name,expected);
-    const owners=['@expo/fingerprint'];
-    for(const owner of owners) {
-      const caller=createRequire(path.join(root,'node_modules',owner,'package.json'));
-      assert.equal(fs.realpathSync(caller.resolve(name)),fs.realpathSync(path.join(directory,'dist/commonjs',name==='glob'?'index.min.js':'index.js')),name+' owner resolution drift: '+owner);
-    }
-    const installed=cp.execFileSync('npm',['ls',name,'--all','--parseable'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean).map(p=>fs.realpathSync(p)).sort();
-    assert.deepEqual(installed,expectedLocations.map(p=>fs.realpathSync(path.join(root,p))).sort(),name+' installed closure drift');
-    for(const owner of LEGACY_OWNERS) {
-      const legacy=path.join(root,'node_modules',owner,'node_modules',name);
-      assert.equal(JSON.parse(fs.readFileSync(path.join(legacy,'package.json'))).version,name==='glob'?'7.2.3':'3.1.5');
-      if(name==='minimatch') {
-        assert.equal(sha(fs.readFileSync(path.join(legacy,'minimatch.js'))),LEGACY_MINIMATCH_SOURCE,'legacy minimatch source drift');
-        assert.equal(typeof require(legacy),'function');assert(require(legacy)('a.ts','*.ts'));
-      } else assert.equal(typeof require(legacy),'function');
-    }
-
+  checkRecoveryMinimatch();
+  const expectedLocations=['node_modules/minimatch','node_modules/glob/node_modules/minimatch',...LEGACY_OWNERS.map(o=>'node_modules/'+o+'/node_modules/minimatch')].sort();
+  assert.deepEqual(Object.keys(lock.packages).filter(p=>p.endsWith('node_modules/minimatch')).sort(),expectedLocations,'minimatch lock closure drift');
+  assert.equal(lock.packages['node_modules/@expo/fingerprint'].dependencies.minimatch,'^10.2.2','minimatch owner edge drift');
+  const caller=createRequire(path.join(root,'node_modules/@expo/fingerprint/package.json'));
+  assert.equal(fs.realpathSync(caller.resolve('minimatch')),fs.realpathSync(path.join(root,'node_modules/minimatch/dist/commonjs/index.js')),'minimatch owner resolution drift');
+  const installed=cp.execFileSync('npm',['ls','minimatch','--all','--parseable'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean).map(p=>fs.realpathSync(p)).sort();
+  assert.deepEqual(installed,expectedLocations.map(p=>fs.realpathSync(path.join(root,p))).sort(),'minimatch installed closure drift');
+  for(const owner of LEGACY_OWNERS) {
+    const legacy=path.join(root,'node_modules',owner,'node_modules/minimatch');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(legacy,'package.json'))).version,'3.1.5');
+    assert.equal(sha(fs.readFileSync(path.join(legacy,'minimatch.js'))),LEGACY_MINIMATCH_SOURCE,'legacy minimatch source drift');
+    assert.equal(typeof require(legacy),'function');assert(require(legacy)('a.ts','*.ts'));
   }
-  // Official glob14 default bundles and readable modules are authenticated in
-  // full above, including bundled matcher code; glob13 forwarders are recovery.
 }
 function checkMinimatchBehavior(library) {
   const {Minimatch}=library;
@@ -149,19 +123,20 @@ function checkMinimatchBehavior(library) {
   const small=new Minimatch('{x,*}/{0..9}',{optimizationLevel:2});assert.equal(small.set.length,10);
   const large=new Minimatch('{x,*}/{0..999}',{optimizationLevel:2});assert.equal(large.set.length,2000);assert(large.match('x/5'));assert(large.match('y/999'));assert(!large.match('.y/5'));
   for(const count of [1000,1001]) {
-    const instance=Object.create(Minimatch.prototype);let comparisons=0;instance.partsMatch=()=>{comparisons++;return false;};
+    const instance=new Minimatch('baseline');let comparisons=0;instance.partsMatch=()=>{comparisons++;return false;};
     const parts=Array.from({length:count},(_,n)=>['x'+n]);const result=instance.secondPhasePreProcess(parts);assert.deepEqual(result,parts);if(count===1001)assert.equal(result,parts);assert.equal(comparisons,count===1000?499500:0);
   }
   assert(library.minimatch('src/a.ts','src/*.ts'));assert(!library.minimatch('src/a.js','src/*.ts'));
 }
 function checkSourceMaps() {
+  checkRecoveryMinimatch();
   const {TraceMap,decodedMappings}=require('@jridgewell/trace-mapping');
   for(const name of ['minimatch']) for(const kind of ['commonjs','esm']) {
     const basename=name==='glob'?'walker':'index';
     const relative='package/dist/'+kind+'/'+basename+'.d.ts.map';
     const original=JSON.parse(cp.execFileSync('tar',['-xOf',path.join(root,'vendor/security',name,'upstream.tgz'),relative],{encoding:'utf8',timeout:30000,maxBuffer:4*1024*1024}));
     const originalSource=JSON.parse(cp.execFileSync('tar',['-xOf',path.join(root,'vendor/security',name,'upstream.tgz'),'package/dist/'+kind+'/'+basename+'.js.map'],{encoding:'utf8',timeout:30000,maxBuffer:4*1024*1024})).sourcesContent[0].split('\n');
-    const updated=JSON.parse(fs.readFileSync(path.join(root,'node_modules',name,'dist',kind,basename+'.d.ts.map')));
+    const updated=JSON.parse(cp.execFileSync('tar',['-xOf',path.join(root,'vendor/security',name,'patched.tgz'),relative],{encoding:'utf8',timeout:30000,maxBuffer:4*1024*1024}));
     const newSource=updated.sourcesContent[0].split('\n');
     const before=decodedMappings(new TraceMap(original)),after=decodedMappings(new TraceMap(updated));
     assert.equal(before.length,after.length);let shifted=0,mapped=0;
@@ -173,12 +148,12 @@ function checkSourceMaps() {
       }
     }
     assert(mapped>10&&shifted>0,name+' declaration mappings must actually rebase preserved tokens');
-    console.log('PASS declaration map: '+name+'/'+kind+' '+mapped+' tokens, '+shifted+' shifted');
+    console.log('PASS recovery declaration map: '+name+'/'+kind+' '+mapped+' tokens, '+shifted+' shifted');
   }
 }
 function checkDefaultMinimatchLimit() {
   const {Minimatch}=require(path.join(root,'node_modules/minimatch'));
-  const matcher=Object.create(Minimatch.prototype);matcher.options={};
+  const matcher=new Minimatch('baseline');
   const parts=[Array(30).fill('**/../a/b').join('/').split('/')];
   matcher.firstPhasePreProcess(parts);assert.equal(parts.length,100000);
   console.log('PASS: default optimizer expansion cap100000 without compiling100000 regexes');
@@ -210,12 +185,41 @@ async function checkGlobBehavior(library,cwd) {
   assert(library.hasMagic('*.ts'));assert.equal(library.escape('a*b'),'a\\*b');assert.equal(library.unescape('a\\*b'),'a*b');
   const ignored=await library.glob('**/*.ts',{cwd,ignore:'**/skip.ts'});assert(!ignored.some(p=>p.endsWith('skip.ts')));
 }
+function checkFingerprintBehavior() {
+  const helper=require(path.join(root,'node_modules/@expo/fingerprint/build/utils/Path.js'));
+  const cases=[
+    ['node_modules/pkg/index.js',['**/node_modules/**'],true],
+    ['../../node_modules/pkg/index.js',['**/node_modules/**'],true],
+    ['src/a.ts',['**/node_modules/**'],false],
+    ['.cache/a.json',['**/.cache/**'],true],
+    ['src/.hidden.ts',['src/**/*.ts'],true],
+    ['src/a.ts',['src/*.{ts,tsx}'],true],
+    ['src/a.js',['src/*.{ts,tsx}'],false],
+    ['src/drop.ts',['**/*.ts','!src/keep.ts'],true],
+    ['src/keep.ts',['**/*.ts','!src/keep.ts'],false],
+    ['build/keep.txt',['build/**','!build/keep.txt'],false],
+    ['build/drop.txt',['build/**','!build/keep.txt'],true],
+  ];
+  for(const [file,patterns,expected] of cases) {
+    assert.equal(helper.isIgnoredPath(file,patterns),expected,JSON.stringify([file,patterns]));
+    assert.equal(helper.isIgnoredPathWithMatchObjects(file,helper.buildPathMatchObjects(patterns)),expected);
+  }
+  const objects=helper.buildPathMatchObjects(['build/**']);
+  assert.equal(helper.isIgnoredPathWithMatchObjects('build',helper.buildDirMatchObjects(objects)),true);
+  helper.appendIgnorePath(objects,'!build/keep.txt');
+  assert.equal(helper.isIgnoredPathWithMatchObjects('build',helper.buildDirMatchObjects(objects)),false);
+  assert.equal(helper.isIgnoredPathWithMatchObjects('build/keep.txt',objects),false);
+  const appended=helper.buildPathMatchObjects([]);helper.appendIgnorePath(appended,'**/.git/**');
+  assert.equal(helper.isIgnoredPathWithMatchObjects('.git/config',appended),true);
+  console.log('PASS actual fingerprint direct/prebuilt matching, parent prefixes, dot/braces, negation, append and directory pruning');
+}
 async function checkModernBehavior() {
+  checkFingerprintBehavior();
   const {pathToFileURL}=require('node:url');
   const variants=[require(path.join(root,'node_modules/glob')),require(path.join(root,'node_modules/glob/dist/commonjs/index.js')),await import(pathToFileURL(path.join(root,'node_modules/glob/dist/esm/index.min.js')).href),await import(pathToFileURL(path.join(root,'node_modules/glob/dist/esm/index.js')).href)];
   const matchers=[require(path.join(root,'node_modules/minimatch')),await import(pathToFileURL(path.join(root,'node_modules/minimatch/dist/esm/index.js')).href)];
   const globKeys=['Glob','Ignore','escape','glob','globIterate','globIterateSync','globStream','globStreamSync','globSync','hasMagic','iterate','iterateSync','stream','streamSync','sync','unescape'].sort();
-  const matcherKeys=['AST','GLOBSTAR','Minimatch','braceExpand','defaults','escape','filter','makeRe','match','minimatch','sep','unescape'].sort();
+  const matcherKeys=['GLOBSTAR','Minimatch','braceExpand','defaults','escape','filter','match','minimatch','sep','unescape'].sort();
   for(const m of matchers){assert.deepEqual(Object.keys(m).sort(),matcherKeys);checkMinimatchBehavior(m);}
   const fixture=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'nutrition-glob-contract-'));let passed=false;
   try {
@@ -335,9 +339,9 @@ function checkNegativeFixtures(family='deepmerge') {
           const file=path.join(directory,'dist/commonjs',basename+suffix),bytes=fs.readFileSync(file);
           rejects(name+' '+suffix+' corruption',new RegExp(name+' payload:'),()=>{fs.appendFileSync(file,'corruption');return()=>fs.writeFileSync(file,bytes);});
         }
-        for(const filename of name==='glob'?['registry-14.0.3.json']:['patched.tgz','provenance.json']) {
+        for(const filename of name==='glob'?['registry-14.0.3.json']:['registry-11.0.1.json']) {
           const artifact=path.join(fixture,'vendor/security',name,filename),bytes=fs.readFileSync(artifact);
-          rejects(name+' '+filename+' symlink',new RegExp(name==='glob'?'glob registry inventory symlink':name+' artifact symlink'),()=>{fs.unlinkSync(artifact);fs.symlinkSync(path.join(root,'vendor/security',name,filename),artifact);return()=>{fs.unlinkSync(artifact);fs.writeFileSync(artifact,bytes);};});
+          rejects(name+' '+filename+' symlink',new RegExp(name+' registry inventory symlink'),()=>{fs.unlinkSync(artifact);fs.symlinkSync(path.join(root,'vendor/security',name,filename),artifact);return()=>{fs.unlinkSync(artifact);fs.writeFileSync(artifact,bytes);};});
         }
         const saved=path.join(fixture,'saved-'+name);
         rejects(name+' package symlink',new RegExp(name+' package symlink'),()=>{fs.renameSync(directory,saved);fs.symlinkSync(saved,directory,'dir');return()=>{fs.unlinkSync(directory);fs.renameSync(saved,directory);};});
@@ -345,8 +349,10 @@ function checkNegativeFixtures(family='deepmerge') {
         const nested=path.join(fixture,'node_modules',owner,'node_modules',name);
         rejects(name+' owner-local copy',new RegExp(name+' owner resolution drift'),()=>{fs.mkdirSync(path.dirname(nested),{recursive:true});fs.cpSync(directory,nested,{recursive:true});return()=>fs.rmSync(nested,{recursive:true});});
         const manifest=path.join(fixture,'package.json'),bytes=fs.readFileSync(manifest);
-        rejects(name+' selector',new RegExp(name+' selector/reference drift'),()=>{const d=JSON.parse(bytes);delete d.overrides[name==='glob'?'glob@^13.0.0':name+'@'+MODERN_BACKPORTS[name].version];d.overrides[name]='$'+name;fs.writeFileSync(manifest,JSON.stringify(d));return()=>fs.writeFileSync(manifest,bytes);});
+        rejects(name+' selector',new RegExp(name+' selector/reference drift'),()=>{const d=JSON.parse(bytes);delete d.overrides[name==='glob'?'glob@^13.0.0':'minimatch@10.2.6'];d.overrides[name]='$'+name;fs.writeFileSync(manifest,JSON.stringify(d));return()=>fs.writeFileSync(manifest,bytes);});
       }
+      const registry=path.join(fixture,'vendor/security/minimatch/registry-11.0.1.json'),registryBytes=fs.readFileSync(registry);
+      rejects('root matcher inventory corruption',/minimatch registry inventory drift/,()=>{fs.appendFileSync(registry,' ');return()=>fs.writeFileSync(registry,registryBytes);});
       const bundle=path.join(fixture,'node_modules/glob/dist/commonjs/index.min.js'),saved=fs.readFileSync(bundle);
       const originalBundle=cp.execFileSync('tar',['-xOf',path.join(fixture,'vendor/security/glob/upstream.tgz'),'package/dist/commonjs/index.min.js'],{timeout:30000,maxBuffer:1024*1024});
       rejects('hidden vulnerable default bundle',/glob payload:/,()=>{fs.writeFileSync(bundle,originalBundle);return()=>fs.writeFileSync(bundle,saved);});
@@ -382,7 +388,7 @@ function checkNegativeFixtures(family='deepmerge') {
     else console.error('Retained failed negative fixture for recovery: '+fixture);
   }
 }
-module.exports={checkBehavior,checkArtifacts,checkOwners,checkNegativeFixtures,checkModernArtifacts,checkModernBehavior,checkMinimatchBehavior,checkDefaultMinimatchLimit,checkSourceMaps};
+module.exports={checkBehavior,checkArtifacts,checkOwners,checkNegativeFixtures,checkModernArtifacts,checkModernBehavior,checkMinimatchBehavior,checkDefaultMinimatchLimit,checkSourceMaps,checkFingerprintBehavior};
 if(require.main===module) {
   (async()=>{checkArtifacts();await checkOwners();await checkModernBehavior();console.log('PASS: deepmerge backport payload, all owners, hostile/ordinary semantics; PostCSS8.5.30');})().catch(e=>{console.error(e);process.exitCode=1;});
 }

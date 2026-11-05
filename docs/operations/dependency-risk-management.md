@@ -275,8 +275,11 @@ callers' declared13 range; this is a bounded, compatibility-tested exception, no
 a general permission to override major versions. Glob7 callers remain unchanged.
 Glob14 uses its official default bundles and readable CJS/ESM modules, nested
 minimatch11.0.4, path-scurry3.0.0 and nonrecursive-glob-match1.0.3. The already
-compatible lru-cache11.5.2 is retained. Expo fingerprint still uses the root
-maintained minimatch10.2.6; deepmerge/Zod/UUID history and PostCSS8.5.30 remain.
+compatible lru-cache11.5.2 is retained. #464 selects official root minimatch11.0.1
+for Expo fingerprint through only `minimatch@10.2.6: $minimatch`, an explicitly
+approved compatibility exception to its declared `^10.2.2` range. Glob keeps its
+newer nested11.0.4; legacy callable3 copies stay unchanged. Deepmerge/Zod/UUID
+history and PostCSS8.5.30 remain.
 
 `apps/mobile/vendor/security/glob/registry-14.0.3.json` pins the integrity-verified
 registry archives and every distributed member of those five packages, including
@@ -287,7 +290,22 @@ members, stale glob13 bundles, payload/source-map corruption, symlinks or widene
 selectors fail closed. Qualification also exercises the actual four default/raw
 CJS/ESM glob entrypoints, cancellation/timeouts, pause/iteration/ignore semantics,
 and real Expo helpers and TypeScript prerequisite. Scanner closure is verified
-separately after integration; unresolved minimatch3 applicability stays open.
+separately after integration.
+
+`apps/mobile/vendor/security/minimatch/registry-11.0.1.json` additionally pins every
+official root matcher member and archive integrity. The same installed/lock guards
+cover both registry inventories and require the exact fingerprint owner resolution,
+without broad overrides or downgrading glob's newer matcher. Actual fingerprint
+tests exercise direct/prebuilt ignore matches, parent prefixes, dotfiles/braces,
+negation, appended rules and directory reinclusion. The old10 archive/compiler
+inputs remain authenticated recovery; its independent declaration-map decoder reads
+that retained archive, while active11 maps are verified as official registry bytes.
+
+On November 4, 2026, [GitHub corrected GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+to `>=7.0.0,<11.0.1`. The retained3.1.5 copies are outside this specific advisory's
+affected range. That is not a general legacy-library safety claim. Original research
+and open findings remain historical evidence; reconcile live alert and issue outcomes
+after candidate qualification and installed verification rather than dismissing them.
 
 Historical #455 preparation and recovery: the earlier owner decision authorized bounded glob13.0.6 cancellation
 and minimatch10.2.6 preprocessing repairs, with required qualification/review before
@@ -328,13 +346,14 @@ The offline check is then run from the repository root with selected Python3.14:
     python scripts/build-mobile-security-backports.py --package all --check --tools-root /absolute/path/to/locked-build-tools
 
 No automatic compiler installation or runtime build hook is selected. The existing
-pretest verifier covers active maintained archives and official glob registry payloads, complete installed inventories,
+pretest verifier covers active maintained archives and both official registry inventories, complete installed inventories,
 actual owner resolution, source-map contents, public APIs and bounded security
 behavior. Focused negatives exercise actual corruption, stale default bundles,
 symlinks, extra copies, selectors and legacy-source preservation. Dependency updater
 scratch installs stage these same immutable inputs and fail closed on drift.
 
-Source repair does not change published advisory ranges. Capture actual audit and
-hosted scanner outcomes without treating their disappearance as proof; original
-versions and legacy minimatch3 may remain flagged. Keep issues tracking unresolved
-scanner/applicability/maintenance obligations open after verified behavior repairs.
+Capture actual audit and hosted scanner outcomes separately from runtime proof.
+The corrected published range excludes both selected11 versions and legacy3.1.5
+for this GHSA; retained historical backport identities and other advisories still
+need their own disposition. Do not infer broad risk acceptance or general legacy
+safety from the range correction or scanner disappearance.
