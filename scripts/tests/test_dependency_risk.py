@@ -691,7 +691,7 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
 
     def test_deepmerge_backport_rejects_unqualified_graph(self):
         dependency_risk.validate_deepmerge_backport(self.lock, self.manifest)
-        for fault in ('declaration', 'root', 'version', 'archive', 'integrity', 'extra', 'owner', 'postcss'):
+        for fault in ('declaration', 'root', 'version', 'archive', 'integrity', 'extra', 'owner', 'expo-owner', 'postcss'):
             with self.subTest(fault=fault):
                 lock, manifest = copy.deepcopy(self.lock), copy.deepcopy(self.manifest)
                 node = lock['packages']['node_modules/deepmerge']
@@ -701,7 +701,8 @@ class UpstreamUuidRemovalTests(unittest.TestCase):
                 elif fault == 'archive': node['resolved'] = 'https://registry.npmjs.org/deepmerge/-/deepmerge-4.3.1.tgz'
                 elif fault == 'integrity': node['integrity'] = 'sha512-invalid'
                 elif fault == 'extra': lock['packages']['node_modules/other/node_modules/deepmerge'] = copy.deepcopy(node)
-                elif fault == 'owner': lock['packages']['node_modules/@expo/config']['dependencies']['deepmerge'] = '^5.0.0'
+                elif fault == 'owner': lock['packages']['node_modules/jest-config']['dependencies']['deepmerge'] = '^5.0.0'
+                elif fault == 'expo-owner': lock['packages']['node_modules/@expo/config']['dependencies']['deepmerge'] = '^4.3.1'
                 else: lock['packages']['node_modules/postcss']['version'] = '8.5.31'
                 with self.assertRaises(dependency_risk.DependencyRiskError):
                     dependency_risk.validate_deepmerge_backport(lock, manifest)

@@ -282,7 +282,9 @@ function checkArtifacts() {
   }
   function members(directory,prefix='') {return fs.readdirSync(directory,{withFileTypes:true}).flatMap(e=>{assert(!e.isSymbolicLink());return e.isDirectory()?members(path.join(directory,e.name),prefix+e.name+'/'):[prefix+e.name];});}
   assert.deepEqual(members(directory).sort(),Object.keys(provenance.members).map(n=>n.slice(8)).sort(),'deepmerge member inventory drift');
-  for(const owner of ['@expo/config','jest-config']) {
+  // @expo/config 57.0.11 no longer declares deepmerge; its merge behavior is still exercised in checkOwners.
+  assert.equal(require(require.resolve('@expo/config/package.json',{paths:[root]})).dependencies?.deepmerge,undefined,'deepmerge caller edge changed; requalify: @expo/config');
+  for(const owner of ['jest-config']) {
     const ownerRequire=createRequire(require.resolve(owner+'/package.json',{paths:[root]}));
     assert.equal(fs.realpathSync(ownerRequire.resolve('deepmerge')),fs.realpathSync(path.join(directory,'dist/cjs.js')),'deepmerge owner resolution drift: '+owner);
     checkBehavior(ownerRequire('deepmerge'));
@@ -376,7 +378,7 @@ function checkNegativeFixtures(family='deepmerge') {
     rejects('member symlink',/member symlink/,()=>{fs.unlinkSync(file);fs.symlinkSync(path.join(root,'node_modules/deepmerge/dist/cjs.js'),file);return()=>{fs.unlinkSync(file);fs.writeFileSync(file,bytes);};});
     const saved=path.join(fixture,'saved-deepmerge');
     rejects('package symlink',/package symlink/,()=>{fs.renameSync(directory,saved);fs.symlinkSync(saved,directory,'dir');return()=>{fs.unlinkSync(directory);fs.renameSync(saved,directory);};});
-    const nested=path.join(fixture,'node_modules/@expo/config/node_modules/deepmerge');
+    const nested=path.join(fixture,'node_modules/jest-config/node_modules/deepmerge');
     rejects('owner-local extra copy',/owner resolution drift/,()=>{fs.mkdirSync(path.dirname(nested),{recursive:true});fs.cpSync(directory,nested,{recursive:true});return()=>fs.rmSync(nested,{recursive:true});});
     const rogue=path.join(fixture,'node_modules/nutrition-rogue-fixture');
     rejects('unregistered extra installed copy',/installed closure drift|Command failed/,()=>{fs.mkdirSync(path.join(rogue,'node_modules'),{recursive:true});fs.writeFileSync(path.join(rogue,'package.json'),JSON.stringify({name:'nutrition-rogue-fixture',version:'1.0.0',dependencies:{deepmerge:'4.3.1'}}));fs.cpSync(directory,path.join(rogue,'node_modules/deepmerge'),{recursive:true});return()=>fs.rmSync(rogue,{recursive:true});});

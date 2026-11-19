@@ -223,9 +223,14 @@ directly from `apps/mobile`:
 
     node scripts/check-zod-compatibility.cjs
 
-The check resolves Zod from the actual installed Expo caller, requires a single
-patched lock entry, discovers the installed CLI's Zod imports, and exercises its
-real plugin/output schemas, plugin constructor and MCP registration boundary.
+Since `@expo/cli` 57.0.34 the CLI declares no Zod dependency: its DevTools
+plugin/output schemas are JSON Schemas validated by `@expo/schema-utils`, and Zod
+is resolved only at runtime through the optional `expo-mcp` package and injected
+into the MCP schema builders. The check requires a single patched lock entry,
+fails closed on any static Zod import in the installed CLI, requires that the
+only Zod resolution goes through `expo-mcp`, and exercises the real plugin/output
+schemas, plugin constructor and MCP registration boundary with the repository's
+Zod injected the same way.
 It verifies required/optional fields, parameter types, strict unknown-key rejection
 and the exclusion of CLI-only commands from MCP schemas. New imports or legacy
 subpath engines fail closed for review. The ordinary Expo configuration/Doctor,

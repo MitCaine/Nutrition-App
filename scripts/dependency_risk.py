@@ -942,7 +942,8 @@ def validate_deepmerge_backport(lock_document, manifest):
     require(node.get('version') == '4.3.1' and node.get('resolved') == DEEPMERGE_SPEC
             and node.get('integrity') == DEEPMERGE_BACKPORT_INTEGRITY,
             'deepmerge patched lock identity drift')
-    for owner, requested in [('@expo/config', '^4.3.1'), ('jest-config', '^4.2.2')]:
+    # @expo/config 57.0.11 dropped its deepmerge edge; reintroduction needs requalification.
+    for owner, requested in [('@expo/config', None), ('jest-config', '^4.2.2')]:
         require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('deepmerge') == requested,
                 'deepmerge caller edge changed; requalify')
     postcss = {p: n.get('version') for p, n in packages.items() if p.endswith('node_modules/postcss')}
