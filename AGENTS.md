@@ -14,7 +14,7 @@ Maintenance is mostly applying Dependabot security fixes. Follow
 
 ## Data-integrity invariants
 
-These hold regardless of how small the change is (details in [docs/invariants.md](docs/invariants.md)):
+These hold regardless of how small the change is (details and rationale in [docs/architecture/decisions.md](docs/architecture/decisions.md)):
 
 - Daily Log nutrition history is immutable. Later edits to Foods, servings or Recipes never
   rewrite it.

@@ -1,8 +1,5 @@
 # Phase 5C4.8: bounded crash and recovery qualification
 
-> **Document role: Operational Reference.** The Phase 5C4.9 Version 1.0 gate is preserved as a
-> historical release record.
-
 Status: **executable preactivation cutback and bounded recovery qualification
 implemented at control revision `ops_0011_phase5c4_recovery_audit`;
 local disposable infrastructure qualification is opt-in and vendor-neutral**

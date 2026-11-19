@@ -1,7 +1,5 @@
 # Phase 5C4.7b: target-activation execution
 
-> **Document role: Operational Reference.**
-
 Phase 5C4.7b introduces the separately authorized boundary from a qualified,
 closed schema-0020 target to schema 0021 and controlled runtime-write
 activation. It consumes Phase 5C4.7a evidence without modifying it. Promotion

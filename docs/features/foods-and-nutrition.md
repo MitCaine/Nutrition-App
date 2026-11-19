@@ -1,7 +1,5 @@
 # Foods and nutrition domain
 
-> **Document role: Current Guide.**
-
 Foods are the reusable inputs to every nutrition workflow. A Food can be authored manually,
 imported from USDA, created from a confirmed nutrition-label scan, duplicated from another Food, or
 generated as a compatibility projection of a published Recipe. All sources converge on the same
@@ -129,34 +127,25 @@ loading while preserving the current Food values.
 
 ### USDA FoodData Central
 
-USDA access follows the explicitly selected runtime:
+The app calls FoodData Central directly from the device:
 
 ```mermaid
 sequenceDiagram
     participant Mobile
     participant Local as Local USDA runtime
     participant SQLite
-    participant API as FastAPI
-    participant DB as PostgreSQL
     participant USDA as FoodData Central
 
-    alt Local authority
-        Mobile->>Local: Search / preview / import
-        Local->>USDA: Direct request with request-time personal credential
-        USDA-->>Local: Variable upstream payload
-        Local->>SQLite: Persist canonical imported Food
-        Local-->>Mobile: Normalized result
-    else Remote authority
-        Mobile->>API: Search / preview / import
-        API->>USDA: Server-side request with backend credential
-        USDA-->>API: Variable upstream payload
-        API->>DB: Persist canonical imported Food
-        API-->>Mobile: Normalized result
-    end
+    Mobile->>Local: Search / preview / import
+    Local->>USDA: Direct request with request-time personal credential
+    USDA-->>Local: Variable upstream payload
+    Local->>SQLite: Persist canonical imported Food
+    Local-->>Mobile: Normalized result
 ```
 
-Local mode must not embed or persist a shared backend USDA secret; its credential provider resolves
-a personal credential at request time. Remote mode retains backend-owned credential handling.
+The personal USDA API key is stored on the device and resolved at request time; no shared secret is
+embedded in the app. The parked backend has its own server-side USDA integration that does the same
+thing with a backend credential.
 Both paths normalize variable upstream payloads into the same stable nutrient/serving/source
 semantics.
 
@@ -253,28 +242,16 @@ with `create_idempotency_result_unavailable` rather than creating a replacement.
 
 ## Where to look
 
-| Concern | Backend | Mobile | Tests |
+| Concern | Parked backend (`apps/backend`) | Mobile (`apps/mobile`) | Tests |
 | --- | --- | --- | --- |
-| Food CRUD, serving rules, and manual authoring presentation | `app/services/food_service.py`, `app/nutrition/serving_resolution.py`, `app/schemas/food.py` | `src/features/foods`, `foodAuthoringNutrients.ts`, `NutrientEntryList.tsx` | `test_stage2_foods.py`, E4-13/E4-14 Food-form tests, `foodForm.test.ts`, serving transition tests |
+| Food CRUD, serving rules, and manual authoring presentation | `app/services/food_service.py`, `app/nutrition/serving_resolution.py`, `app/schemas/food.py` | `src/features/foods`, `foodAuthoringNutrients.ts`, `NutrientEntryList.tsx` | `test_stage2_foods.py`, `e4_13FoodFormDensity.test.ts`, `e4_14MoreNutrientsAuthoring.test.ts`, `foodForm.test.ts`, serving transition tests |
 | Nutrient catalog, units, and aggregation | `app/catalog/nutrients.py`, `app/nutrition`, `app/domain/nutrition.py` | `src/shared/nutrition` | `test_nutrient_catalog.py`, `test_nutrition_resolution.py`, `test_aggregation.py`, `nutrientSections.test.ts` |
 | USDA | `app/integrations/usda`, `app/services/usda_service.py` | `src/features/usda`, `src/runtime/local/localUsdaRuntime.ts` | `test_stage3_usda_*`, `localUsdaRuntime.test.ts`, `usda*.test.ts` |
 | Favorites and recents | `food_service.py`, Food/log repositories | Food hooks/discovery utilities | Food discovery tests |
 | Targets and DRI | `app/services/target_service.py`, `app/targets` | `src/features/targets`, `src/runtime/local/localTargetsRuntime.ts`, `src/shared/nutrition/dri*` | `test_targets.py`, `test_dri_recommendations.py`, `test_target_tracking_preferences.py`, `driRecommendations.test.ts`, `target*.test.ts` |
 
-Use the [Development Guide](../maintenance.md) for exact router, schema, migration, and
-qualification checkpoints.
-
-## Next reading
-
-- Continue with [Recipes and Nutrition History](recipes-and-logging.md) to see how Foods become
-  ingredients, published revisions, and immutable Daily Log snapshots.
-- Read [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) for scanned Food creation,
-  local backup/restore, and unified saved/USDA discovery.
-- Use the [Development Guide](../maintenance.md) before
-  changing Food or serving behavior.
-
 ## See also
 
-- [Architecture Decision Index](../architecture/decisions.md) for the key Food and nutrition choices
-- [Architecture Overview](../architecture/overview.md) for layer ownership
-- [Testing Guide](../maintenance.md) for Food, USDA, Targets, ownership, and concurrency coverage
+- [Design decisions](../architecture/decisions.md) for the rules behind this behavior
+- [Architecture overview](../architecture/overview.md) for layers and data boundaries
+- [Maintenance guide](../maintenance.md#running-checks-locally) for running the tests

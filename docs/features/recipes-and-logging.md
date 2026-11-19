@@ -1,7 +1,5 @@
 # Recipes and nutrition history
 
-> **Document role: Current Guide.**
-
 Recipes connect mutable authoring with immutable use. An author can keep editing a Recipe, while a
 published revision preserves exactly what was available when someone logged it. Daily Logs then
 snapshot resolved nutrient amounts so later Food or Recipe changes cannot rewrite history.
@@ -298,29 +296,20 @@ snapshot semantics.
 
 ## Where to look
 
-| Concern | Primary code | Tests |
+| Concern | Code (`app/…` is the parked backend; `src/…` is mobile) | Tests |
 | --- | --- | --- |
-| Recipe authoring and graphs | `app/services/recipe_service.py`, `app/domain/recipe_*` | `test_stage4_recipes.py`, `test_recipe_nested_publication.py` |
-| Publication snapshots | `app/publication/recipe_revision.py`, publication repository/models | `test_recipe_publication_*`, `test_recipe_revision_publication.py` |
+| Recipe authoring and graphs | `src/runtime/local/localRecipesRuntime.ts`, `localRecipeRepository.ts`; `app/services/recipe_service.py`, `app/domain/recipe_*` | `localRecipesRuntime.test.ts`, `localRecipesBatch.test.ts`; `test_stage4_recipes.py`, `test_recipe_nested_publication.py` |
+| Publication snapshots | local recipes runtime; `app/publication/recipe_revision.py` | `localRecipePublicationRuntime.test.ts`; `test_recipe_publication_*`, `test_recipe_revision_publication.py` |
 | Projection integrity | `app/domain/recipe_projection.py`, Food/Recipe services | `test_recipe_projection_ownership.py`, `test_food_recipe_serving_integrity.py` |
-| Logging and editing | `app/services/log_service.py`, `app/nutrition/revision_resolution.py` | `test_stage2_logs.py`, `test_recipe_revision_logging.py`, `test_recipe_revision_log_editing.py` |
-| Complete persistence and mutation | `app/services/log_day_completion_service.py`, `app/repositories/log_repository.py`, local `localDailyLogCompleteState.ts` | E4-01 through E4-03 Complete suites |
-| History evidence and shared projection | `app/services/log_service.py`, Logs history-range API, `src/runtime/local/localDailyLogsRuntime.ts`, `src/features/history/historyProjection.ts` | E4-04 through E4-06 and E4-16 History suites |
-| History presentation | `apps/mobile/src/features/history`, Daily Log navigation | E4-09 through E4-12 and E4-16 mobile suites |
+| Logging and editing | `src/runtime/local/localDailyLogsRuntime.ts`; `app/services/log_service.py`, `app/nutrition/revision_resolution.py` | `localDailyLogsRuntime.test.ts`, `recipeLogSelectedAmount.test.ts`, `logEditErrors.test.ts`; `test_stage2_logs.py`, `test_recipe_revision_logging.py` |
+| Complete persistence and mutation | `app/services/log_day_completion_service.py`, `app/repositories/log_repository.py`, local `localDailyLogCompleteState.ts` | `e4_02Complete*.test.ts`, `e4_03CompleteInvalidation.test.ts`, `e4_15CompleteDurability.test.ts`, `localDailyLogCompleteState.test.ts` |
+| History evidence and shared projection | `app/services/log_service.py`, Logs history-range API, `src/runtime/local/localDailyLogsRuntime.ts`, `src/features/history/historyProjection.ts` | `e4_04HistoryRange.test.ts`, `e4_05HistoryProjection.test.ts`, `e4_06HistoryQuery.test.ts`, `e4_16HistoryParity.test.ts` |
+| History presentation | `apps/mobile/src/features/history`, Daily Log navigation | `e4_09HistoryShell.test.ts` through `e4_12FocusedNutrientHistory.test.ts` |
 | Mobile Recipe/yield/serving flow | `apps/mobile/src/features/recipes`, `src/shared/navigation/draftGuard.ts` | `recipe*.test.ts`, `recipeServingChoice.test.ts`, `recipeServingUnitPicker.test.ts`, `draftGuard.test.ts` |
 | Mobile Log flow | `apps/mobile/src/features/logging` | `log*.test.ts`, `dailyLog*.test.ts`, logging integration tests |
 
-## Next reading
-
-- Return to [Foods and Nutrition](foods-and-nutrition.md) for serving resolution and mutable Food
-  behavior.
-- Read [Project Invariants](../invariants.md#why-immutable-recipe-revisions) for the historical
-  rationale behind revision-backed logging.
-- Use the [Development Guide](../maintenance.md) before changing
-  Recipe graphs, publication, or Log snapshots.
-
 ## See also
 
-- [Architecture Decision Index](../architecture/decisions.md) for revision and projection decisions
-- [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) for another immutable provenance flow
-- [Testing Guide](../maintenance.md) for publication, logging, Complete/History parity, E4-16 qualification, and PostgreSQL concurrency coverage
+- [Design decisions](../architecture/decisions.md) for the rules behind this behavior
+- [Architecture overview](../architecture/overview.md) for layers and data boundaries
+- [Maintenance guide](../maintenance.md#running-checks-locally) for running the tests
