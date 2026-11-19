@@ -1,51 +1,12 @@
 # Nutrition App
 
-Nutrition App is an iOS-first, local-first nutrition tracker for building a personal food library, publishing reusable recipes, scanning nutrition labels, searching USDA FoodData Central, recording immutable nutrition history, and comparing daily intake against personalized nutrition targets.
+A personal, local-first nutrition tracker for iPhone. You build a food library, publish reusable
+recipes, scan nutrition labels with Apple Vision, search USDA FoodData Central, and compare daily
+intake against personalized targets. Everything runs on the device in SQLite.
 
-The default application runtime is fully local: on-device SQLite is authoritative for Foods, Recipes, Daily Logs, Targets, OCR confirmation, USDA imports, and application state. Apple Vision performs nutrition-label OCR on device. The repository also preserves the original FastAPI/PostgreSQL implementation as an alternate remote/reference authority, but local and remote runtimes never synchronize, dual-write, fail over, or silently mix.
-
-## Current product state
-
-Version 2.2 is the current source-release line. Root `VERSION` is the canonical repository release authority and contains `2.2.1`; mobile, Expo, backend, and current documentation metadata mirror that release identity. Version 2.1 and earlier records remain retained as historical release and implementation provenance rather than current release authority.
-
-Download the [published 2.2.1 source release](https://github.com/MitCaine/Nutrition-App/releases/tag/v2.2.1). This is a source/GitHub release; it does not publish an App Store or Play Store binary.
-
-Current capabilities include:
-
-- Local-first SQLite authority for the complete personal nutrition workflow.
-- Native Apple Vision nutrition-label OCR and structured confirmation/correction flow.
-- Direct USDA FoodData Central search/import with secure on-device credential storage.
-- Personalized calorie, protein, carbohydrate, fat, saturated-fat, calcium, iron, vitamin D, potassium, magnesium, and fiber targets where supported by the general-adult profile.
-- FDA Daily Value fallback/reference behavior where personalization is unavailable or inappropriate.
-- Immutable Daily Log nutrition snapshots so later Food and Recipe edits cannot rewrite history.
-- Immutable Recipe publication revisions with generated Food compatibility projections.
-- Explicit local/remote runtime authority selection with no synchronization or hidden fallback.
-- One-time PostgreSQL-to-SQLite transfer tooling for installations moving from the preserved remote runtime.
-- Accessibility-focused navigation, focus management, and physical-iPhone release qualification.
-
-## Repository at a glance
-
-```mermaid
-flowchart TD
-    Repo["Nutrition App repository"] --> Apps["apps"]
-    Apps --> Mobile["mobile: primary Expo / React Native / SQLite application"]
-    Apps --> Backend["backend: preserved FastAPI / PostgreSQL remote-reference runtime"]
-    Repo --> Docs["docs: current architecture, product state, operations, and historical implementation records"]
-    Repo --> Engineering["engineering: contributor workflow and conventions"]
-    Repo --> Packages["packages: shared contract references"]
-    Repo --> Scripts["scripts: lifecycle, validation, qualification, transfer, and packaging entry points"]
-```
-
-| Area | Responsibility |
-| --- | --- |
-| `apps/mobile` | Primary user experience, `NutritionRuntime`, authoritative local SQLite runtime, remote adapter, secure USDA credential flow, and native Apple Vision integration |
-| `apps/backend` | Preserved remote FastAPI/PostgreSQL authority, reference domain implementation, migrations, operators, and backend tests |
-| `docs` | Current product/architecture guides plus clearly separated historical implementation evidence |
-| `engineering` | Change lifecycle, Git conventions, review, merge, release, and automation ownership |
-| `packages` | Small shared contract references; not a generated client SDK |
-| `scripts` | Repository lifecycle, validation, runtime, qualification, transfer, and packaging entry points |
-
-The [Repository Tour](docs/project/repository-tour.md) explains where to begin for each feature and which advanced directories can be ignored during ordinary application work.
+The app is in maintenance mode: it runs on one iPhone (17 Pro Max), and ongoing work is mostly
+patching dependency vulnerabilities reported by Dependabot.
+See the **[maintenance guide](docs/maintenance.md)**.
 
 ## What the app does
 
@@ -60,320 +21,40 @@ The [Repository Tour](docs/project/repository-tour.md) explains where to begin f
 - Provides favorites, recents, unified saved/USDA discovery, light/dark presentation, and accessibility-focused navigation/focus behavior.
 - Supports a one-time PostgreSQL-to-SQLite transfer path for installations migrating from the preserved remote runtime.
 
-## Runtime architecture
-
-```mermaid
-flowchart LR
-    subgraph Mobile["React Native mobile app"]
-        Screen["Screens and navigation"] --> Hook["Feature hooks and state"]
-        Hook --> Runtime["NutritionRuntime"]
-        Vision["Apple Vision OCR"] --> Runtime
-    end
-
-    Runtime -->|default local authority| Local["Local runtime adapters"]
-    Local --> LocalDB[("Application SQLite")]
-    Local --> USDA["USDA FoodData Central"]
-
-    Runtime -->|optional remote/reference authority| Remote["Remote API adapter"]
-    Remote --> API["FastAPI /api/v1"]
-    API --> Service["Application services"]
-    Service --> Repository["Repositories"]
-    Repository --> AppDB[("Application PostgreSQL")]
-    Service --> USDA
-
-    Control["Historical/advanced promotion control plane"] -.->|remote operations only| AppDB
-```
-
-Exactly one application-data authority is active in a running context. Local SQLite and remote FastAPI/PostgreSQL are alternatives, not synchronized copies.
-
-For layer responsibilities, persistence boundaries, and migration streams, read the [Architecture Overview](docs/architecture/overview.md). For a quick orientation, start with the [Repository Tour](docs/project/repository-tour.md).
-
-## Technology stack
+## Stack
 
 | Area | Technology |
 | --- | --- |
-| Primary mobile application | React Native 0.86, Expo 57, TypeScript 6, TanStack Query, Zod |
-| Primary application data | `expo-sqlite`, fresh semantic SQLite schema, schema-version migration engine |
-| Native OCR | Swift Expo module using Apple Vision |
-| External nutrition data | USDA FoodData Central API through the local runtime or preserved remote backend |
-| Alternate/reference backend | Python 3.14, FastAPI, Pydantic, SQLAlchemy 2 |
-| Alternate/reference application data | PostgreSQL 16, Alembic |
-| Advanced historical operations | Independent PostgreSQL control database and MinIO object-lock evidence for promotion workflows |
-| Tests | Pytest, Jest, native/file-backed SQLite qualification, PostgreSQL concurrency suites, native Swift tests |
-| Quality | Ruff, TypeScript compiler, Expo configuration validation, physical-device qualification |
+| App | React Native 0.86, Expo 57, TypeScript, TanStack Query, Zod |
+| Data | On-device SQLite (`expo-sqlite`) with a schema-version migration engine |
+| OCR | Swift Expo module using Apple Vision |
+| Nutrition data | USDA FoodData Central (personal API key stored on device) |
+| Parked | Python 3.14 / FastAPI / PostgreSQL 16 backend in `apps/backend` |
+
+## Repository layout
+
+| Path | What's there |
+| --- | --- |
+| `apps/mobile` | The iPhone app |
+| `apps/backend` | Parked FastAPI/PostgreSQL remote runtime (not used by the app) |
+| `packages/shared-contracts` | Small shared contract references |
+| `engineering/` | DRI reference-data generator and source data for nutrition targets |
+| `docs/` | [Maintenance](docs/maintenance.md), architecture, feature guides, parked backend docs |
+| `scripts/` | Backend test runner and local backend start/stop |
 
 ## Quick start
-
-### Primary path: local SQLite authority
-
-The normal application runtime is local-first. Foods, Recipes, Daily Logs,
-Targets, OCR confirmation, and saved nutrition persist in authoritative
-on-device SQLite without FastAPI or PostgreSQL. USDA requires upstream network
-access and a configured personal credential. Native Apple Vision OCR requires
-an iOS native development or Release build and is not provided by Expo Go.
-
-For source or documentation maintenance that leaves dependency inputs unchanged,
-run `./scripts/session-start.sh` from the repository root. Dependency work selects
-the bounded authorized route under the [canonical startup scope rule](docs/operations/session-contract.md#startup-update-scope);
-single-package work uses the targeted updater, while expressly authorized whole-project
-refresh uses `source ./scripts/start-work.zsh --refresh-all`. Review partial failures.
-Follow the
-[session contract](docs/operations/session-contract.md) for readiness, failure
-handling and session-end requirements, and the
-[local project map](docs/local_project_map.md) for qualification.
-
-Use the Node line in `.nvmrc` for the mobile project. On a fresh checkout, or whenever the locked
-JavaScript dependencies need to be reconciled, install them once:
 
 ```bash
 cd apps/mobile
 npm ci
-```
-
-`npm ci` is setup/dependency reconciliation. It is not a required step before
-every Metro restart or native rebuild.
-
-#### Canonical local-iOS development commands
-
-Ordinary JavaScript/TypeScript-only changes do not require native
-recompilation when the appropriate development build is already installed.
-Start Metro and reload/relaunch the installed app.
-
-Changes to native modules, native dependencies, Expo/native configuration,
-config plugins, or other inputs that alter the generated iOS project require a
-fresh native generation/rebuild.
-
-All development commands below select local application-data authority
-explicitly.
-
-##### Destructive simulator reset and rebuild
-
-Use this when the simulator installation and its authoritative local data should
-be discarded deliberately:
-
-```bash
-cd apps/mobile
-export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
-export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
-unset EXPO_PUBLIC_NUTRITION_API_URL
-unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
-
-xcrun simctl uninstall booted com.portfolio.nutritionapp
-npx expo prebuild --clean --platform ios
-npx expo run:ios --no-build-cache
-```
-
-`simctl uninstall` removes the installed application before rebuilding. That
-deletes the simulator app sandbox, including the authoritative Nutrition App
-SQLite database. This is intentionally destructive.
-
-`expo prebuild --clean` deletes and regenerates the generated native iOS
-project. `expo run:ios --no-build-cache` clears native Derived Data/build cache
-before compiling and installing the new Debug build.
-
-##### Native simulator rebuild without intentionally clearing app data
-
-Use this when native/config/plugin/dependency changes require a fresh generated
-project and native binary, but the existing simulator app sandbox should be
-retained:
-
-```bash
-cd apps/mobile
-export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
-export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
-unset EXPO_PUBLIC_NUTRITION_API_URL
-unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
-
-npx expo prebuild --clean --platform ios
-npx expo run:ios --no-build-cache
-```
-
-This regenerates the ignored `apps/mobile/ios/` project and clears the native
-build cache, but it does not intentionally uninstall
-`com.portfolio.nutritionapp`. Installing the rebuilt app over the existing
-installation is therefore distinct from the destructive reset workflow above.
-
-##### Simulator launch without rebuilding
-
-For JS/TS iteration when a native Debug build is already installed, start Metro
-in one terminal:
-
-```bash
-cd apps/mobile
-export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
-export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
-unset EXPO_PUBLIC_NUTRITION_API_URL
-unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
-
-npx expo start --dev-client --host localhost
-```
-
-Then launch the already-installed simulator app without compiling it:
-
-```bash
-xcrun simctl launch booted com.portfolio.nutritionapp
-```
-
-No `expo prebuild` or `expo run:ios` is needed for ordinary JS/TS-only changes.
-
-##### Physical iPhone launch without rebuilding
-
-For an already-installed signed Debug/development build, keep the Mac and
-iPhone on a network where the phone can reach Metro, then start Metro in LAN
-mode:
-
-```bash
-cd apps/mobile
-export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
-export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
-unset EXPO_PUBLIC_NUTRITION_API_URL
-unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
-
-npx expo start --dev-client --host lan
-```
-
-Launch the already-installed app from the iPhone Home Screen, or launch it from
-the Mac without recompiling:
-
-```bash
-xcrun devicectl device process launch \
-  --device "<device-name-or-identifier>" \
-  com.portfolio.nutritionapp
-```
-
-This path requires an appropriate signed development build to have been
-installed previously. Starting Metro or relaunching that build does not itself
-recompile native code.
-
-##### Self-contained physical-iPhone Release install
-
-The Release workflow remains separate from development-build/Metro iteration:
-
-```bash
-cd apps/mobile
-export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
-export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
-unset EXPO_PUBLIC_E216_NATIVE_QUALIFICATION
-unset EXPO_PUBLIC_NUTRITION_API_URL
-unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
-npx expo run:ios --configuration Release --device
-```
-
-A Release build bundles JavaScript into the installed application and does not
-require Metro after installation.
-
-### Optional: preserved remote FastAPI/PostgreSQL authority
-
-Use the remote path only for remote-mode development, PostgreSQL-specific
-behavior, historical qualification, or backend/reference work.
-
-The current preserved remote application runtime requires PostgreSQL already
-provisioned and qualified at `0033_complete_runtime_authority`.
-
-Schema `0020_immutable_provenance_enforcement` is retained only as the
-`LIMITED_PREACTIVATION_OPERATIONS_SANDBOX`. It is not current remote
-feature-parity startup.
-
-Revision `0021_target_activation_execution` remains an operations-only
-activation boundary. There is no ordinary-development convenience upgrade
-across it, and an unqualified `alembic` direct-to-latest-head shortcut is not a
-supported startup procedure. In particular, do not combine
-`docker compose down -v` with a direct Alembic upgrade to the latest head as an
-ordinary current-product reset/rebuild workflow.
-
-For an already qualified current remote database:
-
-```bash
-docker compose up -d postgres
-cd apps/backend
-PYTHON_BIN="${PYTHON_BIN:-python3}"
-"$PYTHON_BIN" ../../scripts/toolchain-report.py --check python && "$PYTHON_BIN" -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-dev.lock
-python -m pip install --no-build-isolation --no-deps -e .
-cp .env.example .env
-alembic current
-uvicorn app.main:app --reload
-```
-
-`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the line declared by `.python-version`, set `PYTHON_BIN` to a matching executable; the same verified interpreter then creates `apps/backend/.venv`.
-
-`alembic current` must report `0033_complete_runtime_authority`.
-
-Then start the mobile client explicitly in remote mode:
-
-```bash
-cd apps/mobile
-EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
-EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
-EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
-  npm start
-```
-
-There is no automatic fallback, synchronization, dual-write, or authority
-mixing between the two runtimes.
-
-## Engineering workflow
-
-Contributors start with [Contributing](CONTRIBUTING.md), [Engineering Workflow](engineering/README.md)
-and the [local project map](docs/local_project_map.md). Normal work uses one source-grounded author
-for engineering and coding, then a fresh independent reviewer. Retain necessary decisions and
-expected proof in the existing concise task record; no separate planning handoff is required.
-Settings, authority and Nutrition's protected acceptance remain in the map.
-
-
-
-GitHub access is separate from owner task authority. Epics/issues describe engineering work;
-release versions describe application states.
-
-## Documentation
-
-Start at the [Documentation Index](docs/README.md). The most useful current documents are:
-
-| Goal | Read first |
-| --- | --- |
-| Understand the current application state | [Current State](docs/project/current-state.md) |
-| Understand enduring project scope and priorities | [Project Constitution](docs/project/constitution.md) |
-| Onboard an engineer or implementation agent | [Project Onboarding](docs/project/onboarding.md) |
-| Understand the codebase quickly | [Repository Tour](docs/project/repository-tour.md) |
-| Understand runtime and persistence boundaries | [Architecture Overview](docs/architecture/overview.md) |
-| Change Foods, servings, USDA, Search, or Targets | [Foods and Nutrition Domain](docs/features/foods-and-nutrition.md) |
-| Change Recipes, publication, revisions, or Daily Logs | [Recipes and Nutrition History](docs/features/recipes-and-logging.md) |
-| Change OCR or offline/local behavior | [OCR, Search, and Offline Behavior](docs/features/ocr-search-and-offline.md) |
-| Review canonical invariants | [Project Invariants](docs/project/invariants.md) |
-| Find the right code and tests for a change | [Development Guide](docs/project/development-guide.md) |
-| Run qualification | [Testing Guide](docs/operations/testing.md) |
-
-## Core invariants
-
-[Project Invariants](docs/project/invariants.md) is the canonical list and rationale. Important guarantees include immutable Daily Log nutrition history, immutable Recipe publication revisions, fixed historical source identity, exact nutrition/decimal semantics, immutable OCR correction provenance, explicit authority selection, ownership enforcement, idempotency/replay behavior, transactional rollback, and confirmed-versus-unresolved mutation outcomes.
-
-## Testing
-
-Primary mobile validation:
-
-```bash
-cd apps/mobile
-npm test -- --runInBand
 npm run typecheck
-npm run config:validate
+npm test
 ```
 
-Backend/reference validation follows the [canonical baseline guide](docs/operations/testing.md#baseline-validation) using the prepared backend virtual environment:
+To install on the iPhone (needs a Mac with Xcode), see
+[Installing on the iPhone](docs/maintenance.md#installing-on-the-iphone).
 
-```bash
-cd apps/backend
-source .venv/bin/activate
-../../scripts/run-backend-baseline.sh
-ruff check .
-```
+## Docs
 
-Additional PostgreSQL concurrency, control-database, native SQLite, transfer, performance, and native iOS qualification suites are documented in the [Testing Guide](docs/operations/testing.md).
-
-## Release status
-
-For the current release identity, supported runtime boundaries, migration
-heads, and known limitations, use
-[Current State](docs/project/current-state.md). Finalized release publication
-evidence and older qualification records are indexed by the
-[Historical Knowledge Index](docs/historical/README.md).
+Start at the [documentation index](docs/README.md). The data-integrity rules the code relies on are
+in [docs/invariants.md](docs/invariants.md).

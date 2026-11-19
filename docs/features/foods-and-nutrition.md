@@ -261,7 +261,7 @@ with `create_idempotency_result_unavailable` rather than creating a replacement.
 | Favorites and recents | `food_service.py`, Food/log repositories | Food hooks/discovery utilities | Food discovery tests |
 | Targets and DRI | `app/services/target_service.py`, `app/targets` | `src/features/targets`, `src/runtime/local/localTargetsRuntime.ts`, `src/shared/nutrition/dri*` | `test_targets.py`, `test_dri_recommendations.py`, `test_target_tracking_preferences.py`, `driRecommendations.test.ts`, `target*.test.ts` |
 
-Use the [Development Guide](../project/development-guide.md) for exact router, schema, migration, and
+Use the [Development Guide](../maintenance.md) for exact router, schema, migration, and
 qualification checkpoints.
 
 ## Next reading
@@ -270,11 +270,11 @@ qualification checkpoints.
   ingredients, published revisions, and immutable Daily Log snapshots.
 - Read [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) for scanned Food creation,
   local backup/restore, and unified saved/USDA discovery.
-- Use the [Development Guide](../project/development-guide.md#if-you-need-to-modify-foods-or-servings) before
+- Use the [Development Guide](../maintenance.md) before
   changing Food or serving behavior.
 
 ## See also
 
 - [Architecture Decision Index](../architecture/decisions.md) for the key Food and nutrition choices
 - [Architecture Overview](../architecture/overview.md) for layer ownership
-- [Testing Guide](../operations/testing.md) for Food, USDA, Targets, ownership, and concurrency coverage
+- [Testing Guide](../maintenance.md) for Food, USDA, Targets, ownership, and concurrency coverage

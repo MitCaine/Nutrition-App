@@ -1,228 +1,40 @@
-name: iOS native qualification
+name: iOS native build
 
+# On demand only: run from the Actions tab after native-affecting changes
+# (Expo/React Native upgrades, native modules, camera/OCR, permissions).
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".nvmrc"
-      - "apps/mobile/app.json"
-      - "apps/mobile/package.json"
-      - "apps/mobile/package-lock.json"
-      - "apps/mobile/plugins/**"
-      - "apps/mobile/modules/**/expo-module.config.json"
-      - "apps/mobile/modules/**/ios/**"
-      - "apps/mobile/modules/**/ios-tests/**"
-      - "scripts/ios-native-qualification.sh"
-      - "scripts/ios-native-cache-key.sh"
-      - "scripts/lib/native_process_lifecycle.py"
-      - "scripts/tests/test_native_process_lifecycle.py"
-      - "scripts/tests/test_ios_native_qualification.py"
-      - "scripts/lib/qualification_profiles.py"
-      - "scripts/lib/task_authorization.py"
-      - ".github/workflows/ios-native.yml"
-      - ".github/workflows/trusted-qualification-execute.yml"
-  pull_request:
-    paths:
-      - ".nvmrc"
-      - "apps/mobile/app.json"
-      - "apps/mobile/package.json"
-      - "apps/mobile/package-lock.json"
-      - "apps/mobile/plugins/**"
-      - "apps/mobile/modules/**/expo-module.config.json"
-      - "apps/mobile/modules/**/ios/**"
-      - "apps/mobile/modules/**/ios-tests/**"
-      - "scripts/ios-native-qualification.sh"
-      - "scripts/ios-native-cache-key.sh"
-      - "scripts/lib/native_process_lifecycle.py"
-      - "scripts/tests/test_native_process_lifecycle.py"
-      - "scripts/tests/test_ios_native_qualification.py"
-      - "scripts/lib/qualification_profiles.py"
-      - "scripts/lib/task_authorization.py"
-      - ".github/workflows/ios-native.yml"
-      - ".github/workflows/trusted-qualification-execute.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ios-native-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  ios_native:
-    name: iOS native qualification
+  ios:
+    name: iOS simulator build
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY: local
+      EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
+      EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v7
-        id: native-python
-        with:
-          python-version-file: .python-version
-
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-
-      - name: Compute exact native download cache keys
-        id: native-cache-key
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - run: npm ci
+      - run: npm exec -- expo prebuild --clean --platform ios
+      - name: Build for simulator
         run: |
-          echo "npm=$(bash scripts/ios-native-cache-key.sh --cache npm)" >> "$GITHUB_OUTPUT"
-          echo "cocoapods=$(bash scripts/ios-native-cache-key.sh --cache cocoapods)" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare isolated native download cache locations
-        run: |
-          npm_cache="${RUNNER_TEMP}/nutrition-npm-download-cache"
-          cocoapods_cache="${RUNNER_TEMP}/nutrition-cocoapods-download-cache"
-          {
-            echo "npm_config_cache=${npm_cache}"
-            echo "NPM_CONFIG_CACHE=${npm_cache}"
-            echo "CP_CACHE_DIR=${cocoapods_cache}"
-          } >> "$GITHUB_ENV"
-          mkdir -p "$npm_cache" "$cocoapods_cache"
-
-      - name: Restore npm download cache
-        id: npm-download-cache
-        continue-on-error: true
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/nutrition-npm-download-cache
-          key: ${{ steps.native-cache-key.outputs.npm }}
-
-      - name: Restore CocoaPods download cache
-        id: cocoapods-download-cache
-        continue-on-error: true
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/nutrition-cocoapods-download-cache
-          key: ${{ steps.native-cache-key.outputs.cocoapods }}
-
-      - name: Run repository-owned native qualifier
-        id: native-qualification
-        env:
-          IOS_NATIVE_NPM_CACHE_KEY: ${{ steps.native-cache-key.outputs.npm }}
-          IOS_NATIVE_NPM_CACHE_OUTCOME: ${{ steps.npm-download-cache.outcome }}
-          IOS_NATIVE_NPM_CACHE_HIT: ${{ steps.npm-download-cache.outputs.cache-hit }}
-          IOS_NATIVE_NPM_CACHE_RESTORED_KEY: ${{ steps.npm-download-cache.outputs.cache-matched-key }}
-          IOS_NATIVE_COCOAPODS_CACHE_KEY: ${{ steps.native-cache-key.outputs.cocoapods }}
-          IOS_NATIVE_COCOAPODS_CACHE_OUTCOME: ${{ steps.cocoapods-download-cache.outcome }}
-          IOS_NATIVE_COCOAPODS_CACHE_HIT: ${{ steps.cocoapods-download-cache.outputs.cache-hit }}
-          IOS_NATIVE_COCOAPODS_CACHE_RESTORED_KEY: ${{ steps.cocoapods-download-cache.outputs.cache-matched-key }}
-          NUTRITION_CONTROLLER_PYTHON: ${{ steps.native-python.outputs.python-path }}
-        run: >-
-          bash scripts/ios-native-qualification.sh
-          --evidence-dir "${RUNNER_TEMP}/ios-native-evidence"
-          --runner macos-26
-          --compilation-mode clean
-
-      - name: Summarize qualification and cleanup separately
-        if: always()
-        env:
-          EVIDENCE_DIR: ${{ runner.temp }}/ios-native-evidence
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          evidence = Path(os.environ["EVIDENCE_DIR"])
-          manifest = evidence / "manifest.json"
-          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
-          if not manifest.is_file():
-              lines = [
-                  "## iOS native qualification",
-                  "Qualification manifest: unavailable",
-                  "Cleanup disposition: unavailable",
-              ]
-          else:
-              document = json.loads(manifest.read_text(encoding="utf-8"))
-              cleanup = document.get("cleanup_disposition", {})
-              product_result = document.get("result")
-              if product_result not in {"PASS", "PARTIAL_FAILURE", "SIGNAL"}:
-                  product_result = "UNRECORDED"
-              cleanup_status = cleanup.get("status") if isinstance(cleanup, dict) else None
-              if cleanup_status not in {"PASS", "INCOMPLETE", "NOT_STARTED"}:
-                  cleanup_status = "UNRECORDED"
-              lines = [
-                  "## iOS native qualification",
-                  f"Product and required checks: {product_result}",
-                  f"Cleanup disposition: {cleanup_status}",
-              ]
-              retained = cleanup.get("retained_roots", []) if isinstance(cleanup, dict) else []
-              if isinstance(retained, list) and retained:
-                  lines.append(f"Retained roots recorded in the artifact: {len(retained)}")
-          with summary.open("a", encoding="utf-8") as handle:
-              handle.write("\n" + "\n".join(lines) + "\n")
-          PY
-
-      - name: Save npm download cache
-        id: npm-download-cache-save
-        if: ${{ always() && steps.native-qualification.outcome == 'success' }}
-        continue-on-error: true
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/nutrition-npm-download-cache
-          key: ${{ steps.native-cache-key.outputs.npm }}
-
-      - name: Save CocoaPods download cache
-        id: cocoapods-download-cache-save
-        if: ${{ always() && steps.native-qualification.outcome == 'success' }}
-        continue-on-error: true
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/nutrition-cocoapods-download-cache
-          key: ${{ steps.native-cache-key.outputs.cocoapods }}
-
-      - name: Retain cache operation outcomes
-        if: always()
-        env:
-          EVIDENCE_DIR: ${{ runner.temp }}/ios-native-evidence
-          NPM_RESTORE_OUTCOME: ${{ steps.npm-download-cache.outcome }}
-          NPM_CACHE_HIT: ${{ steps.npm-download-cache.outputs.cache-hit }}
-          NPM_RESTORED_KEY: ${{ steps.npm-download-cache.outputs.cache-matched-key }}
-          NPM_SAVE_OUTCOME: ${{ steps.npm-download-cache-save.outcome }}
-          NPM_CACHE_KEY: ${{ steps.native-cache-key.outputs.npm }}
-          COCOAPODS_RESTORE_OUTCOME: ${{ steps.cocoapods-download-cache.outcome }}
-          COCOAPODS_CACHE_HIT: ${{ steps.cocoapods-download-cache.outputs.cache-hit }}
-          COCOAPODS_RESTORED_KEY: ${{ steps.cocoapods-download-cache.outputs.cache-matched-key }}
-          COCOAPODS_SAVE_OUTCOME: ${{ steps.cocoapods-download-cache-save.outcome }}
-          COCOAPODS_CACHE_KEY: ${{ steps.native-cache-key.outputs.cocoapods }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          def operation(prefix):
-              return {
-                  "key": os.environ.get(f"{prefix}_CACHE_KEY") or None,
-                  "restore_outcome": os.environ.get(f"{prefix}_RESTORE_OUTCOME") or None,
-                  "cache_hit": os.environ.get(f"{prefix}_CACHE_HIT") or None,
-                  "restored_key": os.environ.get(f"{prefix}_RESTORED_KEY") or None,
-                  "save_outcome": os.environ.get(f"{prefix}_SAVE_OUTCOME") or "not_attempted",
-              }
-
-          evidence_dir = Path(os.environ["EVIDENCE_DIR"])
-          evidence_dir.mkdir(parents=True, exist_ok=True)
-          (evidence_dir / "cache-operations.json").write_text(
-              json.dumps({
-                  "npm": operation("NPM"),
-                  "cocoapods": operation("COCOAPODS"),
-              }, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-          PY
-
-      - name: Retain native qualification evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-native-${{ github.sha }}
-          path: ${{ runner.temp }}/ios-native-evidence
-          if-no-files-found: warn
-          retention-days: 30
+          workspace="$(ls -d ios/*.xcworkspace | head -1)"
+          scheme="$(basename "$workspace" .xcworkspace)"
+          xcodebuild -workspace "$workspace" -scheme "$scheme" \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -50
+          test "${PIPESTATUS[0]}" -eq 0
