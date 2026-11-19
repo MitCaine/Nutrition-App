@@ -56,8 +56,10 @@ function checkRegistryGlob(manifest,lock) {
     walk(directory);assert.deepEqual(members.sort(),Object.keys(expected.members).sort(),label+' member inventory drift: '+location);
     for(const [member,identity] of Object.entries(expected.members)) assert.equal(sha(fs.readFileSync(path.join(directory,member))),identity,label+' payload: '+location+'/'+member);
   }
-  for(const owner of ['@expo/cli','@expo/config','@expo/config-plugins','@expo/fingerprint','@expo/metro-config']) {
-    assert.equal(lock.packages['node_modules/'+owner].dependencies.glob,'^13.0.0','glob owner edge drift');
+  // Expo 57.0.33 callers request glob ^14.0.3 upstream; @expo/fingerprint 0.20.16 dropped its glob edge.
+  assert.equal(lock.packages['node_modules/@expo/fingerprint'].dependencies.glob,undefined,'glob owner edge drift');
+  for(const owner of ['@expo/cli','@expo/config','@expo/config-plugins','@expo/metro-config']) {
+    assert.equal(lock.packages['node_modules/'+owner].dependencies.glob,'^14.0.3','glob owner edge drift');
     const caller=createRequire(path.join(root,'node_modules',owner,'package.json'));
     assert.equal(fs.realpathSync(caller.resolve('glob')),fs.realpathSync(path.join(root,'node_modules/glob/dist/commonjs/index.min.js')),'glob owner resolution drift: '+owner);
   }
@@ -95,7 +97,7 @@ function checkModernArtifacts() {
   checkRecoveryMinimatch();
   const expectedLocations=['node_modules/minimatch','node_modules/glob/node_modules/minimatch',...LEGACY_OWNERS.map(o=>'node_modules/'+o+'/node_modules/minimatch')].sort();
   assert.deepEqual(Object.keys(lock.packages).filter(p=>p.endsWith('node_modules/minimatch')).sort(),expectedLocations,'minimatch lock closure drift');
-  assert.equal(lock.packages['node_modules/@expo/fingerprint'].dependencies.minimatch,'^10.2.2','minimatch owner edge drift');
+  assert.equal(lock.packages['node_modules/@expo/fingerprint'].dependencies.minimatch,'^10.2.6','minimatch owner edge drift');
   const caller=createRequire(path.join(root,'node_modules/@expo/fingerprint/package.json'));
   assert.equal(fs.realpathSync(caller.resolve('minimatch')),fs.realpathSync(path.join(root,'node_modules/minimatch/dist/commonjs/index.js')),'minimatch owner resolution drift');
   const installed=cp.execFileSync('npm',['ls','minimatch','--all','--parseable'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean).map(p=>fs.realpathSync(p)).sort();
@@ -282,7 +284,9 @@ function checkArtifacts() {
   }
   function members(directory,prefix='') {return fs.readdirSync(directory,{withFileTypes:true}).flatMap(e=>{assert(!e.isSymbolicLink());return e.isDirectory()?members(path.join(directory,e.name),prefix+e.name+'/'):[prefix+e.name];});}
   assert.deepEqual(members(directory).sort(),Object.keys(provenance.members).map(n=>n.slice(8)).sort(),'deepmerge member inventory drift');
-  for(const owner of ['@expo/config','jest-config']) {
+  // @expo/config 57.0.11 no longer declares deepmerge; its merge behavior is still exercised in checkOwners.
+  assert.equal(require(require.resolve('@expo/config/package.json',{paths:[root]})).dependencies?.deepmerge,undefined,'deepmerge caller edge changed; requalify: @expo/config');
+  for(const owner of ['jest-config']) {
     const ownerRequire=createRequire(require.resolve(owner+'/package.json',{paths:[root]}));
     assert.equal(fs.realpathSync(ownerRequire.resolve('deepmerge')),fs.realpathSync(path.join(directory,'dist/cjs.js')),'deepmerge owner resolution drift: '+owner);
     checkBehavior(ownerRequire('deepmerge'));
@@ -376,7 +380,7 @@ function checkNegativeFixtures(family='deepmerge') {
     rejects('member symlink',/member symlink/,()=>{fs.unlinkSync(file);fs.symlinkSync(path.join(root,'node_modules/deepmerge/dist/cjs.js'),file);return()=>{fs.unlinkSync(file);fs.writeFileSync(file,bytes);};});
     const saved=path.join(fixture,'saved-deepmerge');
     rejects('package symlink',/package symlink/,()=>{fs.renameSync(directory,saved);fs.symlinkSync(saved,directory,'dir');return()=>{fs.unlinkSync(directory);fs.renameSync(saved,directory);};});
-    const nested=path.join(fixture,'node_modules/@expo/config/node_modules/deepmerge');
+    const nested=path.join(fixture,'node_modules/jest-config/node_modules/deepmerge');
     rejects('owner-local extra copy',/owner resolution drift/,()=>{fs.mkdirSync(path.dirname(nested),{recursive:true});fs.cpSync(directory,nested,{recursive:true});return()=>fs.rmSync(nested,{recursive:true});});
     const rogue=path.join(fixture,'node_modules/nutrition-rogue-fixture');
     rejects('unregistered extra installed copy',/installed closure drift|Command failed/,()=>{fs.mkdirSync(path.join(rogue,'node_modules'),{recursive:true});fs.writeFileSync(path.join(rogue,'package.json'),JSON.stringify({name:'nutrition-rogue-fixture',version:'1.0.0',dependencies:{deepmerge:'4.3.1'}}));fs.cpSync(directory,path.join(rogue,'node_modules/deepmerge'),{recursive:true});return()=>fs.rmSync(rogue,{recursive:true});});

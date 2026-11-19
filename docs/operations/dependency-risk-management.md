@@ -223,9 +223,14 @@ directly from `apps/mobile`:
 
     node scripts/check-zod-compatibility.cjs
 
-The check resolves Zod from the actual installed Expo caller, requires a single
-patched lock entry, discovers the installed CLI's Zod imports, and exercises its
-real plugin/output schemas, plugin constructor and MCP registration boundary.
+Since `@expo/cli` 57.0.34 the CLI declares no Zod dependency: its DevTools
+plugin/output schemas are JSON Schemas validated by `@expo/schema-utils`, and Zod
+is resolved only at runtime through the optional `expo-mcp` package and injected
+into the MCP schema builders. The check requires a single patched lock entry,
+fails closed on any static Zod import in the installed CLI, requires that the
+only Zod resolution goes through `expo-mcp`, and exercises the real plugin/output
+schemas, plugin constructor and MCP registration boundary with the repository's
+Zod injected the same way.
 It verifies required/optional fields, parameter types, strict unknown-key rejection
 and the exclusion of CLI-only commands from MCP schemas. New imports or legacy
 subpath engines fail closed for review. The ordinary Expo configuration/Doctor,
@@ -272,12 +277,16 @@ For #462, the owner approved replacing the active glob13 backport with official
 glob14.0.3 to resolve the published cancellation advisory range. The exact root
 declaration and `glob@^13.0.0: $glob` override intentionally cross the five Expo
 callers' declared13 range; this is a bounded, compatibility-tested exception, not
-a general permission to override major versions. Glob7 callers remain unchanged.
+a general permission to override major versions. Since Expo SDK 57.0.33 the
+four remaining Expo callers (`@expo/cli`, `@expo/config`, `@expo/config-plugins`,
+`@expo/metro-config`) declare `^14.0.3` upstream and `@expo/fingerprint` no longer
+declares glob, so the override no longer crosses a declared range; the verifiers
+pin those edges. Glob7 callers remain unchanged.
 Glob14 uses its official default bundles and readable CJS/ESM modules, nested
 minimatch11.0.4, path-scurry3.0.0 and nonrecursive-glob-match1.0.3. The already
 compatible lru-cache11.5.2 is retained. #464 selects official root minimatch11.0.1
 for Expo fingerprint through only `minimatch@10.2.6: $minimatch`, an explicitly
-approved compatibility exception to its declared `^10.2.2` range. Glob keeps its
+approved compatibility exception to its declared `^10.2.6` range (`^10.2.2` before Expo fingerprint 0.20.16). Glob keeps its
 newer nested11.0.4; legacy callable3 copies stay unchanged. Deepmerge/Zod/UUID
 history and PostCSS8.5.30 remain.
 
