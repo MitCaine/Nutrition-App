@@ -56,8 +56,10 @@ function checkRegistryGlob(manifest,lock) {
     walk(directory);assert.deepEqual(members.sort(),Object.keys(expected.members).sort(),label+' member inventory drift: '+location);
     for(const [member,identity] of Object.entries(expected.members)) assert.equal(sha(fs.readFileSync(path.join(directory,member))),identity,label+' payload: '+location+'/'+member);
   }
-  for(const owner of ['@expo/cli','@expo/config','@expo/config-plugins','@expo/fingerprint','@expo/metro-config']) {
-    assert.equal(lock.packages['node_modules/'+owner].dependencies.glob,'^13.0.0','glob owner edge drift');
+  // Expo 57.0.33 callers request glob ^14.0.3 upstream; @expo/fingerprint 0.20.16 dropped its glob edge.
+  assert.equal(lock.packages['node_modules/@expo/fingerprint'].dependencies.glob,undefined,'glob owner edge drift');
+  for(const owner of ['@expo/cli','@expo/config','@expo/config-plugins','@expo/metro-config']) {
+    assert.equal(lock.packages['node_modules/'+owner].dependencies.glob,'^14.0.3','glob owner edge drift');
     const caller=createRequire(path.join(root,'node_modules',owner,'package.json'));
     assert.equal(fs.realpathSync(caller.resolve('glob')),fs.realpathSync(path.join(root,'node_modules/glob/dist/commonjs/index.min.js')),'glob owner resolution drift: '+owner);
   }
@@ -95,7 +97,7 @@ function checkModernArtifacts() {
   checkRecoveryMinimatch();
   const expectedLocations=['node_modules/minimatch','node_modules/glob/node_modules/minimatch',...LEGACY_OWNERS.map(o=>'node_modules/'+o+'/node_modules/minimatch')].sort();
   assert.deepEqual(Object.keys(lock.packages).filter(p=>p.endsWith('node_modules/minimatch')).sort(),expectedLocations,'minimatch lock closure drift');
-  assert.equal(lock.packages['node_modules/@expo/fingerprint'].dependencies.minimatch,'^10.2.2','minimatch owner edge drift');
+  assert.equal(lock.packages['node_modules/@expo/fingerprint'].dependencies.minimatch,'^10.2.6','minimatch owner edge drift');
   const caller=createRequire(path.join(root,'node_modules/@expo/fingerprint/package.json'));
   assert.equal(fs.realpathSync(caller.resolve('minimatch')),fs.realpathSync(path.join(root,'node_modules/minimatch/dist/commonjs/index.js')),'minimatch owner resolution drift');
   const installed=cp.execFileSync('npm',['ls','minimatch','--all','--parseable'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean).map(p=>fs.realpathSync(p)).sort();

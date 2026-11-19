@@ -137,14 +137,14 @@
           {
             "location": "node_modules/expo-sharing",
             "name": "expo-sharing",
-            "requested": "~57.0.22",
-            "version": "57.0.24"
+            "requested": "~57.0.26",
+            "version": "57.0.26"
           },
           {
             "location": "node_modules/@expo/config-plugins",
             "name": "@expo/config-plugins",
-            "requested": "^57.0.11",
-            "version": "57.0.11"
+            "requested": "^57.0.13",
+            "version": "57.0.13"
           },
           {
             "location": "node_modules/xcode",

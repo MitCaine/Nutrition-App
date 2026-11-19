@@ -108,12 +108,12 @@ UPSTREAM_UUID_REMOVAL = {'dependency_path': [{'location': '',
                       'version': '2.2.1'},
                      {'location': 'node_modules/expo-sharing',
                       'name': 'expo-sharing',
-                      'requested': '~57.0.22',
-                      'version': '57.0.24'},
+                      'requested': '~57.0.26',
+                      'version': '57.0.26'},
                      {'location': 'node_modules/@expo/config-plugins',
                       'name': '@expo/config-plugins',
-                      'requested': '^57.0.11',
-                      'version': '57.0.11'},
+                      'requested': '^57.0.13',
+                      'version': '57.0.13'},
                      {'location': 'node_modules/xcode',
                       'name': 'xcode',
                       'requested': '^4.0.0',
@@ -1020,11 +1020,14 @@ def validate_modern_backports(lock_document, manifest):
     for owner in LEGACY_BACKPORT_OWNERS:
         require(packages.get('node_modules/'+owner+'/node_modules/minimatch', {}).get('version') == '3.1.5',
                 'minimatch legacy version drift')
-    for owner in ('@expo/cli', '@expo/config', '@expo/config-plugins', '@expo/fingerprint', '@expo/metro-config'):
-        require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('glob') == '^13.0.0',
+    # Expo 57.0.33 callers request glob ^14.0.3 upstream; @expo/fingerprint 0.20.16 dropped its glob edge.
+    for owner, requested in (('@expo/cli', '^14.0.3'), ('@expo/config', '^14.0.3'),
+                             ('@expo/config-plugins', '^14.0.3'), ('@expo/fingerprint', None),
+                             ('@expo/metro-config', '^14.0.3')):
+        require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('glob') == requested,
                 'glob owner edge drift: '+owner)
     for owner in ('@expo/fingerprint',):
-        require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('minimatch') == '^10.2.2',
+        require(packages.get('node_modules/'+owner, {}).get('dependencies', {}).get('minimatch') == '^10.2.6',
                 'minimatch owner edge drift: '+owner)
 
 
@@ -1069,8 +1072,9 @@ def validate_current_overrides(lock_document, manifest):
                 == {"node_modules/zod"}, "unreviewed Zod install location")
         require(packages.get("node_modules/zod", {}).get("version") == "4.6.7",
                 "Zod compatibility version drift")
+        # @expo/cli 57.0.34 declares no Zod edge (resolved only via optional expo-mcp).
         require(packages.get("node_modules/@expo/cli", {}).get("dependencies", {}).get("zod")
-                == "^3.25.76", "Expo Zod caller edge changed; requalify compatibility")
+                is None, "Expo Zod caller edge changed; requalify compatibility")
     expected["minimatch@10.2.6"] = "$minimatch"
     expected['glob@^13.0.0'] = '$glob'
     validate_modern_backports(lock_document, manifest)
