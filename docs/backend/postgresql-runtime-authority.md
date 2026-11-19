@@ -1,9 +1,5 @@
 # PostgreSQL runtime-authority evolution
 
-> **Document role: Current Guide.** This page governs forward changes to the
-> preserved FastAPI/PostgreSQL runtime authority. PostgreSQL 16 is the physical
-> qualification authority.
-
 ## Rule
 
 A new ORM/runtime relation is incomplete until its schema, role authority,

@@ -25,9 +25,15 @@ purpose, one at a time, and test them on the phone.
 - `deepmerge` is installed from `apps/mobile/vendor/security/deepmerge/patched.tgz`, a
   prototype-pollution fix applied to the upstream 4.3.1 release (`security.patch` and
   `provenance.json` alongside it). Drop it once an upstream release includes the fix.
-- `glob` 14.0.3 and `minimatch` 11.0.1 are pinned at the root and forced onto older callers through
-  `overrides` in `apps/mobile/package.json`. Remove those overrides when upstream callers request
-  patched versions on their own.
+- `minimatch` 11.0.1 is pinned at the root, and the `minimatch@10.2.6` override moves Expo
+  fingerprint's `^10.2.6` request onto it. Remove the override once that caller asks for a patched
+  version itself.
+- `glob` 14.0.3 is pinned at the root; Expo's callers now request `^14.0.3` themselves.
+- Three overrides no longer match anything and can be deleted in a future dependency PR:
+  `glob@^13.0.0`, `@expo/cli` → `zod` (Expo CLI no longer depends on Zod), and `xcode` → `uuid`
+  (xcode 4 dropped its uuid dependency).
+- Jest 29 still installs its own `glob` 7 / `minimatch` 3 copies; that only goes away with a Jest
+  major upgrade.
 
 ## CI
 

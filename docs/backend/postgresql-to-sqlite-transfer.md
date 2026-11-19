@@ -1,10 +1,5 @@
 # PostgreSQL-to-SQLite personal transfer
 
-> **Document role: Operational Reference.** This guide describes the currently
-> supported one-time personal-data transfer from the preserved remote
-> PostgreSQL authority into the local SQLite authority. It is not a
-> synchronization, replication, merge, backup, or generic migration API.
-
 ## Current contract
 
 The executable transfer boundary is the checked-in

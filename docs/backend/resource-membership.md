@@ -1,7 +1,5 @@
 # Production Hardening: database-enforced resource membership
 
-> **Document role: Operational Reference.**
-
 Status: **frozen application schema contract for revision
 `0019_resource_membership_integrity`**
 

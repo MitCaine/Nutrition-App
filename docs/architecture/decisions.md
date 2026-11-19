@@ -1,409 +1,232 @@
-# Architecture decision index
+# Design decisions and invariants
 
-> **Document role: Current Guide.** This is the authoritative index of accepted architectural
-> decisions.
+The rules the app is built around, what each one means in practice, and why it was chosen. A change
+that would break one of these needs a deliberate decision, not a quiet code change. The short list
+in [AGENTS.md](../../AGENTS.md) points here.
 
-This index records what the project has deliberately chosen. The
-Project Constitution defines enduring constraints, the
-[Project Invariants](../invariants.md) own extended technical rationale, and current
-architecture, feature, and operations guides describe implementation. Decision entries stay
-concise and link to those canonical explanations.
+Backend-only decisions (PostgreSQL locking, control plane, WORM evidence, qualification, role
+separation) are in the [parked backend overview](../backend/README.md#backend-design-decisions).
 
-Every entry is **Accepted** unless it is explicitly marked otherwise. Its heading is its stable
-repository anchor: do not silently rename or delete a decision when it is superseded. Mark the old
-entry superseded, name its replacement, and preserve provenance. The historical Phase 5C4.0
-deployment-profile record remains decision provenance; the current boundary is maintained in the
-[Control Plane Guide](../backend/control-plane.md#evolution-of-production-hardening).
+## Tradeoffs at a glance
 
-## Decision map
+| Decision | Benefit | Cost | Why chosen |
+| --- | --- | --- | --- |
+| Immutable Daily Log nutrition | Past totals stay explainable after Food edits or deletion. | Logs store duplicated nutrient snapshots; Log edits rebuild them atomically. | Historical truth matters more than saving rows. |
+| Immutable Recipe revisions | Logs and nested Recipes keep the exact published content. | Publication stores another graph and needs revision-resolution code. | Mutable authoring can't serve as historical authority. |
+| Explicit publication | Users edit freely; "published" has one transactional meaning. | A Recipe can be stale (`needs_republish`) until republished. | Safer than silently changing every downstream consumer on save. |
+| Recipe compatibility Food | Published Recipes reuse Food search, serving, ingredient and logging paths. | Projection must be regenerated and is never historical authority. | Reuse beats a parallel "loggable item" hierarchy while the revision link stays authoritative. |
+| Explicit serving identity + gram authority | Labels and display units can change without changing physical meaning. | Serving edits need complete reference metadata or explicit review. | Household units aren't universal mass conversions. |
+| Targets outside history | Profiles, DRI/FDA data and preferences evolve without changing past intake. | Comparison resolves target policy separately from Log snapshots. | Goals are interpretation, not historical facts. |
+| Validated local backup replacement | Export/restore without a sync engine. | Restore needs validation, staging, restart-time activation and rollback. | Merge/sync would be a different architecture. |
+| Layered ownership enforcement | Clear errors plus race-resistant integrity. | Owner predicates appear at several layers. | One missed check must not connect data across owners. |
+| One explicit data authority | Each running app has one persisted authority, never mixed state. | No fallback between local and remote. | Correct sync would need conflict rules for every graph and immutable-history case. |
+| Bounded OCR provenance | Parser behavior and corrections stay explainable with little privacy exposure. | Can't reproduce every detail of the original capture. | Structured evidence is worth keeping; images and raw OCR text aren't. |
 
-### Application and nutrition
-
-- [Immutable Daily Log nutrition](#immutable-daily-log-nutrition)
-- [Complete is explicit date-owned state](#complete-is-explicit-date-owned-state)
-- [History is a bounded projection over Daily Log evidence](#history-is-a-bounded-projection-over-daily-log-evidence)
-- [History projection is shared across selected authorities](#history-projection-is-shared-across-selected-authorities)
-- [Immutable Recipe revisions](#immutable-recipe-revisions)
-- [Recipe Food compatibility projections](#recipe-food-compatibility-projections)
-- [Revision-backed nutrition logging](#revision-backed-nutrition-logging)
-- [Unknown nutrients are not zero](#unknown-nutrients-are-not-zero)
-- [Explicit serving identities and gram weights](#explicit-serving-identities-and-gram-weights)
-- [Reference-derived Targets stay outside nutrition history](#reference-derived-targets-stay-outside-nutrition-history)
-- [Bounded OCR correction provenance](#bounded-ocr-correction-provenance)
-- [Saved Foods and USDA Foods remain distinct](#saved-foods-and-usda-foods-remain-distinct)
-- [Search is composed, not centralized](#search-is-composed-not-centralized)
-- [Online-first mobile architecture](#online-first-mobile-architecture)
-- [Explicit mobile application-data authority](#explicit-mobile-application-data-authority)
-- [Local backup restore is validated replacement, not synchronization](#local-backup-restore-is-validated-replacement-not-synchronization)
-
-### Application structure and authority
-
-- [Service-first, selective repository abstraction](#service-first-selective-repository-abstraction)
-- [Ownership is enforced at multiple layers](#ownership-is-enforced-at-multiple-layers)
-- [Payload-bound create idempotency](#payload-bound-create-idempotency)
-- [Fail-closed deployment configuration](#fail-closed-deployment-configuration)
-- [Separate application and control migration streams](#separate-application-and-control-migration-streams)
-
-### Operational safety
-
-- [Independent Control Plane](#independent-control-plane)
-- [WORM-bound canonical evidence](#worm-bound-canonical-evidence)
-- [Independent qualification](#independent-qualification)
-- [Artifact-referenced admission pipeline](#artifact-referenced-admission-pipeline)
-- [PostgreSQL role separation](#postgresql-role-separation)
-
-## Application and nutrition decisions
+## Nutrition history
 
 ### Immutable Daily Log nutrition
 
 **Decision:** A Daily Log stores resolved nutrient snapshots, and daily totals aggregate those
-snapshots rather than current Food nutrient rows.
+snapshots, never current Food nutrient rows. Only an explicit Log edit rebuilds that Log's snapshots.
 
-**Consequence:** Food definitions are expected to be corrected over time; historical nutrition
-must continue to describe what was resolved when the user logged it. Only an explicit Log edit
-rebuilds that Log's snapshots.
+**Why:** People correct Food definitions. History must still describe what was resolved when the
+item was logged. Editing the source Food alone changes future logging, not the past.
 
-**Read more:** [Recipes and Nutrition History](../features/recipes-and-logging.md#daily-log-creation) and
-[Project Invariants](../invariants.md#why-immutable-nutrition-history)
+See [Daily Log creation](../features/recipes-and-logging.md#daily-log-creation).
+
+### Unknown nutrients are not zero
+
+**Decision:** Nutrient status distinguishes known, estimated, explicit zero, and unknown, and that
+status is carried through resolution and aggregation.
+
+**Why:** "The label says 0 mg" and "the source didn't provide sodium" support different conclusions.
+Treating both as zero creates false confidence; carrying status exposes incomplete contributors.
+
+See [Canonical nutrition model](../features/foods-and-nutrition.md#canonical-nutrition-model).
 
 ### Complete is explicit date-owned state
 
-**Decision:** Complete is a persisted positive assertion owned by the user and authoritative Daily
-Log calendar date. It is never inferred from Log presence or nutrient evidence. Nutrition-changing
-Log mutations invalidate it atomically; metadata-only and exactly snapshot-preserving edits may
-preserve it.
+**Decision:** Complete is a persisted positive assertion per owner and Daily Log calendar date. It is
+never inferred from Log presence or nutrient evidence. Nutrition-changing Log mutations clear it in
+the same transaction; metadata-only or exactly snapshot-preserving edits may keep it.
 
-**Consequence:** Absence means not confirmed complete, not a stored negative classification.
-Migration performs no backfill, while supported backup/restore and one-time transfer preserve
-explicit assertions without inferring them for older formats or introducing synchronization.
+**Consequence:** Absence means "not confirmed complete", not a stored negative. Migration doesn't
+backfill it; backup/restore preserves explicit assertions without inventing them.
 
-**Read more:** [Complete day state](../features/recipes-and-logging.md#complete-day-state) and
-[Architecture Overview](overview.md#complete-and-bounded-history)
+See [Complete day state](../features/recipes-and-logging.md#complete-day-state).
 
 ### History is a bounded projection over Daily Log evidence
 
-**Decision:** History reads an inclusive, owner-scoped range of immutable Daily Log snapshot
-evidence and Complete metadata through the existing Daily Logs capability. Product presentation is
-limited to 7/30-day ranges ending yesterday; the evidence contract is bounded to at most 30 dates.
+**Decision:** History reads an inclusive, owner-scoped range of at most 30 dates of immutable Daily
+Log evidence and Complete metadata through the Daily Logs capability. The UI shows 7- and 30-day
+ranges ending yesterday. One shared projection
+(`apps/mobile/src/features/history/historyProjection.ts`) owns averages, per-nutrient day counts,
+exact decimal arithmetic, gaps and grouped rows.
 
-**Consequence:** Missing dates remain gaps, explicit zero remains a usable zero, estimated and mixed-
-unknown numeric evidence remains numerical with provenance, and unknown-only evidence remains
-unavailable. Current Foods and Recipes cannot rewrite the range, and current Targets remain a
-separately labeled lens rather than reconstructed historical goal state.
+**Consequence:** Missing dates stay gaps, explicit zero stays a usable zero, estimated and
+mixed-unknown values stay numeric with provenance, and unknown-only evidence stays unavailable.
+Current Targets are a separately labeled lens, not reconstructed historical goals.
 
-**Read more:** [Nutrition History and Trends](../features/recipes-and-logging.md#nutrition-history-and-trends)
-and [Architecture Overview](overview.md#complete-and-bounded-history)
+See [Nutrition History and Trends](../features/recipes-and-logging.md#nutrition-history-and-trends).
 
-### History projection is shared across selected authorities
-
-**Decision:** Local SQLite and remote FastAPI/PostgreSQL retrieve equivalent daily evidence, while
-one shared client projection owns Complete-day/Logged-day averages, nutrient-specific denominators,
-exact arithmetic, gaps, and grouped History rows.
-
-**Consequence:** Selecting an authority changes evidence transport and concurrency, not History
-meaning. Remote failures do not fall back to SQLite; cache entries and results never synchronize,
-dual-read, or mix across authorities.
-
-**Read more:** [Nutrition History and Trends](../features/recipes-and-logging.md#nutrition-history-and-trends),
-[Architecture Overview](overview.md#complete-and-bounded-history), and
-[Testing Guide](../maintenance.md)
+## Recipes
 
 ### Immutable Recipe revisions
 
-**Decision:** Publishing a Recipe inserts a new immutable revision instead of overwriting published
-state.
+**Decision:** Publishing a Recipe inserts a new immutable revision (content, amount definitions,
+nutrient totals) instead of overwriting published state. The mutable Recipe points at its active
+revision; Logs and nested Recipes point at the revision they used.
 
-**Consequence:** Mutable authoring and historical use have different lifecycles. A Recipe can
-evolve while past Logs and nested Recipes retain the exact published content they used.
+**Why:** Authored Recipes change; logged meals must not. If Logs referenced the current Recipe,
+editing it tomorrow would rewrite yesterday.
 
-**Read more:** [Recipes and Nutrition History](../features/recipes-and-logging.md#publication) and
-[Project Invariants](../invariants.md#why-immutable-recipe-revisions)
+See [Publication](../features/recipes-and-logging.md#publication).
 
 ### Recipe Food compatibility projections
 
 **Decision:** A published Recipe is represented by a managed Food projection linked to one exact
 publication revision.
 
-**Consequence:** Ingredient selection, serving resolution, search, and logging already understand
-Foods. The projection reuses those paths without making mutable projection data the historical
-authority.
+**Why:** Foods already work in ingredient selection, serving resolution, search, logging and
+nesting. The projection reuses all of that. It is compatibility state only: the revision link, not
+the projection, is the historical authority.
 
-**Read more:** [Recipes and Nutrition History](../features/recipes-and-logging.md#recipe-compatibility-projection)
-and [Project Invariants](../invariants.md#why-a-recipe-food-projection)
+See [Recipe compatibility projection](../features/recipes-and-logging.md#recipe-compatibility-projection).
 
 ### Revision-backed nutrition logging
 
 **Decision:** Recipe Logs store both the immutable publication revision and its exact amount
 definition.
 
-**Consequence:** A compatibility Food can advance to a newer publication. The revision and amount
-pair preserves both the Recipe state and serving meaning used by the historical Log.
+**Why:** The compatibility Food can advance to a newer publication. The revision + amount pair still
+answers "which Recipe state and which serving meaning did this Log use?"
 
-**Read more:** [Recipes and Nutrition History](../features/recipes-and-logging.md#logging-a-published-recipe) and
-[Project Invariants](../invariants.md#why-revision-backed-logging)
+See [Logging a published Recipe](../features/recipes-and-logging.md#logging-a-published-recipe).
 
-### Unknown nutrients are not zero
-
-**Decision:** Nutrient status distinguishes known, estimated, explicit zero, and unknown values.
-
-**Consequence:** Missing source data cannot safely be interpreted as a measured zero. Carrying
-status through aggregation exposes incomplete contributors instead of creating false precision.
-
-**Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#canonical-nutrition-model) and
-[Project Invariants](../invariants.md#why-distinguish-unknown-from-zero)
+## Foods, servings and targets
 
 ### Explicit serving identities and gram weights
 
-**Decision:** Serving-mode Recipe ingredients retain an exact serving ID. A household or display
-unit implies mass only when an explicit gram weight establishes physical equivalence. Serving
-records may additionally retain a complete reference quantity/unit/gram-weight triple so changing
-the displayed unit does not silently change the physical amount represented.
+**Decision:** Serving-mode Recipe ingredients keep an exact serving ID. A household or display unit
+implies mass only when an explicit gram weight establishes it. Servings may carry a complete
+reference quantity/unit/gram-weight triple, all or none.
 
-**Consequence:** Defaults, labels, and user-facing units can change without changing authored or
-logged meaning. Cross-dimension serving edits preserve gram authority or fail for explicit review;
-partial/ambiguous reference measurements are rejected instead of guessed. Active Recipe serving
-references remap only when one successor preserves the same serving semantics.
+**Why:** "1 cup" is not a universal mass. Keeping the exact serving stops a later default-serving
+change from silently altering a Recipe. Gram mass is the authority across mass/non-mass
+presentation; if an edit can't preserve equivalence unambiguously, it requires review or fails
+rather than guessing. Recipe serving references remap only to one semantically equivalent successor.
 
-**Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#serving-resolution) and
-[Project Invariants](../invariants.md#why-explicit-serving-identities-and-gram-weights)
+See [Serving resolution](../features/foods-and-nutrition.md#serving-resolution).
 
-### Reference-derived Targets stay outside nutrition history
+### Targets stay outside nutrition history
 
-**Decision:** Target presentation/configuration is resolved independently from immutable nutrition
-history. Per-nutrient tracking policy is applied first; manual overrides supersede dynamic
-recommendations; calories may use the bounded Mifflin–St Jeor estimate; nutrients may use an
-available DRI RDA/AI recommendation and then an FDA Daily Value reference. Nutrients without an
-established goal can remain amount-only, and unsupported cases remain explicitly unavailable.
+**Decision:** Targets resolve independently of Log snapshots. Order: per-nutrient tracking policy
+(`recommended`, `custom`, `amount_only`, `ignored`), then manual overrides, then the bounded
+Mifflin–St Jeor calorie estimate, DRI RDA/AI recommendations, and FDA Daily Values. Nutrients without
+an established goal stay amount-only; unsupported cases stay explicitly unavailable.
 
-**Consequence:** Changing a profile, tracking preference, manual override, DRI dataset, or FDA
-reference changes what the app compares against, never what a historical Log contained. The app can
-represent `recommended`, `custom`, `amount_only`, and `ignored` tracking without inventing a target
-where reference science does not establish one.
+**Why:** A Log answers what was eaten; a target answers how current settings interpret it. Changing a
+profile, preference, override, DRI dataset or FDA catalog must never change stored revisions or
+snapshots.
 
-**Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#targets-and-comparisons) and
-[Project Invariants](../invariants.md#why-target-configuration-stays-outside-immutable-nutrition-history)
-
-### Bounded OCR correction provenance
-
-**Decision:** OCR confirmation stores versioned structured suggestions, observation IDs, and user
-corrections, but not images, paths, complete raw OCR text, or unbounded parser responses.
-
-**Consequence:** Parser changes and corrections must remain explainable without making sensitive
-capture material part of the long-lived nutrition record. Provenance is append-only and is not a
-resolver input. Guided camera framing and image-quality checks remain acquisition/review aids, not
-new persisted nutrition authority.
-
-**Read more:** [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#confirmation-and-provenance)
-and [Project Invariants](../invariants.md#why-bounded-ocr-correction-provenance)
+See [Targets and comparisons](../features/foods-and-nutrition.md#targets-and-comparisons).
 
 ### Saved Foods and USDA Foods remain distinct
 
-**Decision:** USDA search and preview do not become application Foods until an explicit import
-creates a normal user-owned saved Food.
+**Decision:** USDA search results and previews are not app Foods until an explicit import creates a
+normal owner-scoped saved Food. Discovery combines a saved-Food query with a separate USDA query;
+there is no shared search index.
 
-**Consequence:** Upstream results have different availability, identity, and payload quality.
-Explicit import normalizes provenance, servings, nutrients, and deduplication before Recipes or
-Logs can depend on the item.
+**Why:** Upstream results differ in availability, identity and quality. Import normalizes
+provenance, servings, nutrients and deduplication before Recipes or Logs can depend on the item, and
+keeping the queries separate keeps each failure or loading state visible.
 
-**Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#usda-fooddata-central) and
-[OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#unified-food-search)
+See [Unified Food search](../features/ocr-search-and-offline.md#unified-food-search).
 
-### Search is composed, not centralized
+## OCR
 
-**Decision:** The mobile discovery screen combines an owner-scoped saved-Food query with a separate
-selected-authority USDA query. Local mode can call FoodData Central directly through
-`localUsdaRuntime`; remote mode uses the backend USDA integration. There is no shared search index
-or ranking service.
+### Bounded OCR correction provenance
 
-**Consequence:** The two sources have different identity and persistence semantics. Keeping them
-separate makes imports explicit and lets each failure or loading state remain visible.
+**Decision:** OCR confirmation stores versioned structured suggestions, observation IDs and user
+corrections, append-only. It never stores images, file paths, full raw OCR text or unbounded parser
+output, and provenance is never a resolver input.
 
-**Read more:** [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#unified-food-search)
+**Why:** OCR is probabilistic and parser rules evolve, so a regression needs to be explainable.
+Storing images or raw text would add privacy risk without helping nutrition resolution. Guided
+camera framing and image-quality checks are capture aids only and never replace explicit
+confirmation.
 
-### Online-first mobile architecture
+See [Confirmation and provenance](../features/ocr-search-and-offline.md#confirmation-and-provenance).
 
-**Status:** Superseded for mobile application-data authority by
-[Explicit mobile application-data authority](#explicit-mobile-application-data-authority). It remains
-the historical remote-mode and no-synchronization decision.
+## Data authority and safety
 
-**Decision:** TanStack Query provides in-process server-state caching, but there is no durable
-nutrition cache, offline mutation queue, or synchronization engine.
+### One explicit application-data authority
 
-**Consequence:** Ownership, graph changes, immutable history, and authoritative calculations are
-server transactions in remote mode. Safe retry is implemented without claiming that a local
-mutation was committed offline.
+**Decision:** Startup selects exactly one data authority (`EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY`)
+before the runtime, query cache, recovery or storage initialize. The app uses `local` (on-device
+SQLite); `remote` (the parked FastAPI/PostgreSQL backend) is kept for possible future use.
+Deployment mode is a separate setting.
 
-**Read more:** [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#offline-and-caching-behavior)
-and [Project Invariants](../invariants.md#why-an-online-first-design)
+**Why:** Selection never implies fallback, dual writes, synchronization, cache sharing or data
+migration. TanStack Query caches only in process, and safe retry replays idempotent operations, but
+neither creates a second durable authority. Direct USDA lookup is an external integration, not a data
+authority.
 
-### Explicit mobile application-data authority
-
-**Decision:** Mobile startup explicitly selects exactly one `local` or `remote` application-data
-authority before runtime construction, Query cache creation, recovery, SQLite initialization, or
-remote transport initialization. Deployment/security mode is a separate setting.
-
-**Consequence:** Local mode uses the composed SQLite adapters without FastAPI or PostgreSQL; remote
-mode preserves the existing API and authentication boundary. Selection never implies fallback,
-dual writes, synchronization, cache sharing, recovery sharing, or data migration. Local USDA is a
-separate direct external integration and is not an application-data authority.
-
-**Read more:** [Architecture Overview](overview.md#system-boundaries) and the completed
-Epic 2 implementation backlog
+See [System boundaries](overview.md#system-boundaries).
 
 ### Local backup restore is validated replacement, not synchronization
 
-**Decision:** Local backup export creates a complete validated standalone SQLite snapshot. Restore
-first inspects and stages a validated copy without modifying the active database, then activates it
-only at a later local-runtime bootstrap. Existing local data is snapshotted for rollback before
-replacement, and an unrecoverable rollback failure prevents the local authority from opening.
+**Decision:** Export creates a complete, validated standalone SQLite snapshot. Restore validates and
+stages a copy without touching the active database, then activates it at the next startup, after
+snapshotting existing data for rollback. If rollback itself can't complete safely, the local
+database won't open.
 
-**Consequence:** The app has a safe explicit local recovery path without introducing merge,
-synchronization, replication, conflict-resolution, or cloud-backup semantics. Invalid candidates
-cannot become active through the normal flow, staging can be canceled before restart, and restore
-failure preserves the prior local authority whenever safe rollback is possible.
+**Why:** Restoring replaces one authority with a validated snapshot; it doesn't reconcile two
+histories. There is no record merge, last-writer-wins, background replication or cloud mirror.
+Adding any of those would need a new design.
 
-**Read more:** [Local backup and restore](../features/ocr-search-and-offline.md#local-backup-and-restore) and
-[Project Invariants](../invariants.md#why-local-backup-is-replacement-not-synchronization)
-
-## Application structure and authority decisions
-
-### Service-first, selective repository abstraction
-
-**Decision:** Routers remain thin, services own transactional use cases, repositories centralize
-reused or lock-sensitive queries, and small services may use SQLAlchemy directly when another
-abstraction would not clarify authority.
-
-**Consequence:** A rigid repository for every table would add indirection without moving business
-authority. The selective boundary keeps transaction and ownership decisions visible while still
-reusing complex persistence behavior.
-
-**Read more:** [Architecture Overview](overview.md#backend-layers) and
-Repository Tour
+See [Local backup and restore](../features/ocr-search-and-offline.md#local-backup-and-restore).
 
 ### Ownership is enforced at multiple layers
 
-**Decision:** Routers resolve authenticated identity, services use owner-scoped operations, and
-database relationships reinforce compatible ownership.
+**Decision:** Identity is resolved at the boundary, operations are owner-scoped, and stored
+relationships reinforce compatible ownership (composite foreign keys in PostgreSQL; owner-scoped
+contracts in SQLite).
 
-**Consequence:** Friendly service errors and race-resistant database integrity solve different
-parts of the same problem. A guessed UUID must not connect resources across users even if one layer
-is implemented incorrectly.
+**Why:** Clear errors and race-resistant integrity solve different parts of the same problem. A
+guessed ID must not connect one owner's Food to another's Recipe, revision, Log or target, even if
+one layer has a bug.
 
-**Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#ownership-and-retry-behavior) and
-[Project Invariants](../invariants.md#why-ownership-enforcement-in-several-layers)
+See [Ownership and retry behavior](../features/foods-and-nutrition.md#ownership-and-retry-behavior).
 
 ### Payload-bound create idempotency
 
-**Decision:** Retryable create request IDs are scoped to the owner and operation and bound to a
-canonical payload fingerprint plus retained response snapshot.
+**Decision:** Retryable request IDs are scoped to owner and operation and bound to a canonical
+payload fingerprint plus the retained response. Receipts never expire.
 
-**Consequence:** A lost mobile response must be safely replayable without allowing a changed
-payload or an expired receipt to create a duplicate.
+**Why:** A lost response must be safely replayable. An exact replay returns the committed response; a
+changed payload under the same ID is a conflict; an expired receipt would eventually allow a
+duplicate. A receipt and its mutation commit atomically, and later edits or deletion don't replace
+the accepted response.
 
-**Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#ownership-and-retry-behavior) and
-[Project Invariants](../invariants.md#why-payload-bound-idempotency)
+A missing or incomplete receipt stays **unresolved**: absence can't prove the original write didn't
+commit. The mobile recovery manager keeps unresolved journal entries and polls status without
+resending the write.
 
-### Fail-closed deployment configuration
+See [Ownership and retry behavior](../features/foods-and-nutrition.md#ownership-and-retry-behavior).
 
-**Decision:** Deployment mode and API URL are explicit. Public production startup is rejected until
-a real identity provider exists.
+### SQLite schema evolves on its own
 
-**Consequence:** Development convenience must never become implicit production identity or
-transport policy.
+**Decision:** The local SQLite schema (`apps/mobile/src/storage/sqlite`) is a fresh semantic model
+with its own schema-version migrations. It doesn't replay the backend's Alembic history, and none of
+the backend's control-plane or role infrastructure is part of it.
 
-**Read more:** [Architecture Overview](overview.md#configuration-and-authentication),
-[Development Guide](../maintenance.md), and
-[Project Invariants](../invariants.md#why-fail-closed-release-configuration)
+**Consequence:** Add new migrations; never edit applied ones.
 
-### Separate application and control migration streams
+### No repository provider/factory layer
 
-**Decision:** Remote application data and operational promotion authority use separate Alembic
-streams, credentials, and PostgreSQL databases. Local SQLite has its own schema-version migration
-engine and is intentionally not an Alembic replay.
+**Decision:** `NutritionRuntime` is an application capability boundary, not a swappable
+table-by-table repository factory.
 
-**Consequence:** Local SQLite evolution, remote feature migrations, and control migrations are
-separate authority boundaries. Feature migrations must not implicitly control the promotion
-ledger, control migrations must not become application schema, and PostgreSQL migration history
-must not be mechanically ported into SQLite.
-
-**Read more:** [Architecture Overview](overview.md#migrations),
-[Control Plane Guide](../backend/control-plane.md#qualification-and-migration-safety), and
-[Project Invariants](../invariants.md#why-two-migration-streams)
-
-## Production-hardening decisions
-
-These decisions belong to the advanced operational subsystem. Feature developers can usually stop
-at the preceding sections.
-
-### Independent Control Plane
-
-**Decision:** Promotion evidence and workflow authority live in a PostgreSQL database independent
-of both source and candidate application databases.
-
-**Consequence:** Neither endpoint should be able to rewrite the evidence that authorizes its own
-promotion or replacement. Control state must remain available when an application endpoint is not.
-
-**Read more:** [Control Plane Guide](../backend/control-plane.md#what-it-is) and
-[Project Invariants](../invariants.md#why-a-control-plane)
-
-### WORM-bound canonical evidence
-
-**Decision:** Exact canonical artifact bytes are registered in the control database and anchored to
-an exact MinIO object version under COMPLIANCE retention.
-
-**Consequence:** The database records semantic authority while object-lock storage independently
-preserves the admitted bytes. A filename or caller-provided digest alone is insufficient evidence.
-
-**Read more:** [Control Plane Guide](../backend/control-plane.md#canonical-evidence-flow) and
-[Project Invariants](../invariants.md#why-worm-evidence)
-
-### Independent qualification
-
-**Decision:** Qualification inventories authoritative objects, routines, triggers, constraints,
-owners, grants, and projections, and tamper tests must make it fail.
-
-**Consequence:** A successful command does not prove that the surrounding security surface is
-complete or unchanged. Qualification detects false-green manifests and authority drift.
-
-**Read more:** [Control Plane Guide](../backend/control-plane.md#qualification-and-migration-safety),
-[Testing Guide](../maintenance.md), and
-[Project Invariants](../invariants.md#why-qualification)
-
-### Artifact-referenced admission pipeline
-
-**Decision:** Executors request admission by referencing registered immutable evidence. PostgreSQL
-locks and validates the complete semantic graph before recording a decision or advancing workflow.
-
-**Consequence:** The executor must not author or substitute authoritative observations, and an
-individually valid artifact must not pass when its environment, source, freeze, plan, run, or
-reconciliation bindings disagree.
-
-**Read more:** [Control Plane Guide](../backend/control-plane.md#admission)
-
-### PostgreSQL role separation
-
-**Decision:** Application and control databases each use distinct owner, migrator, runtime or
-executor, read-only, and operations roles with exact grants.
-
-**Consequence:** A runtime or executor credential must not gain schema ownership, evidence
-authorship, migration authority, or an alternate path around write fencing and admission.
-
-**Read more:** [Control Plane Guide](../backend/control-plane.md#authority-boundaries) and
-Production Hardening Stage 5C4.2a
-
-## Next reading
-
-- For system responsibilities, continue with the [Architecture Overview](overview.md).
-- For application behavior, choose [Foods and Nutrition](../features/foods-and-nutrition.md),
-  [Recipes and Nutrition History](../features/recipes-and-logging.md), or
-  [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md).
-- For operational authority, continue with the optional [Control Plane Guide](../backend/control-plane.md).
-
-## See also
-
-- [Project Invariants](../invariants.md) provides longer-form rationale.
-- Project Constitution defines the enduring constraints decisions
-  must respect.
-- [Glossary](../glossary.md) defines the terms used by these decisions.
-- [Development Guide](../maintenance.md) maps decisions to code and tests.
-- [Documentation index](../README.md) provides role-based reading paths.
+**Why:** Each running app has one explicitly selected authority, and focused test seams provide
+enough substitution. A generic provider layer would add indirection without clarifying ownership.

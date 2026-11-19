@@ -1,7 +1,5 @@
 # Control Plane guide
 
-> **Document role: Operational Reference.**
-
 > **Optional advanced reading.** You do not need the Control Plane to understand or modify Foods,
 > Recipes, Daily Logs, USDA, OCR, Search, or Targets. Read this guide when working on historical
 > database conversion, PostgreSQL role separation, write fencing, immutable operational evidence,
@@ -319,11 +317,11 @@ discard a nonempty ledger.
   authority or qualification.
 - Follow the stage links in [Evolution of Production Hardening](#evolution-of-production-hardening)
   for the exact governing design record.
-- Use the [Architecture Decision Index](../architecture/decisions.md#production-hardening-decisions) to
+- Use the [Architecture Decision Index](README.md#backend-design-decisions) to
   refresh the specific operational decision first.
 
 ## See also
 
-- [Project Invariants](../invariants.md#why-a-control-plane) for architectural rationale
-- [Architecture Overview](../architecture/overview.md#runtime-and-canary-modes) for the current application boundary
+- [Project Invariants](README.md#independent-control-plane) for architectural rationale
+- [Architecture Overview](README.md#runtime-and-canary-modes) for the current application boundary
 - [Development Guide](../maintenance.md) for code entry points

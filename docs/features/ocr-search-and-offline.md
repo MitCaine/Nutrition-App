@@ -1,13 +1,9 @@
 # OCR, search, offline behavior, and local backup
 
-> **Document role: Current Guide.**
-
-The mobile application combines device-native capture with parser and confirmation logic behind the
-explicitly selected application-data authority. A running context uses either composed local
-SQLite or the remote FastAPI/PostgreSQL runtime, never both. There is no synchronization, fallback,
-dual write, background sync, or automatic cloud backup. Local mode does provide an explicit,
-validated SQLite backup/export and staged replacement restore workflow; that is a maintenance
-operation on one authority, not synchronization.
+Label capture, recognition, parsing and confirmation all run on the iPhone against the local
+SQLite database. There is no synchronization, background sync or automatic cloud backup. The app
+does provide an explicit, validated SQLite backup/export and staged replacement restore; that's a
+maintenance operation on one database, not synchronization.
 
 ## Nutrition-label OCR flow
 
@@ -17,9 +13,7 @@ sequenceDiagram
     participant Mobile as React Native
     participant Vision as Apple Vision on device
     participant Local as Local parser/runtime
-    participant SQLite as SQLite
-    participant API as FastAPI parser/runtime
-    participant DB as PostgreSQL
+    participant SQLite
 
     User->>Mobile: Capture in guided camera or choose still image
     Mobile->>Vision: Optional best-effort image-quality inspection
@@ -27,25 +21,17 @@ sequenceDiagram
     Mobile->>Mobile: Show conservative advisory warning when warranted
     Mobile->>Vision: Recognize local image
     Vision-->>Mobile: Structured observations and geometry
-    alt Local authority
-        Mobile->>Local: Parse observations and fallback full text
-        Local-->>Mobile: Parsed suggestions and warnings
-    else Remote authority
-        Mobile->>API: Send observations and fallback full text
-        API-->>Mobile: Parsed suggestions and warnings
-    end
+    Mobile->>Local: Parse observations and fallback full text
+    Local-->>Mobile: Parsed suggestions and warnings
     User->>Mobile: Confirm or correct fields
-    alt Local authority
-        Mobile->>Local: Submit bounded confirmation and request ID
-        Local->>SQLite: Insert Manual Food and immutable trace atomically
-        Local-->>Mobile: Saved Food
-    else Remote authority
-        Mobile->>API: Submit bounded confirmation and request ID
-        API->>DB: Insert Manual Food and immutable trace atomically
-        API-->>Mobile: Saved Food
-    end
+    Mobile->>Local: Submit bounded confirmation and request ID
+    Local->>SQLite: Insert Manual Food and immutable trace atomically
+    Local-->>Mobile: Saved Food
     Mobile->>Mobile: Delete temporary camera capture
 ```
+
+The parked backend has a parity parser and confirmation endpoint that the `remote` runtime would
+use instead.
 
 ### On-device responsibilities
 
@@ -260,21 +246,10 @@ schema for remote mode.
 | Local backup/restore | `src/storage/backup`, `src/app/settings/LocalBackupSettings.tsx`, local bootstrap | `localBackupValidation.test.ts`, `localBackupActivation.test.ts`, `localBackupSettings.test.ts`, `localFirstStartRestoreGate.test.ts` |
 | API configuration | `config/runtimeConfig.js`, `src/shared/api/client.ts` | `runtimeConfig.test.ts`, `apiClientAuthentication.test.ts` |
 
-For physical capture limitations and historical release checks, see Stage 5 OCR and
-Release Candidate QA. Those records preserve their original
-qualification scope and are not the current OCR capability inventory.
-
-## Next reading
-
-- Continue with [Foods and Nutrition](foods-and-nutrition.md) to see how imported or confirmed
-  results become normal saved Foods.
-- Use the [Development Guide](../maintenance.md) for exact native,
-  parser, confirmation, camera-quality, and test entry points.
-- Read the [Testing Guide](../maintenance.md) before changing golden parser behavior, backup
-  activation, or native OCR claims.
+Swift `ios-tests` aren't run by CI; run them from Xcode after native OCR changes.
 
 ## See also
 
-- [Architecture Decision Index](../architecture/decisions.md) for OCR, search, authority, and local-backup decisions
-- [Architecture Overview](../architecture/overview.md) for mobile/backend/bootstrap responsibilities
-- Stage 5 OCR and Release Candidate QA for historical physical-device scope
+- [Design decisions](../architecture/decisions.md) for the rules behind this behavior
+- [Architecture overview](../architecture/overview.md) for layers and data boundaries
+- [Maintenance guide](../maintenance.md#running-checks-locally) for running the tests

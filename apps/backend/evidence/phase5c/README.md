@@ -1,7 +1,5 @@
 # Phase 5C performance evidence
 
-> **Document role: Evidence Record.**
-
 These files are captured qualification manifests, not runtime configuration or mutable benchmark
 output:
 

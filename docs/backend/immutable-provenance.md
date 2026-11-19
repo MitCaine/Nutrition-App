@@ -1,7 +1,5 @@
 # Production Hardening: immutable historical provenance
 
-> **Document role: Operational Reference.**
-
 Status: **frozen design and operating contract for application revision
 `0020_immutable_provenance_enforcement` and control revision
 `ops_0006_immutable_provenance`**

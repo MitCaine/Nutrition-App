@@ -1,6 +1,4 @@
-# Future Product and Scalability Options
-
-> **Document role: Idea Register.** This is not an active roadmap, backlog, or implementation commitment.
+# Future options
 
 This document records product and architecture options deliberately deferred while Nutrition App
 remains optimized for a personal, local-first use case. Moving an item from this register into
@@ -231,29 +229,15 @@ Commercial product operation may eventually justify:
 Commercial telemetry is distinct from optional personal non-clinical trend summaries. Neither is
 implicitly authorized by this register.
 
-## Architecture invariants that are not scaling shortcuts
+## Invariants still apply
 
-The following are current invariants, not optional future simplifications:
-
-- immutable historical Daily Log nutrition;
-- immutable Recipe publication revisions;
-- exact-decimal nutrition semantics;
-- explicit unknown versus zero;
-- provenance preservation;
-- ownership isolation;
-- deterministic mutation outcomes;
-- exactly one selected application-data authority for a running context unless a future approved
-  synchronization architecture explicitly defines otherwise;
-- no silent authority fallback;
-- no shadow or dual writes; and
-- no automatic historical recalculation from current Food definitions.
-
-Future synchronization, account, cloud, analytics, multi-user, or commercial architecture must be
-designed around these invariants rather than weakening them.
+Any of these options, including sync, accounts or cloud features, must be designed around the
+[design decisions](architecture/decisions.md) (immutable history and revisions, unknown vs zero,
+one data authority, no silent fallback or dual writes) rather than weakening them.
 
 ## Promotion rule
 
-Before promoting an item from this document into a roadmap or implementation issue, define:
+Before building one of these, write down:
 
 1. the concrete user outcome;
 2. authoritative data ownership;
@@ -262,7 +246,7 @@ Before promoting an item from this document into a roadmap or implementation iss
 5. privacy and security implications;
 6. accessibility requirements;
 7. local/remote parity or an explicit reason for divergence; and
-8. qualification and physical-device evidence where applicable.
+8. how you'll check it on the iPhone, where it matters.
 
 This document exists to preserve useful future options without forcing the current personal-use
 application to pay their complexity cost prematurely.

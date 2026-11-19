@@ -1,7 +1,5 @@
 # Glossary
 
-> **Document role: Current Guide.**
-
 These definitions describe how terms are used in this repository. They are not general nutrition,
 database, or mobile-development definitions. Follow the links when a term carries an invariant or
 an operational authority boundary.
@@ -138,7 +136,7 @@ explicitly edited. Snapshot rows preserve history when a source Food changes or 
 Nutrition already committed to immutable publication revisions or Daily Log snapshots. It is read
 from retained historical facts rather than recomputed from the latest authored Recipe or Food.
 This term does not imply the application currently has a separate longitudinal trends/analytics
-subsystem. See [Why immutable nutrition history?](invariants.md#why-immutable-nutrition-history).
+subsystem. See [Why immutable nutrition history?](architecture/decisions.md#immutable-daily-log-nutrition).
 
 ### DRI / Dietary Reference Intake
 
@@ -200,7 +198,7 @@ persisted crop or nutrition boundary.
 
 The combined route identity, owner-scoped service/query behavior, and relationship constraints that
 prevent a resource UUID from crossing user boundaries. See
-[Why ownership is layered](invariants.md#why-ownership-enforcement-in-several-layers).
+[Why ownership is layered](architecture/decisions.md#ownership-is-enforced-at-multiple-layers).
 
 ## Code and persistence boundaries
 
@@ -298,103 +296,22 @@ schema is a fresh semantic model and intentionally does not replay PostgreSQL Al
 revision-by-revision. Phase 5/control-plane and PostgreSQL role/promotion infrastructure stay out of
 SQLite.
 
-### Application Migration Stream
+### Backend migration streams
 
-The Alembic history under `apps/backend/app/migrations`, applied only to the **remote application
-PostgreSQL** database. The current head is `0033_complete_runtime_authority`. The stream preserves the
-remote migration lineage, historical conversion metadata, and production prerequisites. It is not
-the local SQLite migration mechanism.
+The parked backend has its own application and control Alembic streams, separate from SQLite. See
+the [backend overview](backend/README.md#migrations).
 
-### Control Migration Stream
+### Shared contract fixtures
 
-The independent Alembic history under `apps/backend/app/control_migrations`, applied only with the
-control migration configuration and credential. It owns promotion evidence/authority, never
-feature tables and never local SQLite. Current head:
-`ops_0011_phase5c4_recovery_audit`. See
-[Qualification and migration safety](backend/control-plane.md#qualification-and-migration-safety).
+Machine-readable parity/transfer fixtures under `packages/shared-contracts/` that pin the
+cross-runtime contract (including the PostgreSQL-to-SQLite transfer format). They are regression
+evidence, not a generated API SDK.
 
-### Epic 2 Shared Contract Fixture
-
-A retained machine-readable parity/transfer artifact under `packages/shared-contracts/e2-*` from
-the completed local-first program. These fixtures are versioned regression evidence, not a
-generated public API SDK and not an active Epic 2 backlog. E2-15 includes source schema, target
-schema, transfer contract, and representative package artifacts.
-
-## Historical conversion and control operations
-
-These terms belong to the advanced production-hardening subsystem. Feature developers generally do
-not need them before contributing to the Nutrition App.
-
-### Historical Inventory
-
-A privacy-bounded, read-only description of a populated database before historical Recipe
-conversion. It records counts, classifications, schema facts, and snapshot anchors without
-repairing the source. See Production Hardening Phase 5B.
-
-### Historical Bridge / Archive Bridge
-
-The Phase 5C1 compatibility layer that preserves legacy Recipe facts in archive/bridge structures
-on an isolated clone so a deterministic conversion plan can be produced. “Historical bridge” is
-the canonical stage name; “archive bridge” refers to retained archive metadata, not a separate
-runtime subsystem. See Production Hardening Phase 5C1.
-
-### Control Plane
-
-The independent PostgreSQL authority for immutable operational evidence, admission, promotion
-workflow, event/outbox state, and minimal gate projection. It is an advanced operations subsystem,
-not the primary Nutrition App domain. See [Control Plane Guide](backend/control-plane.md).
-
-### Canonical Artifact
-
-A strictly validated, versioned contract serialized by the one canonical JSON implementation. Its
-SHA-256 digest and byte count bind the exact evidence admitted by the control plane.
-
-### WORM Evidence
-
-Canonical artifact bytes anchored to an exact versioned object under COMPLIANCE retention, with
-bucket, key, version, digest, byte count, and retention facts bound in the control database. WORM
-preserves bytes; it does not by itself authenticate the human or collector. See
-[Canonical evidence flow](backend/control-plane.md#canonical-evidence-flow).
-
-### Qualification
-
-Independent inventory and validation of the authoritative database surface, including routines,
-owners, grants, triggers, constraints, projections, and expected seed/registry data. Tampering with
-an authoritative object must make qualification fail.
-
-### Runtime Qualification
-
-Qualification evidence about whether a runtime/candidate database exposes the expected schema,
-roles, functions, and prerequisites. It is not permission to promote, and normal application
-runtime does not consume the independent control gate. See
-[Current runtime boundary](backend/control-plane.md#current-runtime-boundary).
-
-### Migration Admission
-
-The fail-closed decision that a database and migration path satisfy required identity, schema, role,
-evidence, and policy prerequisites before a high-risk transition proceeds. In Phase 5C4, admission
-authority belongs to control PostgreSQL, not to an executor exit code.
-
-### Admission
-
-A SERIALIZABLE control-database decision over a complete, locked evidence graph. An accepted
-artifact in isolation is insufficient when environment, source, candidate, freeze, plan, run,
-qualification, performance, or WORM bindings disagree. See [Admission](backend/control-plane.md#admission).
-
-### Historical Bridge Qualification Receipt
-
-Deterministic evidence that an isolated historical Recipe conversion result satisfies its bounded
-correctness contract. It is evidence consumed by later policy; it is not itself promotion
-authorization.
-
-## Next reading
-
-- Read [Project Invariants](invariants.md) for rationale behind application invariants.
-- Use the Architecture Decision Index to locate a specific decision.
-- Return to the [Documentation Index](../README.md) to choose a domain or operations path.
+Production-hardening and control-plane terms (control plane, WORM evidence, qualification,
+admission) are defined in the [backend overview](backend/README.md#production-hardening-glossary).
 
 ## See also
 
-- Repository Tour
-- Architecture Overview
-- [Development Guide](maintenance.md)
+- [Architecture overview](architecture/overview.md)
+- [Design decisions](architecture/decisions.md)
+- [Documentation index](README.md)

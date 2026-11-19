@@ -44,17 +44,10 @@ See the **[maintenance guide](docs/maintenance.md)**.
 
 ## Quick start
 
-```bash
-cd apps/mobile
-npm ci
-npm run typecheck
-npm test
-```
-
-To install on the iPhone (needs a Mac with Xcode), see
-[Installing on the iPhone](docs/maintenance.md#installing-on-the-iphone).
+Commands for running the checks and installing on the iPhone (which needs a Mac with Xcode) are in
+the [maintenance guide](docs/maintenance.md#running-checks-locally).
 
 ## Docs
 
 Start at the [documentation index](docs/README.md). The data-integrity rules the code relies on are
-in [docs/invariants.md](docs/invariants.md).
+in [design decisions](docs/architecture/decisions.md).
