@@ -4,8 +4,8 @@
 > decisions.
 
 This index records what the project has deliberately chosen. The
-[Project Constitution](../project/constitution.md) defines enduring constraints, the
-[Project Invariants](../project/invariants.md) own extended technical rationale, and current
+Project Constitution defines enduring constraints, the
+[Project Invariants](../invariants.md) own extended technical rationale, and current
 architecture, feature, and operations guides describe implementation. Decision entries stay
 concise and link to those canonical explanations.
 
@@ -13,7 +13,7 @@ Every entry is **Accepted** unless it is explicitly marked otherwise. Its headin
 repository anchor: do not silently rename or delete a decision when it is superseded. Mark the old
 entry superseded, name its replacement, and preserve provenance. The historical Phase 5C4.0
 deployment-profile record remains decision provenance; the current boundary is maintained in the
-[Control Plane Guide](../operations/control-plane.md#evolution-of-production-hardening).
+[Control Plane Guide](../backend/control-plane.md#evolution-of-production-hardening).
 
 ## Decision map
 
@@ -64,7 +64,7 @@ must continue to describe what was resolved when the user logged it. Only an exp
 rebuilds that Log's snapshots.
 
 **Read more:** [Recipes and Nutrition History](../features/recipes-and-logging.md#daily-log-creation) and
-[Project Invariants](../project/invariants.md#why-immutable-nutrition-history)
+[Project Invariants](../invariants.md#why-immutable-nutrition-history)
 
 ### Complete is explicit date-owned state
 
@@ -106,7 +106,7 @@ dual-read, or mix across authorities.
 
 **Read more:** [Nutrition History and Trends](../features/recipes-and-logging.md#nutrition-history-and-trends),
 [Architecture Overview](overview.md#complete-and-bounded-history), and
-[Testing Guide](../operations/testing.md#epic-4-history-release-qualification)
+[Testing Guide](../maintenance.md)
 
 ### Immutable Recipe revisions
 
@@ -117,7 +117,7 @@ state.
 evolve while past Logs and nested Recipes retain the exact published content they used.
 
 **Read more:** [Recipes and Nutrition History](../features/recipes-and-logging.md#publication) and
-[Project Invariants](../project/invariants.md#why-immutable-recipe-revisions)
+[Project Invariants](../invariants.md#why-immutable-recipe-revisions)
 
 ### Recipe Food compatibility projections
 
@@ -129,7 +129,7 @@ Foods. The projection reuses those paths without making mutable projection data 
 authority.
 
 **Read more:** [Recipes and Nutrition History](../features/recipes-and-logging.md#recipe-compatibility-projection)
-and [Project Invariants](../project/invariants.md#why-a-recipe-food-projection)
+and [Project Invariants](../invariants.md#why-a-recipe-food-projection)
 
 ### Revision-backed nutrition logging
 
@@ -140,7 +140,7 @@ definition.
 pair preserves both the Recipe state and serving meaning used by the historical Log.
 
 **Read more:** [Recipes and Nutrition History](../features/recipes-and-logging.md#logging-a-published-recipe) and
-[Project Invariants](../project/invariants.md#why-revision-backed-logging)
+[Project Invariants](../invariants.md#why-revision-backed-logging)
 
 ### Unknown nutrients are not zero
 
@@ -150,7 +150,7 @@ pair preserves both the Recipe state and serving meaning used by the historical 
 status through aggregation exposes incomplete contributors instead of creating false precision.
 
 **Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#canonical-nutrition-model) and
-[Project Invariants](../project/invariants.md#why-distinguish-unknown-from-zero)
+[Project Invariants](../invariants.md#why-distinguish-unknown-from-zero)
 
 ### Explicit serving identities and gram weights
 
@@ -165,7 +165,7 @@ partial/ambiguous reference measurements are rejected instead of guessed. Active
 references remap only when one successor preserves the same serving semantics.
 
 **Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#serving-resolution) and
-[Project Invariants](../project/invariants.md#why-explicit-serving-identities-and-gram-weights)
+[Project Invariants](../invariants.md#why-explicit-serving-identities-and-gram-weights)
 
 ### Reference-derived Targets stay outside nutrition history
 
@@ -181,7 +181,7 @@ represent `recommended`, `custom`, `amount_only`, and `ignored` tracking without
 where reference science does not establish one.
 
 **Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#targets-and-comparisons) and
-[Project Invariants](../project/invariants.md#why-target-configuration-stays-outside-immutable-nutrition-history)
+[Project Invariants](../invariants.md#why-target-configuration-stays-outside-immutable-nutrition-history)
 
 ### Bounded OCR correction provenance
 
@@ -194,7 +194,7 @@ resolver input. Guided camera framing and image-quality checks remain acquisitio
 new persisted nutrition authority.
 
 **Read more:** [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#confirmation-and-provenance)
-and [Project Invariants](../project/invariants.md#why-bounded-ocr-correction-provenance)
+and [Project Invariants](../invariants.md#why-bounded-ocr-correction-provenance)
 
 ### Saved Foods and USDA Foods remain distinct
 
@@ -234,7 +234,7 @@ server transactions in remote mode. Safe retry is implemented without claiming t
 mutation was committed offline.
 
 **Read more:** [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#offline-and-caching-behavior)
-and [Project Invariants](../project/invariants.md#why-an-online-first-design)
+and [Project Invariants](../invariants.md#why-an-online-first-design)
 
 ### Explicit mobile application-data authority
 
@@ -248,7 +248,7 @@ dual writes, synchronization, cache sharing, recovery sharing, or data migration
 separate direct external integration and is not an application-data authority.
 
 **Read more:** [Architecture Overview](overview.md#system-boundaries) and the completed
-[Epic 2 implementation backlog](../historical/programs/version-1.1/epic-2/implementation-backlog.md)
+Epic 2 implementation backlog
 
 ### Local backup restore is validated replacement, not synchronization
 
@@ -263,7 +263,7 @@ cannot become active through the normal flow, staging can be canceled before res
 failure preserves the prior local authority whenever safe rollback is possible.
 
 **Read more:** [Local backup and restore](../features/ocr-search-and-offline.md#local-backup-and-restore) and
-[Project Invariants](../project/invariants.md#why-local-backup-is-replacement-not-synchronization)
+[Project Invariants](../invariants.md#why-local-backup-is-replacement-not-synchronization)
 
 ## Application structure and authority decisions
 
@@ -278,7 +278,7 @@ authority. The selective boundary keeps transaction and ownership decisions visi
 reusing complex persistence behavior.
 
 **Read more:** [Architecture Overview](overview.md#backend-layers) and
-[Repository Tour](../project/repository-tour.md#appsbackend)
+Repository Tour
 
 ### Ownership is enforced at multiple layers
 
@@ -290,7 +290,7 @@ parts of the same problem. A guessed UUID must not connect resources across user
 is implemented incorrectly.
 
 **Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#ownership-and-retry-behavior) and
-[Project Invariants](../project/invariants.md#why-ownership-enforcement-in-several-layers)
+[Project Invariants](../invariants.md#why-ownership-enforcement-in-several-layers)
 
 ### Payload-bound create idempotency
 
@@ -301,7 +301,7 @@ canonical payload fingerprint plus retained response snapshot.
 payload or an expired receipt to create a duplicate.
 
 **Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#ownership-and-retry-behavior) and
-[Project Invariants](../project/invariants.md#why-payload-bound-idempotency)
+[Project Invariants](../invariants.md#why-payload-bound-idempotency)
 
 ### Fail-closed deployment configuration
 
@@ -312,8 +312,8 @@ a real identity provider exists.
 transport policy.
 
 **Read more:** [Architecture Overview](overview.md#configuration-and-authentication),
-[Development Guide](../project/development-guide.md#configuration-and-startup), and
-[Project Invariants](../project/invariants.md#why-fail-closed-release-configuration)
+[Development Guide](../maintenance.md), and
+[Project Invariants](../invariants.md#why-fail-closed-release-configuration)
 
 ### Separate application and control migration streams
 
@@ -327,8 +327,8 @@ ledger, control migrations must not become application schema, and PostgreSQL mi
 must not be mechanically ported into SQLite.
 
 **Read more:** [Architecture Overview](overview.md#migrations),
-[Control Plane Guide](../operations/control-plane.md#qualification-and-migration-safety), and
-[Project Invariants](../project/invariants.md#why-two-migration-streams)
+[Control Plane Guide](../backend/control-plane.md#qualification-and-migration-safety), and
+[Project Invariants](../invariants.md#why-two-migration-streams)
 
 ## Production-hardening decisions
 
@@ -343,8 +343,8 @@ of both source and candidate application databases.
 **Consequence:** Neither endpoint should be able to rewrite the evidence that authorizes its own
 promotion or replacement. Control state must remain available when an application endpoint is not.
 
-**Read more:** [Control Plane Guide](../operations/control-plane.md#what-it-is) and
-[Project Invariants](../project/invariants.md#why-a-control-plane)
+**Read more:** [Control Plane Guide](../backend/control-plane.md#what-it-is) and
+[Project Invariants](../invariants.md#why-a-control-plane)
 
 ### WORM-bound canonical evidence
 
@@ -354,8 +354,8 @@ an exact MinIO object version under COMPLIANCE retention.
 **Consequence:** The database records semantic authority while object-lock storage independently
 preserves the admitted bytes. A filename or caller-provided digest alone is insufficient evidence.
 
-**Read more:** [Control Plane Guide](../operations/control-plane.md#canonical-evidence-flow) and
-[Project Invariants](../project/invariants.md#why-worm-evidence)
+**Read more:** [Control Plane Guide](../backend/control-plane.md#canonical-evidence-flow) and
+[Project Invariants](../invariants.md#why-worm-evidence)
 
 ### Independent qualification
 
@@ -365,9 +365,9 @@ owners, grants, and projections, and tamper tests must make it fail.
 **Consequence:** A successful command does not prove that the surrounding security surface is
 complete or unchanged. Qualification detects false-green manifests and authority drift.
 
-**Read more:** [Control Plane Guide](../operations/control-plane.md#qualification-and-migration-safety),
-[Testing Guide](../operations/testing.md#control-database-qualification), and
-[Project Invariants](../project/invariants.md#why-qualification)
+**Read more:** [Control Plane Guide](../backend/control-plane.md#qualification-and-migration-safety),
+[Testing Guide](../maintenance.md), and
+[Project Invariants](../invariants.md#why-qualification)
 
 ### Artifact-referenced admission pipeline
 
@@ -378,7 +378,7 @@ locks and validates the complete semantic graph before recording a decision or a
 individually valid artifact must not pass when its environment, source, freeze, plan, run, or
 reconciliation bindings disagree.
 
-**Read more:** [Control Plane Guide](../operations/control-plane.md#admission)
+**Read more:** [Control Plane Guide](../backend/control-plane.md#admission)
 
 ### PostgreSQL role separation
 
@@ -388,8 +388,8 @@ executor, read-only, and operations roles with exact grants.
 **Consequence:** A runtime or executor credential must not gain schema ownership, evidence
 authorship, migration authority, or an alternate path around write fencing and admission.
 
-**Read more:** [Control Plane Guide](../operations/control-plane.md#authority-boundaries) and
-[Production Hardening Stage 5C4.2a](../historical/production-hardening/production-hardening-phase5c4.2a.md)
+**Read more:** [Control Plane Guide](../backend/control-plane.md#authority-boundaries) and
+Production Hardening Stage 5C4.2a
 
 ## Next reading
 
@@ -397,13 +397,13 @@ authorship, migration authority, or an alternate path around write fencing and a
 - For application behavior, choose [Foods and Nutrition](../features/foods-and-nutrition.md),
   [Recipes and Nutrition History](../features/recipes-and-logging.md), or
   [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md).
-- For operational authority, continue with the optional [Control Plane Guide](../operations/control-plane.md).
+- For operational authority, continue with the optional [Control Plane Guide](../backend/control-plane.md).
 
 ## See also
 
-- [Project Invariants](../project/invariants.md) provides longer-form rationale.
-- [Project Constitution](../project/constitution.md) defines the enduring constraints decisions
+- [Project Invariants](../invariants.md) provides longer-form rationale.
+- Project Constitution defines the enduring constraints decisions
   must respect.
-- [Glossary](../reference/glossary.md) defines the terms used by these decisions.
-- [Development Guide](../project/development-guide.md) maps decisions to code and tests.
+- [Glossary](../glossary.md) defines the terms used by these decisions.
+- [Development Guide](../maintenance.md) maps decisions to code and tests.
 - [Documentation index](../README.md) provides role-based reading paths.

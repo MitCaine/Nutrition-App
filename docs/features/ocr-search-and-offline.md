@@ -260,21 +260,21 @@ schema for remote mode.
 | Local backup/restore | `src/storage/backup`, `src/app/settings/LocalBackupSettings.tsx`, local bootstrap | `localBackupValidation.test.ts`, `localBackupActivation.test.ts`, `localBackupSettings.test.ts`, `localFirstStartRestoreGate.test.ts` |
 | API configuration | `config/runtimeConfig.js`, `src/shared/api/client.ts` | `runtimeConfig.test.ts`, `apiClientAuthentication.test.ts` |
 
-For physical capture limitations and historical release checks, see [Stage 5 OCR](../historical/stages/stage5-ocr.md) and
-[Release Candidate QA](../historical/releases/rc1-qa.md). Those records preserve their original
+For physical capture limitations and historical release checks, see Stage 5 OCR and
+Release Candidate QA. Those records preserve their original
 qualification scope and are not the current OCR capability inventory.
 
 ## Next reading
 
 - Continue with [Foods and Nutrition](foods-and-nutrition.md) to see how imported or confirmed
   results become normal saved Foods.
-- Use the [Development Guide](../project/development-guide.md#if-you-need-to-modify-ocr) for exact native,
+- Use the [Development Guide](../maintenance.md) for exact native,
   parser, confirmation, camera-quality, and test entry points.
-- Read the [Testing Guide](../operations/testing.md) before changing golden parser behavior, backup
+- Read the [Testing Guide](../maintenance.md) before changing golden parser behavior, backup
   activation, or native OCR claims.
 
 ## See also
 
 - [Architecture Decision Index](../architecture/decisions.md) for OCR, search, authority, and local-backup decisions
 - [Architecture Overview](../architecture/overview.md) for mobile/backend/bootstrap responsibilities
-- [Stage 5 OCR](../historical/stages/stage5-ocr.md) and [Release Candidate QA](../historical/releases/rc1-qa.md) for historical physical-device scope
+- Stage 5 OCR and Release Candidate QA for historical physical-device scope

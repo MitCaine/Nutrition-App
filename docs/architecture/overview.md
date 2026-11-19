@@ -8,8 +8,8 @@ preserved FastAPI/PostgreSQL system for remote mode. A separate optional operati
 surrounds the remote PostgreSQL promotion path. Keeping application authority selection and
 production operations distinct is the most important aid to understanding the repository.
 
-The [Project Constitution](../project/constitution.md) defines the boundaries this architecture
-must serve. [Current State](../project/current-state.md) records active heads and limitations; this
+The Project Constitution defines the boundaries this architecture
+must serve. Current State records active heads and limitations; this
 document owns structural responsibilities rather than release status or rationale.
 
 ## System boundaries
@@ -260,7 +260,7 @@ Persistence evolution has three deliberately separate mechanisms:
 3. **Control Alembic migrations** under `apps/backend/app/control_migrations`. They change only the
    independent operations database.
 
-[Current State](../project/current-state.md) owns the active PostgreSQL heads. The remote
+Current State owns the active PostgreSQL heads. The remote
 application lineage includes the specially authorized `0021_target_activation_execution`
 activation revision and currently extends through `0033_complete_runtime_authority`; the current
 control migration head is `ops_0011_phase5c4_recovery_audit`. Application and control migration
@@ -338,20 +338,20 @@ Tests are layered to match the claim being made:
   shared History projections, relevant prior E4 suites, and final target-iPhone P-1 through P-12
   evidence for the Complete/History release boundary.
 
-See the [Testing Guide](../operations/testing.md) for commands and suite boundaries.
+See the [Testing Guide](../maintenance.md) for commands and suite boundaries.
 
 ## Next reading
 
-- Read the [Repository Tour](../project/repository-tour.md) for a guided path through the directories.
+- Read the Repository Tour for a guided path through the directories.
 - Choose [Foods and Nutrition](../features/foods-and-nutrition.md),
   [Recipes and Nutrition History](../features/recipes-and-logging.md), or
   [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md) for domain behavior.
-- Use the [Development Guide](../project/development-guide.md) to map a change to code and tests.
+- Use the [Development Guide](../maintenance.md) to map a change to code and tests.
 
 ## See also
 
-- [Project Constitution](../project/constitution.md) defines enduring scope and priorities.
+- Project Constitution defines enduring scope and priorities.
 - [Architecture Decision Index](decisions.md) summarizes the major choices.
-- [Project Invariants](../project/invariants.md) explains the rationale in depth.
-- [Testing Guide](../operations/testing.md) maps tests to architectural claims.
-- [Control Plane Guide](../operations/control-plane.md) covers the optional operational subsystem.
+- [Project Invariants](../invariants.md) explains the rationale in depth.
+- [Testing Guide](../maintenance.md) maps tests to architectural claims.
+- [Control Plane Guide](../backend/control-plane.md) covers the optional operational subsystem.

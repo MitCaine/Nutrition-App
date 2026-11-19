@@ -314,13 +314,13 @@ snapshot semantics.
 
 - Return to [Foods and Nutrition](foods-and-nutrition.md) for serving resolution and mutable Food
   behavior.
-- Read [Project Invariants](../project/invariants.md#why-immutable-recipe-revisions) for the historical
+- Read [Project Invariants](../invariants.md#why-immutable-recipe-revisions) for the historical
   rationale behind revision-backed logging.
-- Use the [Development Guide](../project/development-guide.md#if-you-need-to-modify-recipes) before changing
+- Use the [Development Guide](../maintenance.md) before changing
   Recipe graphs, publication, or Log snapshots.
 
 ## See also
 
 - [Architecture Decision Index](../architecture/decisions.md) for revision and projection decisions
 - [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) for another immutable provenance flow
-- [Testing Guide](../operations/testing.md) for publication, logging, Complete/History parity, E4-16 qualification, and PostgreSQL concurrency coverage
+- [Testing Guide](../maintenance.md) for publication, logging, Complete/History parity, E4-16 qualification, and PostgreSQL concurrency coverage

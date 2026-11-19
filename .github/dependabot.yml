@@ -16,11 +16,7 @@ updates:
           - "*"
     open-pull-requests-limit: 1
 
-  # Backend installs are authoritative from the pip-compile generated
-  # requirements-dev.lock. Dependabot version PRs against pyproject.toml do
-  # not regenerate that lock, so they do not actually qualify the proposed
-  # package version. Keep security updates enabled, but handle routine backend
-  # version upgrades through lock regeneration and repository qualification.
+  # Parked backend: security updates only.
   - package-ecosystem: pip
     directory: "/apps/backend"
     schedule:
@@ -38,8 +34,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    # Routine version refreshes run through scripts/start-work.zsh. GitHub's
-    # zero version-PR limit leaves security updates active.
+    # Security updates only (the zero version-PR limit leaves them active).
     groups:
       mobile-security:
         applies-to: security-updates

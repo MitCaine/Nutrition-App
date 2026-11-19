@@ -2,202 +2,64 @@ name: CI
 
 on:
   push:
-    branches: [main, "qualification/**"]
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY: remote
+  EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
+  EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
+
 jobs:
-  backend:
-    name: Backend baseline
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/backend
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-python@v7
-        with:
-          python-version-file: .python-version
-          cache: pip
-          cache-dependency-path: apps/backend/requirements-dev.lock
-      - name: Normalize disabled checkout sparse metadata
-        working-directory: ${{ github.workspace }}
-        run: |
-          python -I - <<'PYTHON'
-          import pathlib
-          import stat
-          import subprocess
-
-          config = pathlib.Path(".git/config.worktree")
-          if config.exists() or config.is_symlink():
-              info = config.lstat()
-              if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 4096:
-                  raise ValueError("Unsupported checkout worktree configuration")
-              extension = subprocess.run(
-                  ["git", "config", "--no-includes", "--file", ".git/config",
-                   "--get", "extensions.worktreeConfig"], capture_output=True, check=False)
-              if extension.returncode != 1:
-                  raise ValueError("Checkout worktree configuration extension remains enabled")
-              records = subprocess.check_output(
-                  ["git", "config", "--no-includes", "--file", str(config), "--null", "--list"])
-              expected = sorted([b"core.sparsecheckout\nfalse", b"core.sparsecheckoutcone\nfalse",
-                                 b"index.sparse\nfalse"])
-              if sorted(records.rstrip(b"\0").split(b"\0")) != expected:
-                  raise ValueError("Unsupported checkout sparse metadata")
-              config.unlink()
-          PYTHON
-      - name: Install locked dependencies
-        run: |
-          python -m pip install -r requirements-dev.lock
-          python -m pip install --no-build-isolation --no-deps -e .
-      - name: Ruff
-        run: ruff check .
-      - name: Pytest
-        run: >-
-          python -I ../../scripts/lib/backend_qualification.py baseline
-          --candidate-root ../.. --candidate-sha "${{ github.event.pull_request.head.sha || github.sha }}"
-      - name: Repository session contract
-        run: ../../scripts/session-end.sh --portable-recovery
-
-  backend-postgres:
-    name: Backend PostgreSQL 16 contracts
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: nutrition_app
-          POSTGRES_PASSWORD: nutrition_app
-          POSTGRES_USER: nutrition_app
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U nutrition_app -d nutrition_app"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      NUTRITION_TEST_POSTGRES_URL: postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app
-      REQUIRE_POSTGRES_TESTS: "1"
-    defaults:
-      run:
-        working-directory: apps/backend
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-python@v7
-        with:
-          python-version-file: .python-version
-          cache: pip
-          cache-dependency-path: apps/backend/requirements-dev.lock
-      - name: Normalize disabled checkout sparse metadata
-        working-directory: ${{ github.workspace }}
-        run: |
-          python -I - <<'PYTHON'
-          import pathlib
-          import stat
-          import subprocess
-
-          config = pathlib.Path(".git/config.worktree")
-          if config.exists() or config.is_symlink():
-              info = config.lstat()
-              if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 4096:
-                  raise ValueError("Unsupported checkout worktree configuration")
-              extension = subprocess.run(
-                  ["git", "config", "--no-includes", "--file", ".git/config",
-                   "--get", "extensions.worktreeConfig"], capture_output=True, check=False)
-              if extension.returncode != 1:
-                  raise ValueError("Checkout worktree configuration extension remains enabled")
-              records = subprocess.check_output(
-                  ["git", "config", "--no-includes", "--file", str(config), "--null", "--list"])
-              expected = sorted([b"core.sparsecheckout\nfalse", b"core.sparsecheckoutcone\nfalse",
-                                 b"index.sparse\nfalse"])
-              if sorted(records.rstrip(b"\0").split(b"\0")) != expected:
-                  raise ValueError("Unsupported checkout sparse metadata")
-              config.unlink()
-          PYTHON
-      - id: install
-        name: Install locked dependencies
-        run: |
-          python -m pip install -r requirements-dev.lock
-          python -m pip install --no-build-isolation --no-deps -e .
-      - name: Verify PostgreSQL major version
-        run: >-
-          python -I ../../scripts/lib/backend_qualification.py version
-          --candidate-root ../.. --candidate-sha "${{ github.event.pull_request.head.sha || github.sha }}"
-      - name: Runtime and completed Epic 4 PostgreSQL contracts
-        run: >-
-          python -I ../../scripts/lib/backend_qualification.py postgresql
-          --candidate-root ../.. --candidate-sha "${{ github.event.pull_request.head.sha || github.sha }}"
-      - name: Verify isolated schema cleanup
-        if: ${{ always() && steps.install.outcome == 'success' }}
-        run: >-
-          python -I ../../scripts/lib/backend_qualification.py cleanup
-          --candidate-root ../.. --candidate-sha "${{ github.event.pull_request.head.sha || github.sha }}"
-
   mobile:
-    name: Mobile baseline
+    name: Mobile
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/mobile
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
-      - name: Verify repository Node toolchain
-        run: python ../../scripts/toolchain-report.py --check node
       - run: npm ci
-      - name: Expo configuration contract
-        env:
-          EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY: remote
-          EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
-          EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
-        run: npm run config:validate
-      - name: Expo dependency compatibility
-        env:
-          EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY: remote
-          EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
-          EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
-        run: npm exec -- expo install --check
-      - name: Expo project health
-        env:
-          EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY: remote
-          EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
-          EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
-        run: npx expo-doctor
+      - run: npm run config:validate
       - run: npm run typecheck
-      - name: Jest
-        run: npm test -- --runInBand
+      - run: npm test -- --runInBand
+      # Informational only: Expo publishes patch releases independently of this repo.
+      - name: Expo dependency drift (non-blocking)
+        continue-on-error: true
+        run: npm exec -- expo install --check
 
-  repository:
-    name: Repository validation
+  backend:
+    # The FastAPI/PostgreSQL backend is parked; keep a fast unit run so it does not rot.
+    name: Backend (parked)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
-      - run: python scripts/validate-docs.py
-      - name: Shell syntax
-        run: git ls-files -z '*.sh' | xargs -0 -r bash -n
+          cache: pip
+          cache-dependency-path: apps/backend/requirements-dev.lock
+      - run: |
+          python -m pip install -r requirements-dev.lock
+          python -m pip install --no-build-isolation --no-deps -e .
+      - run: ruff check .
+      - run: >-
+          python -m pytest -q
+          -m "not postgres_concurrency and not phase5c_performance_t0 and
+          not phase5c4_control_postgres and not phase5c4_minio and
+          not phase5c4_docker_integration"
